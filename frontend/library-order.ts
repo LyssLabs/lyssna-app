@@ -149,3 +149,20 @@ export function customOrder(
     .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
     .map(({ item }) => item);
 }
+
+/** Home without DJ cards, for when DJ cannot play. Sections left empty go. */
+export function withoutDJ<
+  T extends { sections: { items: { uri: string }[] }[] },
+>(home: T | undefined): T | undefined {
+  if (!home) return home;
+  const uri = `spotify:playlist:${DJ_ID}`;
+  return {
+    ...home,
+    sections: home.sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => item.uri !== uri),
+      }))
+      .filter((section) => section.items.length),
+  };
+}

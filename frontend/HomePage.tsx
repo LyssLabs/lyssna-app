@@ -284,7 +284,8 @@ export const HomePage = memo(function HomePage({
   /** Opens a route; cards pass themselves so the page can show at once. */
   navigate: (route: string, item?: HomeItem) => void;
   play: (item: HomeItem) => void;
-  dj: () => void;
+  /** Left out while DJ cannot play, as under Spotify Soloist. */
+  dj?: () => void;
   refresh: () => void;
   saved: Record<string, boolean>;
   onSave: (item: HomeItem) => void;
@@ -355,16 +356,18 @@ export const HomePage = memo(function HomePage({
           </div>
           <strong>Liked Songs</strong>
         </button>
-        <button
-          className="quick-tile dj-quick-tile"
-          aria-label="Start DJ"
-          onClick={dj}
-          disabled={!ready}
-        >
-          <img className="dj-cover" src={DJ_COVER} alt="" draggable={false} />
-          <strong>DJ</strong>
-          <Play className="quick-tile-play" size={18} fill="currentColor" />
-        </button>
+        {dj && (
+          <button
+            className="quick-tile dj-quick-tile"
+            aria-label="Start DJ"
+            onClick={dj}
+            disabled={!ready}
+          >
+            <img className="dj-cover" src={DJ_COVER} alt="" draggable={false} />
+            <strong>DJ</strong>
+            <Play className="quick-tile-play" size={18} fill="currentColor" />
+          </button>
+        )}
         {playlists.slice(0, 6).map((playlist) => (
           <button
             className="quick-tile"

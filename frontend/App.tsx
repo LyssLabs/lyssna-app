@@ -161,6 +161,7 @@ import { VolumeControl } from "./volume-control";
 import { DJButton } from "./dj-button";
 import {
   DJ_ID,
+  withoutDJ,
   accountOrder,
   customOrder,
   libraryItems,
@@ -2326,7 +2327,10 @@ function App() {
   ].sort();
   const librarySort = state.settings.library_sort ?? "recents";
   const libraryView = state.settings.library_view ?? "list";
+  // DJ only plays in Lyssna's own player, so Soloist leaves it out.
+  const soloistOn = !!state.settings.soloist;
   const visibleLibrary = libraryItems(state)
+    .filter((playlist) => !soloistOn || playlist.id !== DJ_ID)
     .filter((playlist) =>
       playlist.name.toLowerCase().includes(libraryQuery.toLowerCase()),
     )
@@ -4132,14 +4136,14 @@ function App() {
             <div className="browse-scroll" ref={mainScroll}>
               {state.route === "home" ? (
                 <HomePage
-                  data={state.home}
+                  data={soloistOn ? withoutDJ(state.home) : state.home}
                   playlists={state.playlists}
                   loading={state.home_loading}
                   error={state.home_error}
                   ready={state.native_ready}
                   navigate={homeNavigate}
                   play={homePlay}
-                  dj={startDJ}
+                  dj={soloistOn ? undefined : startDJ}
                   refresh={refreshHome}
                   saved={state.saved}
                   onSave={(item) => {

@@ -2109,6 +2109,26 @@ test("cancelled DJ holds stay silent and preserve keyboard refresh", async ({
     .toBe(1);
 });
 
+test("DJ hides while Spotify Soloist plays", async ({ page }) => {
+  await startClient(page, "home");
+  const tile = page.getByRole("button", { name: "Start DJ", exact: true });
+  const libraryDJ = page.locator(
+    ".library-list [data-playlist-id='37i9dQZF1EYkqdzj48dyYq']",
+  );
+  await expect(tile).toBeVisible();
+  await expect(libraryDJ).toHaveCount(1);
+  await page.evaluate(
+    (settings) =>
+      (window as any).__clientTest.emit({
+        type: "settings",
+        settings: { ...settings, soloist: true },
+      }),
+    emptyState.settings,
+  );
+  await expect(tile).toHaveCount(0);
+  await expect(libraryDJ).toHaveCount(0);
+});
+
 test("personalized Home shelves launch native mixes and DJ", async ({
   page,
 }) => {
