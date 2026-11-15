@@ -33,8 +33,8 @@ use crate::model::Track;
 
 /// Every known source, in default order.
 pub const DEFAULT_ORDER: [&str; 7] = [
-    "lrcred",
     "spicy",
+    "lrcred",
     "apple",
     "musixmatch",
     "spotify",
@@ -67,9 +67,9 @@ pub fn prefer_apple() -> bool {
     PREFER_APPLE.load(Ordering::Relaxed)
 }
 
-/// Sources added later that join saved orders ahead of another source
+/// Sources added later that join saved orders right after another source
 /// rather than at the end.
-const JOIN_BEFORE: [(&str, &str); 1] = [("lrcred", "spicy")];
+const JOIN_AFTER: [(&str, &str); 1] = [("lrcred", "spicy")];
 
 /// Known source IDs in the saved order, with any missing ones appended.
 pub fn normalize_order(order: &[String]) -> Vec<String> {
@@ -83,12 +83,12 @@ pub fn normalize_order(order: &[String]) -> Vec<String> {
         if result.iter().any(|known| known == id) {
             continue;
         }
-        let before = JOIN_BEFORE
+        let after = JOIN_AFTER
             .iter()
             .find(|(new, _)| *new == id)
-            .and_then(|(_, before)| result.iter().position(|known| known == before));
-        match before {
-            Some(at) => result.insert(at, id.to_owned()),
+            .and_then(|(_, after)| result.iter().position(|known| known == after));
+        match after {
+            Some(at) => result.insert(at + 1, id.to_owned()),
             None => result.push(id.to_owned()),
         }
     }
@@ -1025,8 +1025,8 @@ mod tests {
             normalize_order(&["lrclib".into(), "bogus".into(), "lrclib".into()]),
             vec![
                 "lrclib",
-                "lrcred",
                 "spicy",
+                "lrcred",
                 "apple",
                 "musixmatch",
                 "spotify",
@@ -1045,8 +1045,8 @@ mod tests {
         assert_eq!(
             order,
             [
-                "lrcred",
                 "spicy",
+                "lrcred",
                 "lrclib",
                 "apple",
                 "musixmatch",

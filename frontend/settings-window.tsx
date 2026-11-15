@@ -45,8 +45,8 @@ import { SOLOIST_PLAYS, SoloistRows } from "./soloist-settings";
 
 /** Default source order; LRCLIB and Netease start off. */
 const DEFAULT_SOURCES = [
-  "lrcred",
   "spicy",
+  "lrcred",
   "apple",
   "musixmatch",
   "spotify",
