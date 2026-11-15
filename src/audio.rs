@@ -10,7 +10,7 @@ use rodio::Source;
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
         mpsc,
     },
     thread,
@@ -607,13 +607,35 @@ impl AudioSink {
 /// one byte each.
 static LEVELS: AtomicU32 = AtomicU32::new(0);
 
+/// Levels heard from another program, Spotify Soloist, and when, in
+/// milliseconds since `EPOCH`. Kept apart from Lyssna's own: its idle
+/// output would otherwise zero them between Soloist's chunks.
+static OTHER_LEVELS: AtomicU32 = AtomicU32::new(0);
+static OTHER_AT: AtomicU64 = AtomicU64::new(0);
+static EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+fn since_epoch() -> u64 {
+    EPOCH
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
+        + 1
+}
+
 pub fn levels() -> [u8; 3] {
-    let [low, mid, high, _] = LEVELS.load(Ordering::Relaxed).to_le_bytes();
+    let at = OTHER_AT.load(Ordering::Relaxed);
+    let levels = if at != 0 && since_epoch().saturating_sub(at) < 250 {
+        OTHER_LEVELS.load(Ordering::Relaxed)
+    } else {
+        LEVELS.load(Ordering::Relaxed)
+    };
+    let [low, mid, high, _] = levels.to_le_bytes();
     [low, mid, high]
 }
 
 pub(crate) fn show_levels(samples: &[f32]) {
-    LEVELS.store(band_levels(samples), Ordering::Relaxed);
+    OTHER_LEVELS.store(band_levels(samples), Ordering::Relaxed);
+    OTHER_AT.store(since_epoch(), Ordering::Relaxed);
 }
 
 fn band_levels(samples: &[f32]) -> u32 {
