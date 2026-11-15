@@ -587,11 +587,21 @@ fn spawn(exe: &Path, data: &Path, cache: &Path, key: &str) -> Result<Child> {
 }
 
 const NORMALIZE: &str = "audio.normalize_v2";
+const CROSSFADE: &str = "audio.crossfade_v2";
+// Spotify moved crossfade out of prefs and ignores the key once migrated;
+// clearing the flag makes it migrate the "off" value in again on start.
+const CROSSFADE_MIGRATED: &str = "audio.crossfade_migrated_to_ps";
 const SEEDED_MARKER: &str = ".soloist-prefs-seeded";
 
-/// Updates `existing` prefs with volume normalization turned off, preserving every other key.
+/// Updates `existing` prefs with volume normalization and crossfade turned
+/// off, preserving every other key. A crossfaded song change would put the
+/// next song's lyrics over the last song's tail.
 pub fn merge_prefs(existing: &str) -> String {
-    let wanted = [(NORMALIZE, "false")];
+    let wanted = [
+        (NORMALIZE, "false"),
+        (CROSSFADE, "false"),
+        (CROSSFADE_MIGRATED, "false"),
+    ];
     let mut lines: Vec<String> = existing
         .split('\n')
         .map(|line| line.trim_end_matches('\r'))
@@ -710,7 +720,9 @@ fn supervise(status: &Mutex<Status>, stop: &AtomicBool) {
         let _ = fs::create_dir_all(&data);
         match write_normalization(&data) {
             Ok(count) if count > 0 => {
-                log::info!("Soloist: turned off volume normalization in {count} account prefs")
+                log::info!(
+                    "Soloist: turned off volume normalization and crossfade in {count} account prefs"
+                )
             }
             Ok(_) => {}
             Err(error) => log::warn!("Soloist: could not write normalization prefs: {error}"),
@@ -930,8 +942,17 @@ mod tests {
             "audio.play_bitrate_non_metered_migrated=true\naudio.crossfade_migrated_to_ps=true\n";
         let merged = merge_prefs(sample);
         assert!(merged.contains("audio.normalize_v2=false\n"));
-        assert!(merged.contains("audio.crossfade_migrated_to_ps=true\n"));
+        assert!(merged.contains("audio.play_bitrate_non_metered_migrated=true\n"));
         assert_eq!(merged.matches("audio.normalize_v2=false").count(), 1);
+    }
+
+    #[test]
+    fn merge_prefs_turns_crossfade_off() {
+        let sample = "audio.crossfade_v2=true\naudio.crossfade_migrated_to_ps=true\n";
+        let merged = merge_prefs(sample);
+        assert!(merged.contains("audio.crossfade_v2=false\n"));
+        assert!(merged.contains("audio.crossfade_migrated_to_ps=false\n"));
+        assert!(!merged.contains("=true"));
     }
 
     #[test]
