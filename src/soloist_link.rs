@@ -420,10 +420,14 @@ fn unix_ms() -> i64 {
         .map_or(0, |since| since.as_millis() as i64)
 }
 
-/// How long the song that just ended still plays. When a song ends on its
-/// own, Soloist reports the next one about three seconds before the end of
-/// the audio it read ahead, so the next song's position starts that much
-/// later. Needs the ended song's length, which Soloist's reports can lack.
+/// Measured from a screen recording: when a song ends on its own, Soloist
+/// cuts it about three seconds short, reports the next song as playing, and
+/// that song's audio starts a second later. A picked song has no such gap.
+const HANDOVER_DELAY_MS: i64 = 1_000;
+
+/// How long the next song's audio trails its first reports after a song
+/// ended on its own. Needs the ended song's length, which Soloist's
+/// reports can lack.
 pub fn handover_lag(previous: &State, next: &State) -> Option<i64> {
     let ended = previous.track.as_ref()?;
     let starting = next.track.as_ref()?;
@@ -436,7 +440,7 @@ pub fn handover_lag(previous: &State, next: &State) -> Option<i64> {
     }
     let heard = previous.position_ms as i64 + (next.measured_at - previous.measured_at).max(0);
     let left = ended.duration_ms as i64 - heard;
-    (left > 0 && left <= 5000).then_some(left)
+    (left > 0 && left <= 5000).then_some(HANDOVER_DELAY_MS)
 }
 
 /// One line per report, to line Soloist's timing up with what was heard.
@@ -846,7 +850,7 @@ mod tests {
             ..Default::default()
         };
         // Reported 400 ms after the old song's last report: 2 s of it left.
-        assert_eq!(handover_lag(&ending, &next), Some(2_048));
+        assert_eq!(handover_lag(&ending, &next), Some(HANDOVER_DELAY_MS));
         let picked = next.clone();
         // Picked a minute before the end: nothing was read ahead to wait on.
         let early = State {

@@ -202,8 +202,8 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                             }
                         }
                     }
-                    // A song that ended on its own still plays out after
-                    // Soloist names the next; its first reports wait for it.
+                    // After a song ends on its own, the next one's audio
+                    // trails Soloist's first reports of it.
                     let uri = state.track.as_ref().map(|track| track.uri.clone());
                     if let (Some(previous), Some(uri)) = (&last_playing, &uri)
                         && let Some(lag) = crate::soloist_link::handover_lag(previous, &state)
@@ -211,11 +211,15 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                         native::diagnostic(&format!("soloist holds the next song {lag} ms"));
                         hold = Some((uri.clone(), lag));
                     }
+                    // Only the handover's own reports wait; a later seek
+                    // back to the start plays at once.
                     if let Some((song, lag)) = &hold {
-                        if uri.as_ref() != Some(song) {
-                            hold = None;
-                        } else if state.position_ms <= 1500 {
+                        let held = uri.as_ref() == Some(song) && state.position_ms <= 1500;
+                        if held {
                             state.measured_at += lag;
+                        }
+                        if !held || state.playing {
+                            hold = None;
                         }
                     }
                     if state.playing {
