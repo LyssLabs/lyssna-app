@@ -1808,7 +1808,7 @@ fn transfer_target(
 }
 
 /// Whether Spotify's device list names the transfer destination active.
-fn transfer_settled(target: &str, devices: &[crate::model::Device]) -> bool {
+pub(crate) fn transfer_settled(target: &str, devices: &[crate::model::Device]) -> bool {
     listed_device(target, devices).is_some_and(|device| device.is_active)
 }
 

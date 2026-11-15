@@ -932,16 +932,42 @@ impl Backend {
                 Some(crate::native::NativeEvent::Ready(_))
             )
         {
-            let transferred = self.native_controls.transfer(id);
+            let mut transferred = self.native_controls.transfer(id);
             // The device picker follows the active device: after a failure
             // it must return to the current one, and after a success it must
             // not see the old one still active and send controls back.
-            let devices = match transferred {
+            let mut devices = match transferred {
                 Ok(()) => self
                     .native_controls
                     .devices_after_transfer(id, Duration::from_secs(8)),
                 Err(_) => self.native_controls.devices(),
             };
+            // Phones accept Spotify's Connect transfer yet can ignore it,
+            // while the Web API's transfer reaches them.
+            if transferred.is_ok()
+                && devices
+                    .as_ref()
+                    .is_ok_and(|devices| !crate::native::transfer_settled(id, devices))
+            {
+                crate::native::diagnostic("transfer not taken up; retrying through the Web API");
+                transferred = self
+                    .api()
+                    .and_then(|api| api.player_action(PlayerAction::Transfer(id.clone()), None));
+                devices = self
+                    .native_controls
+                    .devices_after_transfer(id, Duration::from_secs(8));
+                if transferred.is_ok()
+                    && let Ok(listed) = devices.as_ref()
+                    && !crate::native::transfer_settled(id, listed)
+                {
+                    let name = crate::native::listed_device(id, listed)
+                        .map(|device| device.name.clone())
+                        .unwrap_or_else(|| "That device".into());
+                    transferred = Err(anyhow::anyhow!(
+                        "{name} didn't take over. Open Spotify on it, then try again."
+                    ));
+                }
+            }
             if let Ok(devices) = devices {
                 let _ = self.events.send(Event::Devices(devices));
             }
