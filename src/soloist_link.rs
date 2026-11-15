@@ -414,11 +414,34 @@ impl QueueReply {
     }
 }
 
+fn unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as i64)
+}
+
+/// How long the song that just ended still plays. When a song ends on its
+/// own, Soloist reports the next one about three seconds before the end of
+/// the audio it read ahead, so the next song's position starts that much
+/// later. Needs the ended song's length, which Soloist's reports can lack.
+pub fn handover_lag(previous: &State, next: &State) -> Option<i64> {
+    let ended = previous.track.as_ref()?;
+    let starting = next.track.as_ref()?;
+    if !previous.playing
+        || ended.uri == starting.uri
+        || next.position_ms > 1000
+        || ended.duration_ms == 0
+    {
+        return None;
+    }
+    let heard = previous.position_ms as i64 + (next.measured_at - previous.measured_at).max(0);
+    let left = ended.duration_ms as i64 - heard;
+    (left > 0 && left <= 5000).then_some(left)
+}
+
 /// One line per report, to line Soloist's timing up with what was heard.
 fn log_state(playback: &Playback) {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_millis() as i64);
+    let now = unix_ms();
     let song = playback
         .item
         .as_ref()
@@ -801,6 +824,41 @@ mod tests {
         let mut again = vec![bare("3")];
         assert!(describe(&mut again, lookup));
         assert_eq!(asked.load(Ordering::Relaxed), 20);
+    }
+
+    #[test]
+    fn a_song_ending_on_its_own_holds_the_next_until_its_audio_ends() {
+        let song = |id: &str, duration_ms| Track {
+            uri: format!("spotify:track:{id}"),
+            duration_ms,
+            ..Default::default()
+        };
+        let ending = State {
+            playing: true,
+            track: Some(song("old", 257_800)),
+            position_ms: 255_352,
+            measured_at: 1_000_000,
+            ..Default::default()
+        };
+        let next = State {
+            track: Some(song("new", 200_000)),
+            measured_at: 1_000_400,
+            ..Default::default()
+        };
+        // Reported 400 ms after the old song's last report: 2 s of it left.
+        assert_eq!(handover_lag(&ending, &next), Some(2_048));
+        let picked = next.clone();
+        // Picked a minute before the end: nothing was read ahead to wait on.
+        let early = State {
+            position_ms: 195_352,
+            ..ending.clone()
+        };
+        assert_eq!(handover_lag(&early, &picked), None);
+        let paused = State {
+            playing: false,
+            ..ending.clone()
+        };
+        assert_eq!(handover_lag(&paused, &next), None);
     }
 
     #[test]

@@ -220,7 +220,9 @@ pub enum Event {
     },
     Playback(Box<Playback>, Instant),
     /// Spotify Soloist's own report, sent as it changes.
-    SoloistPlayback(Box<Playback>),
+    /// Soloist's state and when, on this computer's clock, its position
+    /// holds; later than now while a song that ended still plays out.
+    SoloistPlayback(Box<Playback>, u64),
     SoloistQueueChanged,
     Devices(Vec<Device>),
     Notice(String),

@@ -125,3 +125,15 @@ it("dates input to when it happened, not when it was handled", () => {
   );
   expect(paused.readAgo(200, 80)).toBe(10000);
 });
+it("holds a song observed to start later until then", () => {
+  const clock = new PlaybackClock();
+  const next = {
+    ...playback,
+    item: { ...playback.item, uri: "spotify:track:next" },
+    progress_ms: 0,
+  };
+  clock.observe(next, 3000, 0, 1000, 1000, false);
+  expect(clock.read(2000)).toBe(0);
+  expect(clock.read(3000)).toBe(0);
+  expect(clock.read(4000)).toBe(1000);
+});
