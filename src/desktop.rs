@@ -1085,6 +1085,18 @@ impl Desktop {
                             }
                             snapshot.playback = *playback;
                             snapshot.observed_at = now_ms();
+                            // Lyssna's own player saves from its position
+                            // events; Soloist only reports here.
+                            if snapshot.playback.device.name == crate::soloist::DEVICE_NAME
+                                && let Some(profile) = &snapshot.profile
+                            {
+                                let _ = crate::resume::save(
+                                    &profile.id,
+                                    &snapshot.playback,
+                                    snapshot.observed_at,
+                                    false,
+                                );
+                            }
                             if changed {
                                 snapshot.lyrics = None;
                                 snapshot.canvas_url = None;
@@ -1786,12 +1798,13 @@ impl Desktop {
         }
         if let Ok(snapshot) = self.0.snapshot.lock()
             && let Some(profile) = &snapshot.profile
-            && self
-                .0
-                .last_native
-                .lock()
-                .ok()
-                .is_some_and(|last| last.is_some())
+            && (snapshot.playback.device.name == crate::soloist::DEVICE_NAME
+                || self
+                    .0
+                    .last_native
+                    .lock()
+                    .ok()
+                    .is_some_and(|last| last.is_some()))
         {
             let _ = crate::resume::save(&profile.id, &playback_now(&snapshot), now_ms(), true);
         }
