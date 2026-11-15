@@ -459,16 +459,19 @@ export function SettingsWindow({
       "General",
       "Playback",
       [
-        <SoloistRows
-          key="soloist"
-          settings={settings}
-          status={state.soloist}
-          keysRefused={!!state.keys_refused}
-          onSettings={onSettings}
-          onCall={onCall}
-          onOpen={onOpen}
-          onNotice={onNotice}
-        />,
+        // Spotify Soloist runs on Windows only.
+        IS_MAC ? null : (
+          <SoloistRows
+            key="soloist"
+            settings={settings}
+            status={state.soloist}
+            keysRefused={!!state.keys_refused}
+            onSettings={onSettings}
+            onCall={onCall}
+            onOpen={onOpen}
+            onNotice={onNotice}
+          />
+        ),
         <SettingRow
           key="output"
           label="Audio output"

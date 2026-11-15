@@ -563,6 +563,9 @@ impl Settings {
         while self.library_folder_sorts.len() > 1000 {
             self.library_folder_sorts.pop_last();
         }
+        if cfg!(target_os = "macos") {
+            self.soloist = false;
+        }
         if !["dark", "light", "system"].contains(&self.theme.as_str()) {
             self.theme = "dark".into();
         }
