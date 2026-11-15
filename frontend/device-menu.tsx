@@ -213,7 +213,12 @@ function useDevicesButton() {
       );
       const bottom = window.innerHeight - box.top + GAP;
       setAnchor({
-        menu: { left, right: "auto", bottom },
+        menu: {
+          left,
+          right: "auto",
+          bottom,
+          "--arrow-x": `${centre - left}px`,
+        } as CSSProperties,
         arrow: { left: centre, bottom: bottom - 10 },
       });
     };

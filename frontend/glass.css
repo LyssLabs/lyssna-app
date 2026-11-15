@@ -315,7 +315,10 @@
 .liquid-glass .device-menu::after {
   display: none;
 }
+/* Two see-through layers darken where they overlap, so the arrow only
+   just tucks under the menu, and the menu's rim leaves a gap for it. */
 .liquid-glass .device-menu-arrow {
+  translate: -50% -1px;
   background: var(--glass-fill-strong);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
@@ -327,6 +330,22 @@
     inset 0 0 0 1px #ffffff1f,
     inset 0 1px 0 #ffffff33,
     0 20px 60px #00000073;
+}
+.liquid-glass .device-menu[style*="--arrow-x"] {
+  box-shadow:
+    inset 1px 0 0 #ffffff1f,
+    inset -1px 0 0 #ffffff1f,
+    inset 0 1px 0 #ffffff33,
+    0 20px 60px #00000073;
+  background-image: linear-gradient(
+    to right,
+    #ffffff1f calc(var(--arrow-x) - 14px),
+    transparent 0 calc(var(--arrow-x) + 14px),
+    #ffffff1f 0
+  );
+  background-size: 100% 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
 }
 .liquid-glass .profile-menu,
 .liquid-glass .app-menu,

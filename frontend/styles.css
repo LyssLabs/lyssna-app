@@ -4524,7 +4524,8 @@ input[type="range"]:hover {
   z-index: 46;
   width: 20px;
   height: 20px;
-  translate: -50% 0;
+  /* Tucked over the menu's edge so its border doesn't cut across. */
+  translate: -50% -2px;
   rotate: 45deg;
   background: light-dark(#dcdcdc, #232323);
   border-right: 1px solid light-dark(#00000012, #ffffff12);
@@ -4583,8 +4584,9 @@ input[type="range"]:hover {
   padding: 12px 10px;
 }
 .device-row.current > svg,
-.device-row.current strong {
-  color: var(--accent);
+.device-row.current strong,
+.device-row.current .device-bars {
+  color: light-dark(#14833b, #1ed760);
 }
 .device-row.current small {
   margin: 0 0 2px;

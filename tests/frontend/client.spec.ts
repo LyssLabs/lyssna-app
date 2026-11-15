@@ -19102,6 +19102,10 @@ test("device menu points at the Devices button, which turns green when open or p
   const menu = page.locator(".device-menu");
   await expect(button).toHaveClass(/\bactive\b/);
   await expect(menu.locator("h3")).toHaveCSS("text-align", "center");
+  await expect(menu.locator(".device-row.current strong")).toHaveCSS(
+    "color",
+    "rgb(30, 215, 96)",
+  );
   const arrow = (await page.locator(".device-menu-arrow").boundingBox())!;
   const box = (await button.boundingBox())!;
   const menuBox = (await menu.boundingBox())!;
