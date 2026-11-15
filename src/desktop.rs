@@ -200,19 +200,7 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                             }
                         }
                     }
-                    let offset = controls.server_clock_offset_ms();
-                    if state.playing && state.measured_at > 0 {
-                        native::diagnostic(&format!(
-                            "soloist position stamped {} ms before it arrived, clock offset {:?} ms",
-                            now_ms() as i64 - state.measured_at,
-                            offset
-                        ));
-                    }
-                    let _ = events.send(Event::SoloistPlayback(Box::new(soloist_playback(
-                        state,
-                        now_ms() as i64,
-                        offset,
-                    ))));
+                    let _ = events.send(Event::SoloistPlayback(Box::new(soloist_playback(state))));
                 },
                 {
                     let events = inner.events_in.clone();
@@ -234,17 +222,9 @@ fn set_soloist(inner: &Inner, wanted: bool) {
     }
 }
 
-/// Soloist stamps positions on Spotify's clock, which this computer's clock
-/// can run seconds ahead of or behind.
-fn soloist_playback(
-    state: crate::soloist_link::State,
-    now: i64,
-    clock_offset_ms: Option<i64>,
-) -> crate::model::Playback {
+fn soloist_playback(state: crate::soloist_link::State) -> crate::model::Playback {
     let elapsed = if state.playing && state.measured_at > 0 {
-        now.saturating_sub(clock_offset_ms.unwrap_or_default())
-            .saturating_sub(state.measured_at)
-            .max(0) as u64
+        (now_ms() as i64).saturating_sub(state.measured_at).max(0) as u64
     } else {
         0
     };
@@ -6380,22 +6360,6 @@ mod tests {
             Some("session-id"),
             &speaker
         ));
-    }
-    #[test]
-    fn soloist_position_follows_spotifys_clock() {
-        let state = crate::soloist_link::State {
-            track: Some(Track {
-                duration_ms: 240_000,
-                ..Track::default()
-            }),
-            playing: true,
-            position_ms: 60_000,
-            measured_at: 1_000_000,
-            ..Default::default()
-        };
-        // This computer runs 2.5 s ahead of Spotify; 1 s has really passed.
-        let playback = soloist_playback(state, 1_003_500, Some(2_500));
-        assert_eq!(playback.progress_ms, Some(61_000));
     }
     #[test]
     fn switching_devices_while_soloist_plays_reaches_the_chosen_device() {
