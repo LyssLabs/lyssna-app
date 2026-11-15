@@ -343,6 +343,7 @@ fn run(
                     }
                     Some("playback_state") => {
                         if let Ok(playback) = serde_json::from_value::<Playback>(message) {
+                            log_state(&playback);
                             let state = playback.state();
                             flags.set(state.active, state.track.is_some());
                             let uri = state.track.as_ref().map(|track| track.uri.clone());
@@ -411,6 +412,24 @@ impl QueueReply {
             .collect();
         (tracks, queued)
     }
+}
+
+/// One line per report, to line Soloist's timing up with what was heard.
+fn log_state(playback: &Playback) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as i64);
+    let song = playback
+        .item
+        .as_ref()
+        .and_then(|item| item.uri.rsplit(':').next())
+        .unwrap_or("-");
+    crate::native::diagnostic(&format!(
+        "soloist state {} {song} at {} ms, stamped {} ms ago",
+        playback.status,
+        playback.position.position_ms,
+        now - playback.position.timestamp_ms
+    ));
 }
 
 fn command(name: &str, fields: Value) -> Value {
