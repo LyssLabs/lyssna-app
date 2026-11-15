@@ -184,10 +184,13 @@ fn run(pid: u32, stop: &AtomicBool) -> Result<()> {
             .iter()
             .fold(0f32, |most, sample| most.max(sample.abs()));
         if loudest > 1e-5 {
-            // Soloist's audio arrives after its volume, so a quiet setting
-            // would flatten the bars; scale it back up to full level.
-            peak = loudest.max(peak * 0.995).max(0.002);
-            let gain = 0.9 / peak;
+            // Soloist's audio arrives after its volume, while Lyssna's own
+            // player measures songs before it. Undo the volume with a gain
+            // that settles over many seconds: following each moment's
+            // loudness instead would flatten the quiet and loud parts the
+            // bars should show.
+            peak = loudest.max(peak * 0.9998).max(0.002);
+            let gain = 1.0 / peak;
             samples.iter_mut().for_each(|sample| *sample *= gain);
             if !followed {
                 followed = true;
