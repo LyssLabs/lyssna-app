@@ -361,6 +361,18 @@ fn plays_locally(
     command == "dj" || targets_local_device(target, native_id, device)
 }
 
+/// Whether a command is meant for Soloist: sent to it, or, while it plays,
+/// a control for what it plays. Switching to another device while Soloist
+/// plays is for that device, not Soloist.
+fn soloist_for(
+    command: &str,
+    target: Option<&str>,
+    soloist: Option<&str>,
+    playing_on: Option<&str>,
+) -> bool {
+    soloist.is_some() && (target == soloist || command != "transfer" && playing_on == soloist)
+}
+
 /// Whether a command goes to Spotify Soloist rather than Lyssna's own player.
 /// DJ only plays in Lyssna's own player, so while that player holds a song,
 /// its controls stay with it; handing a skip to an idle Soloist made Spotify
@@ -2520,9 +2532,12 @@ fn player(
         // still reports idle; the Web API refuses it either way.
         let soloist_id = lock(&state.0.soloist_device)?.clone();
         let on_soloist = snapshot.settings.soloist
-            && soloist_id.is_some()
-            && (target.as_deref() == soloist_id.as_deref()
-                || snapshot.playback.device.id == soloist_id);
+            && soloist_for(
+                &request.command,
+                target.as_deref(),
+                soloist_id.as_deref(),
+                snapshot.playback.device.id.as_deref(),
+            );
         let native_busy =
             snapshot.playback.device.name == native::device_name() && state.0.controls.has_track();
         let soloist = snapshot.settings.soloist
@@ -6332,6 +6347,14 @@ mod tests {
             Some("session-id"),
             &speaker
         ));
+    }
+    #[test]
+    fn switching_devices_while_soloist_plays_reaches_the_chosen_device() {
+        let soloist = Some("soloist");
+        assert!(!soloist_for("transfer", Some("phone"), soloist, soloist));
+        assert!(soloist_for("transfer", soloist, soloist, Some("phone")));
+        assert!(soloist_for("next", Some("phone"), soloist, soloist));
+        assert!(!soloist_for("next", None, None, None));
     }
     #[test]
     fn soloist_leaves_dj_controls_with_lyssnas_player() {
