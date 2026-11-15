@@ -249,6 +249,8 @@ import {
 } from "./recent-searches";
 import { SOLOIST_DEVICE } from "./soloist-settings";
 import type { SearchEntry } from "./search-results";
+
+const SOLOIST_BOOT_LIMIT = 90_000;
 /** Lyrics use Inter unless the user picks a lyrics font. */
 /** Inputs that take no typing, so Space still toggles playback. */
 const NON_TEXT_INPUTS = new Set([
@@ -501,6 +503,25 @@ function App() {
     leftDrag ?? (savedLeft ? Math.max(250, Math.min(480, savedLeft)) : null);
   const [target, setTarget] = useState("native");
   const [deviceMenu, setDeviceMenu] = useState(false);
+  // At launch, the client waits for Soloist so the first Play has a player
+  // to go to. Only once: a later Soloist restart leaves the client usable.
+  const [soloistBooted, setSoloistBooted] = useState(false);
+  const soloistBooting =
+    !soloistBooted &&
+    !!state.profile &&
+    !!state.settings.soloist &&
+    (!state.soloist ||
+      state.soloist.state === "starting" ||
+      state.soloist.state === "installing");
+  useEffect(() => {
+    if (!state.profile) return;
+    if (!soloistBooting) {
+      setSoloistBooted(true);
+      return;
+    }
+    const timer = setTimeout(() => setSoloistBooted(true), SOLOIST_BOOT_LIMIT);
+    return () => clearTimeout(timer);
+  }, [state.profile, soloistBooting]);
   // Controls follow the device Spotify reports active, so a failed
   // transfer does not leave them aimed at an unreachable speaker.
   // The device list can lag a handoff from a phone; playback moving to
@@ -6396,6 +6417,21 @@ function App() {
           <MicLoader size={56} />
           <strong>Lyssna</strong>
           <span>Restoring session…</span>
+        </div>
+      )}
+      {sessionScreen(state) === "client" && soloistBooting && (
+        <div
+          className="startup-screen"
+          role="status"
+          aria-label="Starting Spotify Soloist"
+        >
+          <MicLoader size={56} />
+          <strong>Lyssna</strong>
+          <span>
+            {state.soloist?.state === "installing"
+              ? "Downloading Spotify Soloist…"
+              : "Starting Spotify Soloist…"}
+          </span>
         </div>
       )}
       {sessionScreen(state) === "setup" && (

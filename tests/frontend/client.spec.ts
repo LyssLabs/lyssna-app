@@ -16286,6 +16286,37 @@ test("panel scrollers keep only the overlay bar after switching pages", async ({
   ).toBe(0);
 });
 
+test("launch waits on a starting Spotify Soloist, once", async ({ page }) => {
+  await page.addInitScript(() => {
+    const clone = window.structuredClone;
+    window.structuredClone = ((value: any, options?: any) => {
+      const copy = clone(value, options);
+      if (copy && typeof copy === "object" && "local_device_name" in copy) {
+        copy.settings = { ...copy.settings, soloist: true };
+        copy.soloist = { state: "starting" };
+      }
+      return copy;
+    }) as typeof structuredClone;
+  });
+  await startClient(page);
+  const boot = page.getByRole("status", { name: "Starting Spotify Soloist" });
+  await expect(boot).toContainText("Starting Spotify Soloist");
+  const emit = (state: string) =>
+    page.evaluate(
+      (state) =>
+        (window as any).__clientTest.emit({
+          type: "soloist",
+          status: { state },
+          keys_refused: false,
+        }),
+      state,
+    );
+  await emit("ready");
+  await expect(boot).toHaveCount(0);
+  await emit("starting");
+  await expect(boot).toHaveCount(0);
+});
+
 test("Soloist greys out playback settings it cannot honour", async ({
   page,
 }) => {
