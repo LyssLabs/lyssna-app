@@ -1857,7 +1857,9 @@ impl Backend {
                     artists
                 };
                 // Spotify's Web API does not say which songs were queued.
-                let (queue, queued) = if let Some(soloist) = crate::soloist_link::queue() {
+                let soloist = crate::soloist_link::queue();
+                let from_soloist = soloist.is_some();
+                let (queue, queued) = if let Some(soloist) = soloist {
                     soloist
                 } else if local {
                     self.native_controls.queue_details().unwrap_or_default()
@@ -1870,6 +1872,7 @@ impl Backend {
                 ));
                 // Shown first: warming the next songs below waits on the network.
                 let upcoming: Vec<Track> = queue.iter().take(3).cloned().collect();
+                let mut described = from_soloist.then(|| (artists.clone(), queue.clone()));
                 self.emit(Event::PlayingDetails {
                     uri: track.uri.clone(),
                     details: Box::new(PlayingDetails {
@@ -1878,6 +1881,21 @@ impl Backend {
                         queued,
                     }),
                 });
+                if let Some((_, queue)) = described.as_mut()
+                    && crate::soloist_link::describe(queue, |uri| {
+                        self.native_controls.track(uri).ok()
+                    })
+                {
+                    let (artists, queue) = described.take().unwrap_or_default();
+                    self.emit(Event::PlayingDetails {
+                        uri: track.uri.clone(),
+                        details: Box::new(PlayingDetails {
+                            artists,
+                            queue,
+                            queued,
+                        }),
+                    });
+                }
                 // Warm the next songs' lyrics and artist cards so skipping
                 // shows them at once, as Canvas below.
                 let next: Vec<Track> = upcoming.iter().take(2).cloned().collect();
@@ -2091,7 +2109,10 @@ fn fetch_live_tracks(
             "liked" => native
                 .playlist_tracks("liked", offset)
                 .or_else(|_| api.saved_tracks(offset)),
-            "queue" if let Some((queue, _)) = crate::soloist_link::queue() => Ok(queue),
+            "queue" if let Some((mut queue, _)) = crate::soloist_link::queue() => {
+                crate::soloist_link::describe(&mut queue, |uri| native.track(uri).ok());
+                Ok(queue)
+            }
             "queue" if native.has_track() => native.queue(),
             "queue" => api.queue(),
             // Spotify keeps only the latest 50 plays, so there is no second page.

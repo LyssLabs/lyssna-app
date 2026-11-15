@@ -5,6 +5,7 @@ use crate::model::{Album, Artist, Artwork, Track};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     fs,
     net::TcpStream,
     path::PathBuf,
@@ -38,6 +39,61 @@ static QUEUE: Mutex<Option<(Vec<Track>, usize)>> = Mutex::new(None);
 
 pub fn queue() -> Option<(Vec<Track>, usize)> {
     QUEUE.lock().ok().and_then(|queue| queue.clone())
+}
+
+/// Songs looked up for the queue; Soloist names only the first few
+/// upcoming songs fully.
+static DESCRIBED: Mutex<BTreeMap<String, Track>> = Mutex::new(BTreeMap::new());
+
+/// Fills in queue songs Soloist sent without a name, artists or artwork.
+/// True when any changed.
+pub fn describe(tracks: &mut [Track], lookup: impl Fn(&str) -> Option<Track>) -> bool {
+    let mut changed = false;
+    for track in tracks.iter_mut().filter(|track| incomplete(track)) {
+        let known = DESCRIBED
+            .lock()
+            .ok()
+            .and_then(|described| described.get(&track.uri).cloned());
+        let Some(full) = known.or_else(|| {
+            let full = lookup(&track.uri)?;
+            if let Ok(mut described) = DESCRIBED.lock() {
+                if described.len() >= 500 {
+                    described.clear();
+                }
+                described.insert(track.uri.clone(), full.clone());
+            }
+            Some(full)
+        }) else {
+            continue;
+        };
+        fill(track, full);
+        changed = true;
+    }
+    changed
+}
+
+fn incomplete(track: &Track) -> bool {
+    track.name.is_empty() || track.artists.is_empty() || track.album.images.is_empty()
+}
+
+fn fill(track: &mut Track, full: Track) {
+    if track.name.is_empty() {
+        track.name = full.name;
+    }
+    if track.artists.is_empty() {
+        track.artists = full.artists;
+    }
+    if track.album.images.is_empty() {
+        track.album.images = full.album.images;
+    }
+    if track.album.uri.is_empty() {
+        track.album.uri = full.album.uri;
+        track.album.id = full.album.id;
+        track.album.name = full.album.name;
+    }
+    if track.duration_ms == 0 {
+        track.duration_ms = full.duration_ms;
+    }
 }
 
 fn set_queue(queue: Option<(Vec<Track>, usize)>) {
@@ -359,8 +415,22 @@ fn commands(action: &PlayerAction) -> Vec<Value> {
         PlayerAction::Enqueue(uri) if uri.starts_with("spotify:track:") => {
             vec![command("add_to_queue", json!({"uri": uri}))]
         }
+        PlayerAction::SkipTo(uri) => {
+            skips_to(uri, &queue().map(|(tracks, _)| tracks).unwrap_or_default())
+        }
         _ => Vec::new(),
     }
+}
+
+/// Skips forward to a song in Soloist's queue. Connect's skip to a named
+/// song makes Soloist stop instead.
+fn skips_to(uri: &str, upcoming: &[Track]) -> Vec<Value> {
+    upcoming
+        .iter()
+        .position(|track| track.uri == uri)
+        .map_or_else(Vec::new, |index| {
+            vec![command("skip_next", json!({})); index + 1]
+        })
 }
 
 #[derive(Deserialize)]
@@ -647,5 +717,22 @@ mod tests {
         assert_eq!(commands(&PlayerAction::Repeat("context".into())).len(), 2);
         assert!(commands(&PlayerAction::Play(Some("spotify:track:x".into()))).is_empty());
         assert!(commands(&PlayerAction::Enqueue("spotify:episode:x".into())).is_empty());
+    }
+
+    #[test]
+    fn skipping_to_a_queued_song_skips_up_to_it() {
+        let upcoming: Vec<Track> = ["a", "b", "c"]
+            .iter()
+            .map(|id| Track {
+                uri: format!("spotify:track:{id}"),
+                ..Default::default()
+            })
+            .collect();
+        assert_eq!(skips_to("spotify:track:c", &upcoming).len(), 3);
+        assert_eq!(
+            skips_to("spotify:track:a", &upcoming),
+            vec![json!({"type":"command","command":"skip_next"})]
+        );
+        assert!(skips_to("spotify:track:z", &upcoming).is_empty());
     }
 }
