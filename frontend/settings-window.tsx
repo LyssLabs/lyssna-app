@@ -45,6 +45,7 @@ import { SOLOIST_PLAYS, SoloistRows } from "./soloist-settings";
 
 /** Default source order; LRCLIB and Netease start off. */
 const DEFAULT_SOURCES = [
+  "lrcred",
   "spicy",
   "apple",
   "musixmatch",
@@ -55,6 +56,10 @@ const DEFAULT_SOURCES = [
 const DEFAULT_SOURCES_OFF = ["lrclib", "netease"];
 /** Lyric sources Lyssna can use, as listed in Sources. */
 const SOURCES: Record<string, { name: string; help: string }> = {
+  lrcred: {
+    name: "lrc.red",
+    help: "Free synced lyrics with word timing, looked up by the song's ISRC. Receives the ISRC.",
+  },
   spicy: {
     name: "Spicy Lyrics",
     help: "Community-contributed lyrics from Spicy Lyrics. Receives the track ID and your IP address.",

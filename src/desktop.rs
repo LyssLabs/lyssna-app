@@ -5394,7 +5394,8 @@ fn allowed_link(url: &url::Url) -> bool {
                 | "developer.spotify.com"
                 | "developers.spicylyrics.org"
                 | "spicylyrics.org"
-                | "lyrprep.spicylyrics.org",
+                | "lyrprep.spicylyrics.org"
+                | "lrc.red",
             ) => true,
             Some("github.com") => {
                 CREDITED.contains(&url.path()) && url.query().is_none() && url.fragment().is_none()
@@ -6484,6 +6485,7 @@ mod tests {
         assert!(allowed("https://github.com/iPixelGalaxy/spotify-plus"));
         assert!(allowed("https://github.com/Stormanzanii/Lyssna"));
         assert!(allowed("https://github.com/Spikerko"));
+        assert!(allowed("https://lrc.red/"));
         assert!(!allowed("https://github.com/someone/else"));
         assert!(!allowed(
             "https://github.com/iPixelGalaxy/spotify-plus/releases"

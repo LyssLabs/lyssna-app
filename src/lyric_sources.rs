@@ -1,7 +1,8 @@
 //! Lyric sources and the order they are tried in, as chosen in Lyrics
 //! settings → Sources. Reimplements the source manager of the Spicy Lyrics
 //! fork (iPixelGalaxy/spicy-lyrics, `src/utils/Lyrics/Sources`, AGPL-3.0):
-//! the same six sources, default order and quality-first selection.
+//! the same six sources, default order and quality-first selection, plus
+//! lrc.red.
 //!
 //! What each source receives:
 //! - Spicy Lyrics / Apple Music: the configured Spicy Lyrics provider (one
@@ -12,6 +13,8 @@
 //! - Spotify: the track ID, through the signed-in native Spotify session.
 //! - LRCLIB: title, artist, album and length (lrclib.net).
 //! - Netease: title and artist, through the third-party proxy the fork uses.
+//! - lrc.red: the song's ISRC (lrc.red), with a User-Agent naming Lyssna and
+//!   a contact address, as its terms require.
 //!
 //! No source receives Spotify access or refresh tokens.
 
@@ -29,7 +32,8 @@ use crate::lyrics::{Line, Lyrics, Word};
 use crate::model::Track;
 
 /// Every known source, in default order.
-pub const DEFAULT_ORDER: [&str; 6] = [
+pub const DEFAULT_ORDER: [&str; 7] = [
+    "lrcred",
     "spicy",
     "apple",
     "musixmatch",
@@ -63,16 +67,29 @@ pub fn prefer_apple() -> bool {
     PREFER_APPLE.load(Ordering::Relaxed)
 }
 
+/// Sources added later that join saved orders ahead of another source
+/// rather than at the end.
+const JOIN_BEFORE: [(&str, &str); 1] = [("lrcred", "spicy")];
+
 /// Known source IDs in the saved order, with any missing ones appended.
 pub fn normalize_order(order: &[String]) -> Vec<String> {
     let mut result: Vec<String> = Vec::new();
-    for id in order
-        .iter()
-        .map(String::as_str)
-        .chain(DEFAULT_ORDER.iter().copied())
-    {
+    for id in order.iter().map(String::as_str) {
         if DEFAULT_ORDER.contains(&id) && !result.iter().any(|known| known == id) {
             result.push(id.to_owned());
+        }
+    }
+    for id in DEFAULT_ORDER {
+        if result.iter().any(|known| known == id) {
+            continue;
+        }
+        let before = JOIN_BEFORE
+            .iter()
+            .find(|(new, _)| *new == id)
+            .and_then(|(_, before)| result.iter().position(|known| known == before));
+        match before {
+            Some(at) => result.insert(at, id.to_owned()),
+            None => result.push(id.to_owned()),
         }
     }
     result
@@ -859,6 +876,48 @@ fn netease_credit(text: &str) -> bool {
     .any(|keyword| label.contains(keyword))
 }
 
+// -------------------------------------------------------------- lrc.red
+
+/// lrc.red's terms: name the app, with a link and a contact address.
+const LRC_RED_AGENT: &str = concat!(
+    "Lyssna/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/Stormanzanii/Lyssna; 145221345+Stormanzanii@users.noreply.github.com)"
+);
+
+/// Looks the song up on lrc.red by its ISRC; its TTML carries word timing,
+/// singers and background vocals where the song has them.
+pub fn lrc_red(
+    client: &Client,
+    native: &crate::native::NativeControls,
+    track: &Track,
+) -> Result<Lyrics> {
+    ensure!(!track.is_local, "lrc.red needs a Spotify song");
+    let isrc = native
+        .isrc(&track.uri)?
+        .context("lrc.red needs the song's ISRC")?;
+    let response = client
+        .get(format!("https://lrc.red/s/{isrc}.ttml"))
+        .header(reqwest::header::USER_AGENT, LRC_RED_AGENT)
+        .send()
+        .context("lrc.red is unreachable")?;
+    ensure!(
+        response.status() != reqwest::StatusCode::NOT_FOUND,
+        "lrc.red has no lyrics for this song"
+    );
+    ensure!(
+        response.status().is_success(),
+        "lrc.red answered {}",
+        response.status()
+    );
+    let mut lyrics = crate::lyrics::parse_ttml(
+        &response.text().context("lrc.red returned invalid data")?,
+        track.duration_ms,
+    )?;
+    lyrics.source = "lrc.red".into();
+    Ok(lyrics)
+}
+
 /// Looks the song up through the Netease proxy the fork uses.
 pub fn netease(client: &Client, track: &Track) -> Result<Lyrics> {
     const BASE: &str = "https://music.xianqiao.wang/neteaseapiv2/";
@@ -966,6 +1025,7 @@ mod tests {
             normalize_order(&["lrclib".into(), "bogus".into(), "lrclib".into()]),
             vec![
                 "lrclib",
+                "lrcred",
                 "spicy",
                 "apple",
                 "musixmatch",
@@ -982,7 +1042,19 @@ mod tests {
     fn new_sources_start_in_the_forks_default_state() {
         let mut disabled = vec!["lrclib".to_owned()];
         let order = migrate(&["spicy".into(), "lrclib".into()], &mut disabled);
-        assert_eq!(order.len(), 6);
+        assert_eq!(
+            order,
+            [
+                "lrcred",
+                "spicy",
+                "lrclib",
+                "apple",
+                "musixmatch",
+                "spotify",
+                "netease"
+            ]
+        );
+        assert!(!disabled.contains(&"lrcred".to_owned()));
         assert!(disabled.contains(&"netease".to_owned()));
         assert!(!disabled.contains(&"musixmatch".to_owned()));
         // A source the user turned on is not turned back off.

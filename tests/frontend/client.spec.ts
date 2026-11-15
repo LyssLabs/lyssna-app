@@ -9745,6 +9745,7 @@ test("Lyssna settings combines app and lyrics options with ordered sources", asy
   await openSettings(page, "Sources");
   const sources = page.locator(".lyric-sources li");
   await expect(sources).toHaveText([
+    /lrc\.red/,
     /Spicy Lyrics/,
     /Apple Music/,
     /Musixmatch/,
@@ -9762,7 +9763,15 @@ test("Lyssna settings combines app and lyrics options with ordered sources", asy
   await page.getByTitle("Move Spotify up", { exact: true }).click();
   await expect
     .poll(() => saved("lyrics_source_order"))
-    .toEqual(["spicy", "apple", "spotify", "musixmatch", "lrclib", "netease"]);
+    .toEqual([
+      "lrcred",
+      "spicy",
+      "apple",
+      "spotify",
+      "musixmatch",
+      "lrclib",
+      "netease",
+    ]);
   await page.getByRole("tab", { name: "Lyrics", exact: true }).click();
   await page.getByRole("switch", { name: "Right align lyrics" }).check();
   await page.getByRole("switch", { name: "Simple lyrics mode" }).check();

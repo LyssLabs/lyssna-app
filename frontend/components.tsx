@@ -1171,7 +1171,19 @@ const LyricCredits = memo(function LyricCredits({
     );
   return (
     <div className={`lyric-source ${expanded ? "expanded" : ""}`}>
-      Lyrics provided by: {source}
+      Lyrics provided by:{" "}
+      {lyrics.source === "lrc.red" ? (
+        <button
+          className="community-profile"
+          onClick={() =>
+            void rpc("open_link", { url: "https://lrc.red/" }).catch(() => {})
+          }
+        >
+          lrc.red
+        </button>
+      ) : (
+        source
+      )}
       {lyrics.estimated_words
         ? lyrics.estimated_lines
           ? " (+ estimated line and word timing)"

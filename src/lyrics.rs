@@ -925,6 +925,9 @@ fn fetch_from(
                 crate::lyric_sources::spotify(&native, &track)
             }),
             "lrclib" => cache.get("lrclib", &|| crate::lyric_sources::lrclib(&client, &track)),
+            "lrcred" => cache.get("lrcred", &|| {
+                crate::lyric_sources::lrc_red(&client, &native, &track)
+            }),
             "netease" => cache.get("netease", &|| {
                 crate::lyric_sources::netease(&client, &track)
             }),
