@@ -315,6 +315,12 @@
 .liquid-glass .device-menu::after {
   display: none;
 }
+.liquid-glass .device-menu-arrow {
+  background: var(--glass-fill-strong);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-color: #ffffff1f;
+}
 .liquid-glass .recent-searches,
 .liquid-glass .device-menu {
   box-shadow:

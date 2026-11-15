@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { useLayoutEffect, useState, type CSSProperties } from "react";
 import {
   DeviceIcon,
   type DeviceKind as Kind,
@@ -132,46 +133,93 @@ export function DeviceMenu({
         pick: () => onPick(device.id || "native"),
       };
     });
+  const anchor = useDevicesButton();
   const rows = [local, ...remote];
   const current = rows.find((row) => row.key === target) ?? local;
   const others = rows.filter((row) => row !== current);
 
   return (
-    <div className="device-menu popover">
-      <h3>Connect to a device</h3>
-      <button className="device-row current selected" onClick={current.pick}>
-        <DeviceIcon kind={current.kind} platform={current.platform} size={26} />
-        <div>
-          <small>Current device</small>
-          <strong>{current.name}</strong>
-        </div>
-        {playing ? (
-          <LevelBars className="device-bars" live={current === local} />
-        ) : (
-          <Check size={18} />
-        )}
-      </button>
-      <h4 className="device-section">Select another device</h4>
-      {others.map((row) => (
-        <button
-          key={row.key}
-          className={`device-row${row.standby ? " standby" : ""}`}
-          title={row.standby ? "Start Spotify on the speaker first" : undefined}
-          onClick={row.pick}
-        >
-          <DeviceIcon kind={row.kind} platform={row.platform} size={22} />
+    <>
+      <div className="device-menu popover" style={anchor?.menu}>
+        <h3>Connect to a device</h3>
+        <button className="device-row current selected" onClick={current.pick}>
+          <DeviceIcon
+            kind={current.kind}
+            platform={current.platform}
+            size={26}
+          />
           <div>
-            <strong>{row.name}</strong>
-            <small>{row.status}</small>
+            <small>Current device</small>
+            <strong>{current.name}</strong>
           </div>
+          {playing ? (
+            <LevelBars className="device-bars" live={current === local} />
+          ) : (
+            <Check size={18} />
+          )}
         </button>
-      ))}
-      {others.length === 0 && (
-        <p className="device-empty">
-          Open Spotify on a phone, speaker or TV signed in to this account and
-          it will show up here.
-        </p>
+        <h4 className="device-section">Select another device</h4>
+        {others.map((row) => (
+          <button
+            key={row.key}
+            className={`device-row${row.standby ? " standby" : ""}`}
+            title={
+              row.standby ? "Start Spotify on the speaker first" : undefined
+            }
+            onClick={row.pick}
+          >
+            <DeviceIcon kind={row.kind} platform={row.platform} size={22} />
+            <div>
+              <strong>{row.name}</strong>
+              <small>{row.status}</small>
+            </div>
+          </button>
+        ))}
+        {others.length === 0 && (
+          <p className="device-empty">
+            Open Spotify on a phone, speaker or TV signed in to this account and
+            it will show up here.
+          </p>
+        )}
+      </div>
+      {anchor && (
+        <span className="device-menu-arrow" style={anchor.arrow} aria-hidden />
       )}
-    </div>
+    </>
   );
+}
+
+const MENU_WIDTH = 320;
+const GAP = 18;
+
+/** Places the menu over the player bar's Devices button, as Spotify does,
+ *  with an arrow pointing at it. */
+function useDevicesButton() {
+  const [anchor, setAnchor] = useState<{
+    menu: CSSProperties;
+    arrow: CSSProperties;
+  }>();
+  useLayoutEffect(() => {
+    const place = () => {
+      const button = document.querySelector<HTMLElement>(
+        ".player-bar .devices-button",
+      );
+      const box = button?.getBoundingClientRect();
+      if (!box?.width) return setAnchor(undefined);
+      const centre = box.left + box.width / 2;
+      const left = Math.min(
+        Math.max(centre - MENU_WIDTH / 2, 8),
+        window.innerWidth - MENU_WIDTH - 8,
+      );
+      const bottom = window.innerHeight - box.top + GAP;
+      setAnchor({
+        menu: { left, right: "auto", bottom },
+        arrow: { left: centre, bottom: bottom - 10 },
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, []);
+  return anchor;
 }

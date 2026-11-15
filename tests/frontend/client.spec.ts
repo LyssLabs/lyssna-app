@@ -19091,3 +19091,43 @@ for (const [name, view] of [
     test.setTimeout(60000);
     await finishedLineRest(page, view);
   });
+
+test("device menu points at the Devices button, which turns green when open or playing elsewhere", async ({
+  page,
+}) => {
+  await startClient(page);
+  const button = page.locator(".player-bar").getByTitle("Devices");
+  await expect(button).not.toHaveClass(/active|connected/);
+  await button.click();
+  const menu = page.locator(".device-menu");
+  await expect(button).toHaveClass(/\bactive\b/);
+  await expect(menu.locator("h3")).toHaveCSS("text-align", "center");
+  const arrow = (await page.locator(".device-menu-arrow").boundingBox())!;
+  const box = (await button.boundingBox())!;
+  const menuBox = (await menu.boundingBox())!;
+  expect(
+    Math.abs(arrow.x + arrow.width / 2 - (box.x + box.width / 2)),
+  ).toBeLessThan(2);
+  expect(arrow.y + arrow.height).toBeLessThan(box.y);
+  expect(menuBox.y + menuBox.height).toBeLessThan(box.y);
+  await button.click();
+  await expect(menu).toHaveCount(0);
+  await expect(button).not.toHaveClass(/\bactive\b/);
+  await page.evaluate(
+    ({ base, track }) =>
+      (window as any).__clientTest.emit({
+        type: "playback",
+        playback: {
+          ...base,
+          item: track,
+          is_playing: true,
+          device: { id: "remote", name: "iPhone", is_active: true },
+        },
+        observed_at: Date.now(),
+        changed: false,
+      }),
+    { base: emptyState.playback, track },
+  );
+  await expect(button).toHaveClass(/\bconnected\b/);
+  await expect(button).toHaveCSS("color", "rgb(30, 215, 96)");
+});

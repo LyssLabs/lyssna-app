@@ -4515,6 +4515,26 @@ input[type="range"]:hover {
 .device-menu h3 {
   padding: 10px 10px 6px;
   font-size: 16px;
+  text-align: center;
+}
+/* Points down at the Devices button. Only the lower half of the turned
+   square shows, so it reads as one piece with the menu above it. */
+.device-menu-arrow {
+  position: fixed;
+  z-index: 46;
+  width: 20px;
+  height: 20px;
+  translate: -50% 0;
+  rotate: 45deg;
+  background: light-dark(#dcdcdc, #232323);
+  border-right: 1px solid light-dark(#00000012, #ffffff12);
+  border-bottom: 1px solid light-dark(#00000012, #ffffff12);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+/* Playing on another device, as Spotify marks it. */
+.player-bar .devices-button.connected {
+  color: #1ed760;
 }
 .device-section {
   margin: 6px 10px 2px;

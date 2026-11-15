@@ -5418,6 +5418,7 @@ function App() {
           onFullscreen={() => void fullscreen()}
           lyricsActive={center === "lyrics"}
           queueActive={sidebar && panel === "queue"}
+          devicesActive={deviceMenu}
           sidebarActive={sidebar && panel === "now"}
         />
       )}
@@ -6562,6 +6563,7 @@ function PlayerBar({
   lyricsActive,
   sidebarActive,
   queueActive,
+  devicesActive,
 }: {
   state: AppState;
   onPlayer: (request: PlayerRequest) => void;
@@ -6581,6 +6583,7 @@ function PlayerBar({
   lyricsActive: boolean;
   sidebarActive: boolean;
   queueActive: boolean;
+  devicesActive: boolean;
 }) {
   const track = state.playback.item;
   const [volume, setVolume] = useState(
@@ -6784,7 +6787,11 @@ function PlayerBar({
         >
           <ListMusic size={21} />
         </button>
-        <button className="icon-button" title="Devices" onClick={onDevices}>
+        <button
+          className={`icon-button devices-button${devicesActive ? " active" : ""}${elsewhere ? " connected" : ""}`}
+          title="Devices"
+          onClick={onDevices}
+        >
           {elsewhere ? (
             <DeviceIcon
               kind={deviceKind(playingOn)}
