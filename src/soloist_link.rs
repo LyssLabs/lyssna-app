@@ -429,7 +429,6 @@ fn commands(action: &PlayerAction) -> Vec<Value> {
         PlayerAction::Previous => vec![command("skip_prev", json!({}))],
         PlayerAction::Seek(position) => vec![command("seek", json!({"position_ms": position}))],
         PlayerAction::Volume(volume) => {
-            note_volume(Some((*volume).min(100)));
             vec![command("set_volume", json!({"volume": (*volume).min(100)}))]
         }
         PlayerAction::Shuffle(enabled) => {
@@ -655,24 +654,8 @@ impl Playback {
             } else {
                 self.options.repeat
             },
-            volume: {
-                note_volume(self.volume);
-                self.volume
-            },
+            volume: self.volume,
         }
-    }
-}
-
-/// Soloist's last known volume, or `u32::MAX` before it reports one.
-static VOLUME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
-
-pub fn volume() -> u32 {
-    VOLUME.load(Ordering::Relaxed)
-}
-
-fn note_volume(volume: Option<u8>) {
-    if let Some(volume) = volume {
-        VOLUME.store(u32::from(volume), Ordering::Relaxed);
     }
 }
 

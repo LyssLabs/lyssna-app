@@ -471,41 +471,6 @@ test("device menu shows each device with an icon for its kind", async ({
   await expect(menu.locator(".device-row.current")).toContainText("Pixel");
 });
 
-test("playing bars follow Spotify Soloist's audio on this computer", async ({
-  page,
-}) => {
-  await startClient(page);
-  await page.evaluate((settings) => {
-    const test = (window as any).__clientTest;
-    test.answers = { ...test.answers, audio_levels: [255, 0, 96] };
-    test.emit({ type: "settings", settings: { ...settings, soloist: true } });
-    test.emit({
-      type: "devices",
-      devices: [{ id: "soloist", name: "Lyssna Player", is_active: true }],
-    });
-  }, emptyState.settings);
-  await page.evaluate(
-    ({ base, track }) =>
-      (window as any).__clientTest.emit({
-        type: "playback",
-        playback: {
-          ...base,
-          item: track,
-          is_playing: true,
-          device: { id: "soloist", name: "Lyssna Player", is_active: true },
-        },
-        observed_at: Date.now(),
-        changed: false,
-      }),
-    { base: emptyState.playback, track },
-  );
-  await page.getByTitle("Devices", { exact: true }).click();
-  await expect(page.locator(".device-row.current")).toContainText(
-    "Lyssna Player",
-  );
-  await expect(page.locator(".device-bars.live i")).toHaveCount(3);
-});
-
 test("a computer without a battery shows a monitor", async ({ page }) => {
   await page.addInitScript(() => {
     const clone = window.structuredClone;

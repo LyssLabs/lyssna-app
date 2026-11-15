@@ -530,13 +530,6 @@ function App() {
     !!state.local_device_name &&
     state.playback.device.name === state.local_device_name;
   const playingHere = here && state.playback.is_playing;
-  // Soloist's audio is captured for the bars on Windows only.
-  const barsLive =
-    (here ||
-      (!IS_MAC &&
-        !!state.settings.soloist &&
-        state.playback.device.name === SOLOIST_DEVICE)) &&
-    state.playback.is_playing;
   useEffect(() => {
     if (here) setTarget("native");
   }, [here]);
@@ -4670,7 +4663,7 @@ function App() {
                                     {current && state.playback.is_playing ? (
                                       <LevelBars
                                         className="equalizer"
-                                        live={barsLive}
+                                        live={playingHere}
                                       />
                                     ) : (
                                       index + 1
@@ -5457,7 +5450,6 @@ function App() {
           localDesktop={state.local_desktop}
           target={target}
           playing={state.playback.is_playing}
-          barsLive={barsLive}
           nativeStatus={
             state.native_ready && !offline
               ? "Ready for native playback"
