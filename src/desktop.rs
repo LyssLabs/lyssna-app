@@ -279,7 +279,26 @@ fn soloist_active(inner: &Inner) -> bool {
 fn watch_soloist(inner: Arc<Inner>, app: tauri::AppHandle) {
     thread::spawn(move || {
         let mut looked_up: Option<Instant> = None;
+        let mut saved = Instant::now();
         while !inner.stopped.load(Ordering::Relaxed) {
+            // Soloist reports only when the song or play state changes, and
+            // a closed or killed Lyssna may skip its exit save, so keep the
+            // listening position fresh as Lyssna's own player does.
+            if saved.elapsed() >= Duration::from_secs(5) {
+                saved = Instant::now();
+                if let Ok(snapshot) = inner.snapshot.lock()
+                    && snapshot.playback.is_playing
+                    && snapshot.playback.device.name == crate::soloist::DEVICE_NAME
+                    && let Some(profile) = &snapshot.profile
+                {
+                    let _ = crate::resume::save(
+                        &profile.id,
+                        &snapshot.playback,
+                        snapshot.observed_at,
+                        true,
+                    );
+                }
+            }
             let status = inner
                 .soloist
                 .lock()
@@ -3823,12 +3842,20 @@ fn hand_over_playback(inner: &Inner) {
 /// Playback with its position brought up to now: this computer's player
 /// reports its position on changes, not continuously.
 fn playback_now(snapshot: &Snapshot) -> crate::model::Playback {
-    let mut playback = snapshot.playback.clone();
-    if playback.is_playing && playback.device.name == native::device_name() {
-        playback.progress_ms = Some(
-            playback.progress_ms.unwrap_or_default()
-                + now_ms().saturating_sub(snapshot.observed_at),
-        );
+    playback_at(&snapshot.playback, snapshot.observed_at, now_ms())
+}
+fn playback_at(
+    playback: &crate::model::Playback,
+    observed_at: u64,
+    now: u64,
+) -> crate::model::Playback {
+    let mut playback = playback.clone();
+    if playback.is_playing
+        && (playback.device.name == native::device_name()
+            || playback.device.name == crate::soloist::DEVICE_NAME)
+    {
+        playback.progress_ms =
+            Some(playback.progress_ms.unwrap_or_default() + now.saturating_sub(observed_at));
     }
     playback
 }
@@ -6398,6 +6425,19 @@ mod tests {
         assert!(soloist_for("transfer", soloist, soloist, Some("phone")));
         assert!(soloist_for("next", Some("phone"), soloist, soloist));
         assert!(!soloist_for("next", None, None, None));
+    }
+    #[test]
+    fn soloists_position_moves_on_between_its_reports() {
+        let mut playback = crate::model::Playback {
+            is_playing: true,
+            progress_ms: Some(10_000),
+            ..Default::default()
+        };
+        playback.device.name = crate::soloist::DEVICE_NAME.into();
+        assert_eq!(
+            playback_at(&playback, 1_000, 31_000).progress_ms,
+            Some(40_000)
+        );
     }
     #[test]
     fn soloist_leaves_dj_controls_with_lyssnas_player() {
