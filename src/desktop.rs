@@ -184,6 +184,8 @@ fn set_soloist(inner: &Inner, wanted: bool) {
             let events = inner.events_in.clone();
             let controls = inner.controls.clone();
             let mut known: Option<crate::model::Track> = None;
+            let mut last_playing: Option<crate::soloist_link::State> = None;
+            let mut hold: Option<(String, i64)> = None;
             *link = Some(crate::soloist_link::Link::start(
                 data,
                 move |mut state| {
@@ -199,6 +201,25 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                                 }
                             }
                         }
+                    }
+                    // A song that ended on its own still plays out after
+                    // Soloist names the next; its first reports wait for it.
+                    let uri = state.track.as_ref().map(|track| track.uri.clone());
+                    if let (Some(previous), Some(uri)) = (&last_playing, &uri)
+                        && let Some(lag) = crate::soloist_link::handover_lag(previous, &state)
+                    {
+                        native::diagnostic(&format!("soloist holds the next song {lag} ms"));
+                        hold = Some((uri.clone(), lag));
+                    }
+                    if let Some((song, lag)) = &hold {
+                        if uri.as_ref() != Some(song) {
+                            hold = None;
+                        } else if state.position_ms <= 1500 {
+                            state.measured_at += lag;
+                        }
+                    }
+                    if state.playing {
+                        last_playing = Some(state.clone());
                     }
                     let observed_at = now_ms().max(state.measured_at.max(0) as u64);
                     let _ = events.send(Event::SoloistPlayback(

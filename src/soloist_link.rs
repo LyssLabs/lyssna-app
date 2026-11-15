@@ -319,13 +319,8 @@ fn run(
         return;
     }
     let mut playing: Option<String> = None;
-    let mut last_playing: Option<State> = None;
-    let mut handover: Option<(String, i64)> = None;
     while !stop.load(Ordering::Acquire) {
         while let Ok(command) = commands.try_recv() {
-            // A command from Lyssna, such as a seek, flushes what Soloist
-            // read ahead.
-            handover = None;
             if socket.send(Message::text(command.to_string())).is_err() {
                 return;
             }
@@ -349,24 +344,7 @@ fn run(
                     Some("playback_state") => {
                         if let Ok(playback) = serde_json::from_value::<Playback>(message) {
                             log_state(&playback);
-                            let mut state = playback.state();
-                            let now = unix_ms();
-                            let uri = state.track.as_ref().map(|track| track.uri.clone());
-                            if let (Some(previous), Some(uri)) = (&last_playing, &uri)
-                                && let Some(lag) = handover_lag(previous, &state, now)
-                            {
-                                handover = Some((uri.clone(), lag));
-                            }
-                            if let Some((song, lag)) = &handover {
-                                if uri.as_ref() == Some(song) {
-                                    state.measured_at += lag;
-                                } else {
-                                    handover = None;
-                                }
-                            }
-                            if state.playing {
-                                last_playing = Some(state.clone());
-                            }
+                            let state = playback.state();
                             flags.set(state.active, state.track.is_some());
                             let uri = state.track.as_ref().map(|track| track.uri.clone());
                             if uri != playing {
@@ -443,10 +421,10 @@ fn unix_ms() -> i64 {
 }
 
 /// How long the song that just ended still plays. When a song ends on its
-/// own, Soloist reports the next one about two seconds before the end of
+/// own, Soloist reports the next one about three seconds before the end of
 /// the audio it read ahead, so the next song's position starts that much
-/// later.
-fn handover_lag(previous: &State, next: &State, now: i64) -> Option<i64> {
+/// later. Needs the ended song's length, which Soloist's reports can lack.
+pub fn handover_lag(previous: &State, next: &State) -> Option<i64> {
     let ended = previous.track.as_ref()?;
     let starting = next.track.as_ref()?;
     if !previous.playing
@@ -456,7 +434,7 @@ fn handover_lag(previous: &State, next: &State, now: i64) -> Option<i64> {
     {
         return None;
     }
-    let heard = previous.position_ms as i64 + (now - previous.measured_at).max(0);
+    let heard = previous.position_ms as i64 + (next.measured_at - previous.measured_at).max(0);
     let left = ended.duration_ms as i64 - heard;
     (left > 0 && left <= 5000).then_some(left)
 }
@@ -864,25 +842,23 @@ mod tests {
         };
         let next = State {
             track: Some(song("new", 200_000)),
+            measured_at: 1_000_400,
             ..Default::default()
         };
         // Reported 400 ms after the old song's last report: 2 s of it left.
-        assert_eq!(handover_lag(&ending, &next, 1_000_400), Some(2_048));
-        let picked = State {
-            track: Some(song("new", 200_000)),
-            ..Default::default()
-        };
+        assert_eq!(handover_lag(&ending, &next), Some(2_048));
+        let picked = next.clone();
         // Picked a minute before the end: nothing was read ahead to wait on.
         let early = State {
             position_ms: 195_352,
             ..ending.clone()
         };
-        assert_eq!(handover_lag(&early, &picked, 1_000_400), None);
+        assert_eq!(handover_lag(&early, &picked), None);
         let paused = State {
             playing: false,
             ..ending.clone()
         };
-        assert_eq!(handover_lag(&paused, &next, 1_000_400), None);
+        assert_eq!(handover_lag(&paused, &next), None);
     }
 
     #[test]
