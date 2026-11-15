@@ -612,6 +612,10 @@ pub fn levels() -> [u8; 3] {
     [low, mid, high]
 }
 
+pub(crate) fn show_levels(samples: &[f32]) {
+    LEVELS.store(band_levels(samples), Ordering::Relaxed);
+}
+
 fn band_levels(samples: &[f32]) -> u32 {
     let frames = samples.len() / usize::from(CHANNELS);
     if frames == 0 {

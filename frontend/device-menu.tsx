@@ -97,6 +97,7 @@ export function DeviceMenu({
   target,
   nativeStatus,
   playing,
+  barsLive,
   onPick,
 }: {
   devices: Device[];
@@ -105,6 +106,7 @@ export function DeviceMenu({
   target: string;
   nativeStatus: string;
   playing: boolean;
+  barsLive: boolean;
   onPick: (target: string) => void;
 }) {
   const local: Row = {
@@ -153,7 +155,7 @@ export function DeviceMenu({
             <strong>{current.name}</strong>
           </div>
           {playing ? (
-            <LevelBars className="device-bars" live={current === local} />
+            <LevelBars className="device-bars" live={barsLive} />
           ) : (
             <Check size={18} />
           )}

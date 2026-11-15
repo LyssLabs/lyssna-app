@@ -29,6 +29,8 @@ pub mod library_cache;
 pub mod library_items;
 pub mod links;
 pub mod local_files;
+#[cfg(windows)]
+mod loopback;
 pub mod lyric_sources;
 pub mod lyrics;
 #[cfg(target_os = "macos")]

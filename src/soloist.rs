@@ -732,6 +732,8 @@ fn supervise(status: &Mutex<Status>, stop: &AtomicBool) {
         if let Some(job) = &job {
             job.assign(&child);
         }
+        #[cfg(windows)]
+        let _levels = crate::loopback::Levels::follow(child.id());
         let started = Instant::now();
         let mut seed_restart = false;
         let code = loop {
