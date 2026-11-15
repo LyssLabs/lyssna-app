@@ -14,7 +14,7 @@ use std::{
     process::{Child, Command},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -588,18 +588,32 @@ fn spawn(exe: &Path, data: &Path, cache: &Path, key: &str) -> Result<Child> {
 
 const NORMALIZE: &str = "audio.normalize_v2";
 const CROSSFADE: &str = "audio.crossfade_v2";
+const CROSSFADE_MS: &str = "audio.crossfade.time_v2";
 // Spotify moved crossfade out of prefs and ignores the key once migrated;
 // clearing the flag makes it migrate the "off" value in again on start.
 const CROSSFADE_MIGRATED: &str = "audio.crossfade_migrated_to_ps";
 const SEEDED_MARKER: &str = ".soloist-prefs-seeded";
 
-/// Updates `existing` prefs with volume normalization and crossfade turned
-/// off, preserving every other key. A crossfaded song change would put the
-/// next song's lyrics over the last song's tail.
+static CROSSFADE_SECONDS: AtomicU8 = AtomicU8::new(0);
+
+/// Lyssna's Crossfade songs setting, applied when Soloist next starts.
+pub fn set_crossfade(seconds: u8) {
+    CROSSFADE_SECONDS.store(seconds, Ordering::Release);
+}
+
+/// Updates `existing` prefs with volume normalization off and crossfade
+/// from Lyssna's setting (0 seconds is off), preserving every other key.
 pub fn merge_prefs(existing: &str) -> String {
+    merge_prefs_with(existing, CROSSFADE_SECONDS.load(Ordering::Acquire))
+}
+
+fn merge_prefs_with(existing: &str, crossfade: u8) -> String {
+    let on = if crossfade > 0 { "true" } else { "false" };
+    let length = (u32::from(crossfade.max(1)) * 1000).to_string();
     let wanted = [
         (NORMALIZE, "false"),
-        (CROSSFADE, "false"),
+        (CROSSFADE, on),
+        (CROSSFADE_MS, length.as_str()),
         (CROSSFADE_MIGRATED, "false"),
     ];
     let mut lines: Vec<String> = existing
@@ -949,10 +963,13 @@ mod tests {
     #[test]
     fn merge_prefs_turns_crossfade_off() {
         let sample = "audio.crossfade_v2=true\naudio.crossfade_migrated_to_ps=true\n";
-        let merged = merge_prefs(sample);
+        let merged = merge_prefs_with(sample, 0);
         assert!(merged.contains("audio.crossfade_v2=false\n"));
         assert!(merged.contains("audio.crossfade_migrated_to_ps=false\n"));
         assert!(!merged.contains("=true"));
+        let on = merge_prefs_with(&merged, 6);
+        assert!(on.contains("audio.crossfade_v2=true\n"));
+        assert!(on.contains("audio.crossfade.time_v2=6000\n"));
     }
 
     #[test]

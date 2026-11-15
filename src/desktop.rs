@@ -3163,6 +3163,7 @@ fn apply_crossfade(
         settings.active_crossfade_seconds()
     };
     controls.set_crossfade(account, seconds, settings.crossfade_picked);
+    crate::soloist::set_crossfade(seconds);
 }
 #[tauri::command]
 fn hold_crossfade(held: bool, state: State<'_, Desktop>) -> std::result::Result<(), String> {
