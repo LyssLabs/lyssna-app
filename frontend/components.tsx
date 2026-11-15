@@ -1,4 +1,5 @@
 import { contextName } from "./playing-context";
+import { fillFromKnown, knownTracks } from "./queue-fill";
 import {
   memo,
   Fragment,
@@ -2727,8 +2728,19 @@ export function QueuePanel({
   onJamEnd?: () => void;
   onJamControl?: (allowed: boolean) => void;
 }) {
-  const track = state.playback.item,
-    raw = state.details.queue;
+  const track = state.playback.item;
+  const known = useMemo(
+    () =>
+      knownTracks([
+        state.tracks,
+        ...Object.values(state.pages).map((page) => page.tracks),
+      ]),
+    [state.tracks, state.pages],
+  );
+  const raw = useMemo(
+    () => state.details.queue.map((item) => fillFromKnown(item, known)),
+    [state.details.queue, known],
+  );
   // Spotify can report the advanced queue a moment before the song changes.
   // The leaving song stays listed until then, so the list moves once.
   const hold = useRef({

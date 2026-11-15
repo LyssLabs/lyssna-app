@@ -47,30 +47,63 @@ static DESCRIBED: Mutex<BTreeMap<String, Track>> = Mutex::new(BTreeMap::new());
 
 /// Fills in queue songs Soloist sent without a name, artists or artwork.
 /// True when any changed.
-pub fn describe(tracks: &mut [Track], lookup: impl Fn(&str) -> Option<Track>) -> bool {
+pub fn describe(tracks: &mut [Track], lookup: impl Fn(&str) -> Option<Track> + Sync) -> bool {
+    let missing: Vec<String> = {
+        let described = DESCRIBED.lock().ok();
+        let mut missing: Vec<String> = tracks
+            .iter()
+            .filter(|track| incomplete(track))
+            .filter(|track| {
+                !described
+                    .as_ref()
+                    .is_some_and(|described| described.contains_key(&track.uri))
+            })
+            .map(|track| track.uri.clone())
+            .collect();
+        missing.dedup();
+        missing
+    };
+    // One at a time, a full queue took about 20 seconds to fill in.
+    let found: Vec<Track> = thread::scope(|scope| {
+        let lookup = &lookup;
+        missing
+            .chunks(missing.len().div_ceil(LOOKUPS).max(1))
+            .map(|uris| {
+                scope.spawn(move || {
+                    uris.iter()
+                        .filter_map(|uri| lookup(uri).map(|track| (uri, track)))
+                        .map(|(uri, mut track)| {
+                            track.uri.clone_from(uri);
+                            track
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap_or_default())
+            .collect()
+    });
+    let Ok(mut described) = DESCRIBED.lock() else {
+        return false;
+    };
+    if described.len() + found.len() > 500 {
+        described.clear();
+    }
+    for track in found {
+        described.insert(track.uri.clone(), track);
+    }
     let mut changed = false;
     for track in tracks.iter_mut().filter(|track| incomplete(track)) {
-        let known = DESCRIBED
-            .lock()
-            .ok()
-            .and_then(|described| described.get(&track.uri).cloned());
-        let Some(full) = known.or_else(|| {
-            let full = lookup(&track.uri)?;
-            if let Ok(mut described) = DESCRIBED.lock() {
-                if described.len() >= 500 {
-                    described.clear();
-                }
-                described.insert(track.uri.clone(), full.clone());
-            }
-            Some(full)
-        }) else {
-            continue;
-        };
-        fill(track, full);
-        changed = true;
+        if let Some(full) = described.get(&track.uri) {
+            fill(track, full.clone());
+            changed = true;
+        }
     }
     changed
 }
+
+const LOOKUPS: usize = 8;
 
 fn incomplete(track: &Track) -> bool {
     track.name.is_empty() || track.artists.is_empty() || track.album.images.is_empty()
@@ -717,6 +750,38 @@ mod tests {
         assert_eq!(commands(&PlayerAction::Repeat("context".into())).len(), 2);
         assert!(commands(&PlayerAction::Play(Some("spotify:track:x".into()))).is_empty());
         assert!(commands(&PlayerAction::Enqueue("spotify:episode:x".into())).is_empty());
+    }
+
+    #[test]
+    fn queue_songs_sent_bare_get_their_names_and_artists() {
+        let bare = |id: &str| Track {
+            uri: format!("spotify:track:describe{id}"),
+            ..Default::default()
+        };
+        let mut queue: Vec<Track> = (0..20).map(|id| bare(&id.to_string())).collect();
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let lookup = |uri: &str| {
+            asked.fetch_add(1, Ordering::Relaxed);
+            Some(Track {
+                uri: uri.into(),
+                name: format!("name of {uri}"),
+                artists: vec![Artist {
+                    name: "Artist".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+        };
+        assert!(describe(&mut queue, lookup));
+        assert!(
+            queue
+                .iter()
+                .all(|track| track.name == format!("name of {}", track.uri))
+        );
+        assert!(queue.iter().all(|track| track.artists[0].name == "Artist"));
+        let mut again = vec![bare("3")];
+        assert!(describe(&mut again, lookup));
+        assert_eq!(asked.load(Ordering::Relaxed), 20);
     }
 
     #[test]
