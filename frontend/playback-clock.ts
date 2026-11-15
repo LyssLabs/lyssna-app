@@ -75,7 +75,10 @@ export class PlaybackClock {
     this.observedPosition = playback.progress_ms ?? 0;
     this.duration = playback.item?.duration_ms ?? 0;
     this.anchor = snap || !this.playing ? desired : current;
-    this.anchoredAt = time;
+    // A position observed ahead of now holds until then: Spotify Soloist
+    // names the next song while the last one still plays out.
+    this.anchoredAt =
+      time + (snap && this.playing ? Math.max(0, observedAt - wallTime) : 0);
     this.correction = snap || !this.advancing ? 0 : desired - current;
     this.correctionDuration = Math.max(600, Math.abs(this.correction) * 4);
   }

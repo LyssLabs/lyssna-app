@@ -200,7 +200,11 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                             }
                         }
                     }
-                    let _ = events.send(Event::SoloistPlayback(Box::new(soloist_playback(state))));
+                    let observed_at = now_ms().max(state.measured_at.max(0) as u64);
+                    let _ = events.send(Event::SoloistPlayback(
+                        Box::new(soloist_playback(state)),
+                        observed_at,
+                    ));
                 },
                 {
                     let events = inner.events_in.clone();
@@ -993,12 +997,16 @@ impl Desktop {
                         Event::LibraryFolders(folders) => {
                             emit(json!({"type":"library_folders","folders":folders}));
                         }
-                        event @ (Event::Playback(..) | Event::SoloistPlayback(_)) => {
+                        event @ (Event::Playback(..) | Event::SoloistPlayback(..)) => {
+                            let observed_at = match &event {
+                                Event::SoloistPlayback(_, at) => (*at).max(now_ms()),
+                                _ => now_ms(),
+                            };
                             let mut playback = match event {
                                 // Soloist's own reports are current; polled
                                 // ones lag behind it.
                                 Event::Playback(playback, _) if !soloist_active(&pump) => playback,
-                                Event::SoloistPlayback(mut playback)
+                                Event::SoloistPlayback(mut playback, _)
                                     if playback.device.is_active =>
                                 {
                                     playback.device.id =
@@ -1083,7 +1091,7 @@ impl Desktop {
                                 }
                             }
                             snapshot.playback = *playback;
-                            snapshot.observed_at = now_ms();
+                            snapshot.observed_at = observed_at;
                             // Lyssna's own player saves from its position
                             // events; Soloist only reports here.
                             if snapshot.playback.device.name == crate::soloist::DEVICE_NAME
