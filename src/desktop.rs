@@ -184,8 +184,6 @@ fn set_soloist(inner: &Inner, wanted: bool) {
             let events = inner.events_in.clone();
             let controls = inner.controls.clone();
             let mut known: Option<crate::model::Track> = None;
-            let mut last_playing: Option<crate::soloist_link::State> = None;
-            let mut hold: Option<(String, i64)> = None;
             *link = Some(crate::soloist_link::Link::start(
                 data,
                 move |mut state| {
@@ -202,30 +200,7 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                             }
                         }
                     }
-                    // A song that ended on its own still plays out after
-                    // Soloist names the next; its first reports wait for it.
-                    let uri = state.track.as_ref().map(|track| track.uri.clone());
-                    if let (Some(previous), Some(uri)) = (&last_playing, &uri)
-                        && let Some(lag) = crate::soloist_link::handover_lag(previous, &state)
-                    {
-                        native::diagnostic(&format!("soloist holds the next song {lag} ms"));
-                        hold = Some((uri.clone(), lag));
-                    }
-                    if let Some((song, lag)) = &hold {
-                        if uri.as_ref() != Some(song) {
-                            hold = None;
-                        } else if state.position_ms <= 1500 {
-                            state.measured_at += lag;
-                        }
-                    }
-                    if state.playing {
-                        last_playing = Some(state.clone());
-                    }
-                    let observed_at = now_ms().max(state.measured_at.max(0) as u64);
-                    let _ = events.send(Event::SoloistPlayback(
-                        Box::new(soloist_playback(state)),
-                        observed_at,
-                    ));
+                    let _ = events.send(Event::SoloistPlayback(Box::new(soloist_playback(state))));
                 },
                 {
                     let events = inner.events_in.clone();
@@ -1018,16 +993,12 @@ impl Desktop {
                         Event::LibraryFolders(folders) => {
                             emit(json!({"type":"library_folders","folders":folders}));
                         }
-                        event @ (Event::Playback(..) | Event::SoloistPlayback(..)) => {
-                            let observed_at = match &event {
-                                Event::SoloistPlayback(_, at) => (*at).max(now_ms()),
-                                _ => now_ms(),
-                            };
+                        event @ (Event::Playback(..) | Event::SoloistPlayback(_)) => {
                             let mut playback = match event {
                                 // Soloist's own reports are current; polled
                                 // ones lag behind it.
                                 Event::Playback(playback, _) if !soloist_active(&pump) => playback,
-                                Event::SoloistPlayback(mut playback, _)
+                                Event::SoloistPlayback(mut playback)
                                     if playback.device.is_active =>
                                 {
                                     playback.device.id =
@@ -1112,7 +1083,7 @@ impl Desktop {
                                 }
                             }
                             snapshot.playback = *playback;
-                            snapshot.observed_at = observed_at;
+                            snapshot.observed_at = now_ms();
                             // Lyssna's own player saves from its position
                             // events; Soloist only reports here.
                             if snapshot.playback.device.name == crate::soloist::DEVICE_NAME
