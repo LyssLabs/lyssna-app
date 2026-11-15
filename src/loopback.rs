@@ -41,7 +41,7 @@ impl Levels {
             .name("soloist-levels".into())
             .spawn(move || {
                 if let Err(error) = capture(pid, &flag) {
-                    log::info!("Soloist bars follow a pattern, not its audio: {error:#}");
+                    crate::native::diagnostic(&format!("Soloist bars cannot hear it: {error:#}"));
                 }
             })
             .ok();
@@ -156,6 +156,7 @@ fn run(pid: u32, stop: &AtomicBool) -> Result<()> {
     let mut samples = Vec::with_capacity(CHUNK * 2);
     let mut heard = None::<Instant>;
     let mut followed = false;
+    let mut peak = 0f32;
     while !stop.load(Ordering::Acquire) {
         thread::sleep(Duration::from_millis(15));
         while unsafe { reader.GetNextPacketSize() }? > 0 {
@@ -179,10 +180,18 @@ fn run(pid: u32, stop: &AtomicBool) -> Result<()> {
         // Silence leaves the bars alone, so a song in Lyssna's own player
         // still drives them while Soloist is idle; they drop once when
         // Soloist goes quiet.
-        if samples.iter().any(|sample| sample.abs() > 1e-5) {
+        let loudest = samples
+            .iter()
+            .fold(0f32, |most, sample| most.max(sample.abs()));
+        if loudest > 1e-5 {
+            // Soloist's audio arrives after its volume, so a quiet setting
+            // would flatten the bars; scale it back up to full level.
+            peak = loudest.max(peak * 0.995).max(0.002);
+            let gain = 0.9 / peak;
+            samples.iter_mut().for_each(|sample| *sample *= gain);
             if !followed {
                 followed = true;
-                log::info!("Soloist bars follow its audio");
+                crate::native::diagnostic("Soloist bars follow its audio");
             }
             crate::audio::show_levels(&samples);
             heard = Some(Instant::now());
@@ -194,4 +203,27 @@ fn run(pid: u32, stop: &AtomicBool) -> Result<()> {
     }
     let _ = unsafe { client.Stop() };
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "needs a running, playing Soloist"]
+    fn hears_a_playing_soloist() {
+        let pid: u32 = std::env::var("SOLOIST_PID").unwrap().parse().unwrap();
+        let stop = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let handle = scope.spawn(|| capture(pid, &stop));
+            let mut best = 0u32;
+            for _ in 0..60 {
+                std::thread::sleep(Duration::from_millis(50));
+                best = best.max(crate::audio::levels().iter().map(|&b| u32::from(b)).sum());
+            }
+            stop.store(true, Ordering::Release);
+            println!("result {:?} best {best}", handle.join().unwrap());
+            assert!(best > 0);
+        });
+    }
 }
