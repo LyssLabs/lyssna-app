@@ -361,6 +361,30 @@ fn plays_locally(
     command == "dj" || targets_local_device(target, native_id, device)
 }
 
+/// Whether a command goes to Spotify Soloist rather than Lyssna's own player.
+/// DJ only plays in Lyssna's own player, so while that player holds a song,
+/// its controls stay with it; handing a skip to an idle Soloist made Spotify
+/// move playback there with stale state. Picking something new still moves
+/// to Soloist.
+fn routes_to_soloist(command: &str, for_this_computer: bool, native_busy: bool) -> bool {
+    let controls = matches!(
+        command,
+        "play"
+            | "pause"
+            | "next"
+            | "skip_to"
+            | "previous"
+            | "seek"
+            | "volume"
+            | "shuffle"
+            | "repeat"
+            | "enqueue"
+            | "remove_from_queue"
+            | "clear_queue"
+    );
+    for_this_computer && command != "dj" && !(native_busy && controls)
+}
+
 fn load_native_catalogue(
     inner: Arc<Inner>,
     app: tauri::AppHandle,
@@ -2499,7 +2523,10 @@ fn player(
             && soloist_id.is_some()
             && (target.as_deref() == soloist_id.as_deref()
                 || snapshot.playback.device.id == soloist_id);
-        let soloist = (local || on_soloist) && snapshot.settings.soloist && request.command != "dj";
+        let native_busy =
+            snapshot.playback.device.name == native::device_name() && state.0.controls.has_track();
+        let soloist = snapshot.settings.soloist
+            && routes_to_soloist(&request.command, local || on_soloist, native_busy);
         let resume_from = snapshot.playback.item.as_ref().map(|track| {
             (
                 track.uri.clone(),
@@ -6305,6 +6332,15 @@ mod tests {
             Some("session-id"),
             &speaker
         ));
+    }
+    #[test]
+    fn soloist_leaves_dj_controls_with_lyssnas_player() {
+        assert!(!routes_to_soloist("dj", true, false));
+        assert!(!routes_to_soloist("next", true, true));
+        assert!(!routes_to_soloist("pause", true, true));
+        assert!(routes_to_soloist("next", true, false));
+        assert!(routes_to_soloist("play_uris", true, true));
+        assert!(!routes_to_soloist("play_uris", false, false));
     }
     #[test]
     fn links_open_only_spotify_lyrics_and_credited_repositories() {
