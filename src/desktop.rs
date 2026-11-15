@@ -2561,6 +2561,30 @@ fn player(
                 snapshot.playback.progress_ms.unwrap_or(0),
             )
         });
+        // Lyssna's own player remembers these from its queue events;
+        // Soloist sends none.
+        if soloist && let Some(profile) = snapshot.profile.as_ref() {
+            crate::resume::remember_queue(&profile.id, &action);
+        }
+        // An idle Soloist after a restart carries on through the saved
+        // playlist or list from the saved position, as Lyssna's own
+        // player does.
+        if soloist
+            && matches!(action, PlayerAction::Play(None))
+            && !lock(&state.0.soloist_link)?
+                .as_ref()
+                .is_some_and(|link| link.active() && link.loaded())
+            && let Some(profile) = snapshot.profile.as_ref()
+            && let Some((uri, position)) = resume_from.as_ref()
+            && let Some(saved) = crate::resume::load(&profile.id)
+            && saved.track.uri == *uri
+        {
+            action = crate::resume::in_context(
+                &profile.id,
+                crate::resume::restore_action(uri, &saved.queue, *position),
+                false,
+            );
+        }
         // After a restart the saved song is only shown, not loaded, and the
         // player drops seeks until it plays. Play resumes from the shown
         // position, so moving that is the seek.

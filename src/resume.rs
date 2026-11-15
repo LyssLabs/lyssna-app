@@ -286,8 +286,15 @@ pub fn remember_queue(account: &str, action: &crate::api::PlayerAction) {
         | crate::api::PlayerAction::Resume { uris, .. } => uris.clone(),
         crate::api::PlayerAction::Play(Some(uri)) => vec![uri.clone()],
         // A list started in its own order forgets an earlier sorted one.
-        crate::api::PlayerAction::PlayContext { .. }
-        | crate::api::PlayerAction::PreparedDJ { .. } => {
+        crate::api::PlayerAction::PlayContext { context, .. } => {
+            remember_order(account, None);
+            remember_native_context(account, Some(context.clone()), Vec::new());
+            if let Ok(mut queues) = QUEUES.lock() {
+                queues.remove(account);
+            }
+            return;
+        }
+        crate::api::PlayerAction::PreparedDJ { .. } => {
             remember_order(account, None);
             return;
         }
@@ -674,6 +681,35 @@ mod tests {
                 ..
             }
         ));
+    }
+    #[test]
+    fn a_playlist_started_whole_is_remembered_for_a_restart() {
+        let account = "context-remembered";
+        let playlist = "spotify:playlist:0123456789abcdefghijkl";
+        let song = "spotify:track:0123456789abcdefghijkl";
+        remember_queue(
+            account,
+            &crate::api::PlayerAction::PlayUris {
+                uris: vec![song.into()],
+                offset: 0,
+                context: None,
+            },
+        );
+        remember_queue(
+            account,
+            &crate::api::PlayerAction::PlayContext {
+                context: playlist.into(),
+                offset: None,
+            },
+        );
+        let crate::api::PlayerAction::Resume { context, uris, .. } =
+            in_context(account, restore_action(song, &[], 5000), false)
+        else {
+            panic!("restore is a resume");
+        };
+        assert_eq!(context.as_deref(), Some(playlist));
+        assert_eq!(uris, vec![song.to_owned()]);
+        assert!(QUEUES.lock().unwrap().get(account).is_none());
     }
     #[test]
     fn saved_contexts_are_limited_to_playlists_albums_artists_and_liked_songs() {

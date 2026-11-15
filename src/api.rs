@@ -474,9 +474,31 @@ impl Spotify {
                 "play",
                 Some(json!({"uris": uris, "offset": {"position": offset}})),
             ),
-            PlayerAction::Resume { .. } => {
-                anyhow::bail!("Saved-position resume requires native playback")
-            }
+            PlayerAction::Resume {
+                uris,
+                offset,
+                position_ms,
+                context,
+                listed,
+                ..
+            } => (
+                Method::PUT,
+                "play",
+                Some(
+                    match (context.as_ref().filter(|_| !listed), uris.get(offset)) {
+                        (Some(context), Some(uri)) => json!({
+                            "context_uri": context,
+                            "offset": {"uri": uri},
+                            "position_ms": position_ms,
+                        }),
+                        _ => json!({
+                            "uris": uris,
+                            "offset": {"position": offset},
+                            "position_ms": position_ms,
+                        }),
+                    },
+                ),
+            ),
             PlayerAction::Pause => (Method::PUT, "pause", None),
             PlayerAction::Next => (Method::POST, "next", None),
             // The Web API cannot skip to a queued song; play it instead.

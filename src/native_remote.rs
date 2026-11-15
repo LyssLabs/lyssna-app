@@ -325,6 +325,43 @@ fn command_body(action: &PlayerAction) -> Result<Value> {
                 json!({"skip_to":{"track_index":offset}}),
             )
         }
+        // A restart's saved song, carried on from its playlist or list at
+        // its saved position.
+        PlayerAction::Resume {
+            uris,
+            offset,
+            position_ms,
+            context,
+            listed,
+            ..
+        } => {
+            let track = uris.get(*offset).context("Invalid saved song")?;
+            valid_track(track)?;
+            match context.as_ref().filter(|_| !*listed) {
+                Some(context) => {
+                    ensure!(
+                        context.starts_with("spotify:")
+                            && context.len() <= 512
+                            && !context.chars().any(char::is_control),
+                        "Invalid Spotify context"
+                    );
+                    play_command(
+                        json!({"uri":context,"url":format!("context://{context}")}),
+                        json!({"skip_to":{"track_uri":track},"seek_to":position_ms}),
+                    )
+                }
+                None => {
+                    ensure!(uris.len() <= 5000, "Invalid Spotify track selection");
+                    for uri in uris {
+                        valid_track(uri)?;
+                    }
+                    play_command(
+                        json!({"uri":"","pages":[{"tracks":uris.iter().map(|uri|json!({"uri":uri})).collect::<Vec<_>>()}]}),
+                        json!({"skip_to":{"track_index":offset},"seek_to":position_ms}),
+                    )
+                }
+            }
+        }
         _ => anyhow::bail!("This playback action requires this computer's native player"),
     };
     value["logging_params"] = json!({});
@@ -391,6 +428,29 @@ fn playback_from_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_song_resumes_through_its_playlist_or_list_at_its_position() {
+        let song = "spotify:track:0123456789abcdefghijkl";
+        let other = "spotify:track:abcdefghijkl0123456789";
+        let resume = |context: Option<&str>, listed| PlayerAction::Resume {
+            uris: vec![other.into(), song.into()],
+            offset: 1,
+            position_ms: 61_000,
+            context: context.map(str::to_owned),
+            queued: Vec::new(),
+            listed,
+        };
+        let playlist = "spotify:playlist:0123456789abcdefghijkl";
+        let value = command_body(&resume(Some(playlist), false)).unwrap();
+        assert_eq!(value["context"]["uri"], playlist);
+        assert_eq!(value["options"]["skip_to"]["track_uri"], song);
+        assert_eq!(value["options"]["seek_to"], 61_000);
+        let value = command_body(&resume(Some(playlist), true)).unwrap();
+        assert_eq!(value["context"]["pages"][0]["tracks"][1]["uri"], song);
+        assert_eq!(value["options"]["skip_to"]["track_index"], 1);
+        assert_eq!(value["options"]["seek_to"], 61_000);
+    }
     #[test]
     fn remote_volume_spans_connect_range() {
         assert_eq!(remote_volume(0), 0);
