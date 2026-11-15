@@ -16273,6 +16273,26 @@ test("Soloist greys out playback settings it cannot honour", async ({
     .toBe("abc123");
 });
 
+test("Soloist explains when this computer cannot run it", async ({ page }) => {
+  await startClient(page);
+  await page.evaluate(() => {
+    const invoke = (window as any).__TAURI_INTERNALS__.invoke;
+    (window as any).__TAURI_INTERNALS__.invoke = async (
+      command: string,
+      args: any,
+    ) => (command === "soloist_supported" ? false : invoke(command, args));
+  });
+  await openSettings(page, "General");
+  const row = page.locator(".setting-row", {
+    hasText: "Play through Spotify Soloist",
+  });
+  await expect(row).toHaveClass(/unavailable/);
+  await expect(row.locator(".setting-unavailable")).toContainText(
+    "isn't available on this computer",
+  );
+  await expect(page.getByLabel("Soloist API key")).toHaveCount(0);
+});
+
 test("TTML Creator times words on the playing song, slows it and saves TTML", async ({
   page,
 }) => {

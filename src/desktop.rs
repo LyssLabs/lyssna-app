@@ -1530,7 +1530,7 @@ impl Desktop {
                                 );
                             } else {
                                 emit(
-                                    json!({"type":"notice","message":native::KEYS_REFUSED,"error":true,"stalled":true}),
+                                    json!({"type":"notice","message":native::keys_refused_message(),"error":true,"stalled":true}),
                                 );
                             }
                             emit(
@@ -3266,6 +3266,11 @@ fn soloist_key(key: String) -> std::result::Result<bool, String> {
         .map(|()| true)
         .map_err(error)
 }
+#[tauri::command]
+fn soloist_supported() -> bool {
+    crate::soloist::supported()
+}
+
 #[tauri::command]
 fn soloist_has_key() -> bool {
     crate::soloist::api_key().is_ok_and(|key| key.is_some())
@@ -5919,6 +5924,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .invoke_handler(tauri::generate_handler![
             soloist_key,
             soloist_has_key,
+            soloist_supported,
             resume_after_restart,
             take_link,
             window_fullscreen,

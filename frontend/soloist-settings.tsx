@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { SettingRow, Toggle } from "./setting-row";
 import type { Settings, SoloistStatus } from "./types";
+import { IS_MAC } from "./platform";
 
 const DASHBOARD = "https://developer.spotify.com/dashboard/soloist";
 export const SOLOIST_DEVICE = "Lyssna Player";
+
+export const SOLOIST_MAC_ONLY =
+  "Spotify Soloist only works on Apple Silicon Macs (M1 or newer) running macOS 13 or newer.";
 
 export const SOLOIST_PLAYS =
   "Unavailable while Spotify Soloist plays your music: Soloist uses the system default output and its own playback settings.";
@@ -14,7 +18,9 @@ export function soloistMessage(status: SoloistStatus | null | undefined) {
     case undefined:
       return "Starting…";
     case "unsupported":
-      return "Spotify Soloist runs on Windows only.";
+      return IS_MAC
+        ? SOLOIST_MAC_ONLY
+        : "Spotify Soloist isn't available on this computer.";
     case "needs_key":
       return "Add your Soloist API key to finish setting up.";
     case "installing":
@@ -51,6 +57,12 @@ export function SoloistRows({
   onNotice: (message: string, error?: boolean) => void;
 }) {
   const [key, setKey] = useState("");
+  const [supported, setSupported] = useState(true);
+  useEffect(() => {
+    void onCall<boolean>("soloist_supported").then((value) => {
+      if (value === false) setSupported(false);
+    });
+  }, [onCall]);
   const [saving, setSaving] = useState(false);
   const on = !!settings.soloist;
   const save = async () => {
@@ -79,6 +91,13 @@ export function SoloistRows({
           )
         }
         keywords="soloist spotify player refused audio key connect"
+        unavailable={
+          supported
+            ? undefined
+            : IS_MAC
+              ? SOLOIST_MAC_ONLY
+              : "Spotify Soloist isn't available on this computer."
+        }
       >
         <Toggle
           label="Play through Spotify Soloist"
@@ -86,17 +105,17 @@ export function SoloistRows({
           onChange={(checked) => onSettings({ soloist: checked })}
         />
       </SettingRow>
-      {on && (
+      {on && supported && (
         <SettingRow
           label="Soloist status"
           help={soloistMessage(status)}
           keywords="soloist status pairing"
         />
       )}
-      {on && status?.state !== "unsupported" && (
+      {on && supported && status?.state !== "unsupported" && (
         <SettingRow
           label="Soloist API key"
-          help="Create one at Spotify for Developers under Soloist, then paste it here. It is kept in Windows Credential Manager."
+          help={`Create one at Spotify for Developers under Soloist, then paste it here. It is kept in ${IS_MAC ? "Lyssna's encrypted credential store" : "Windows Credential Manager"}.`}
           keywords="soloist api key developer dashboard"
           stacked
         >

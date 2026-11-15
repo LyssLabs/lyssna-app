@@ -2,7 +2,8 @@
 //! whose audio keys Spotify refuses to Lyssna's engine (librespot #1649).
 //! Spotify asks that it is not redistributed, so Lyssna fetches the official
 //! build from Spotify's CDN on the user's machine, checks that Spotify signed
-//! it, and swaps in a fresh build before the 90-day expiry stops it.
+//! it, and swaps in a fresh build before the 90-day expiry stops it. Spotify
+//! builds it for x86_64 Windows and Apple Silicon Macs on macOS 13 or newer.
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -20,14 +21,28 @@ use std::{
 };
 
 pub const DEVICE_NAME: &str = "Lyssna Player";
+#[cfg(not(target_os = "macos"))]
 const DOWNLOAD_URL: &str =
     "https://soloist-builds.spotifycdn.com/soloist_release_windows_x86_64.zip";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "macos")]
+const DOWNLOAD_URL: &str = "https://soloist-builds.spotifycdn.com/soloist_release_osx_arm64.tar.gz";
+const EXE: &str = if cfg!(windows) {
+    "soloist.exe"
+} else {
+    "soloist"
+};
+const STAGED: &str = if cfg!(windows) {
+    "soloist.next.exe"
+} else {
+    "soloist.next"
+};
 const KEY_TARGET: &str = "Lyssna/Soloist";
-#[cfg(not(target_os = "macos"))]
 const KEY_USER: &str = "api-key";
 #[cfg(windows)]
 const SIGNER: &str = "Spotify AB";
+/// The Apple team that signs Spotify's Mac apps, Soloist included.
+#[cfg(target_os = "macos")]
+const TEAM: &str = "2FNC3A47ZF";
 const MAX_ARCHIVE: u64 = 128 * 1024 * 1024;
 /// Soloist exits with this once its build is older than 90 days.
 const EXPIRED: i32 = 10;
@@ -46,6 +61,34 @@ pub enum Status {
     Failed(String),
 }
 
+/// Whether Spotify builds Soloist for this computer.
+pub fn supported() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| cfg!(windows) || apple_silicon_on_13())
+}
+
+/// Lyssna may run under Rosetta, so ask the hardware rather than the build.
+#[cfg(target_os = "macos")]
+fn apple_silicon_on_13() -> bool {
+    let read = |program: &str, args: &[&str]| {
+        Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    let arm = read("/usr/sbin/sysctl", &["-n", "hw.optional.arm64"]).as_deref() == Some("1");
+    let major = read("/usr/bin/sw_vers", &["-productVersion"])
+        .and_then(|version| version.split('.').next()?.parse::<u32>().ok());
+    arm && major.is_some_and(|major| major >= 13)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apple_silicon_on_13() -> bool {
+    false
+}
+
 #[cfg(not(target_os = "macos"))]
 fn key_entry() -> Result<keyring::Entry> {
     Ok(keyring::Entry::new_with_target(
@@ -54,15 +97,14 @@ fn key_entry() -> Result<keyring::Entry> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn api_key() -> Result<Option<String>> {
-    Ok(None)
+fn key_entry() -> Result<crate::credential::Entry> {
+    Ok(crate::credential::Entry::new(KEY_TARGET, KEY_USER)?)
 }
 
-#[cfg(not(target_os = "macos"))]
 pub fn api_key() -> Result<Option<String>> {
     match key_entry()?.get_password() {
         Ok(key) if !key.trim().is_empty() => Ok(Some(key.trim().to_owned())),
-        Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
+        Ok(_) | Err(crate::credential::Error::NoEntry) => Ok(None),
         Err(_) => bail!("Cannot read the Soloist key from the secure credential store"),
     }
 }
@@ -77,9 +119,10 @@ pub fn valid_key(key: &str) -> bool {
 pub fn set_api_key(key: &str) -> Result<()> {
     let key = key.trim();
     ensure!(valid_key(key), "That doesn't look like a Soloist API key");
-    #[cfg(target_os = "macos")]
-    bail!("Spotify Soloist is set up on Windows only");
-    #[cfg(not(target_os = "macos"))]
+    ensure!(
+        supported(),
+        "Spotify Soloist needs Windows, or an Apple Silicon Mac on macOS 13 or newer"
+    );
     key_entry()?
         .set_password(key)
         .context("Cannot save the Soloist key to the secure credential store")
@@ -117,8 +160,66 @@ fn client() -> Result<reqwest::blocking::Client> {
         .build()?)
 }
 
+/// The `soloist` program in Spotify's Mac archive, a gzipped tar.
+fn tar_member(archive: &[u8], wanted: &str) -> Result<Vec<u8>> {
+    let mut unpacked = Vec::new();
+    flate2::read::GzDecoder::new(archive)
+        .take(MAX_ARCHIVE + 1)
+        .read_to_end(&mut unpacked)?;
+    ensure!(
+        unpacked.len() as u64 <= MAX_ARCHIVE,
+        "Soloist download is too large"
+    );
+    let text = |field: &[u8]| {
+        let end = field
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(field.len());
+        String::from_utf8_lossy(&field[..end]).trim().to_owned()
+    };
+    let mut offset = 0;
+    while offset + 512 <= unpacked.len() {
+        let header = &unpacked[offset..offset + 512];
+        if header.iter().all(|byte| *byte == 0) {
+            break;
+        }
+        let mut name = text(&header[..100]);
+        if &header[257..263] == b"ustar\0" {
+            let prefix = text(&header[345..500]);
+            if !prefix.is_empty() {
+                name = format!("{prefix}/{name}");
+            }
+        }
+        let size = usize::from_str_radix(&text(&header[124..136]), 8)
+            .context("Soloist download has a damaged entry")?;
+        let start = offset + 512;
+        let end = start
+            .checked_add(size)
+            .filter(|end| *end <= unpacked.len())
+            .context("Soloist download is cut short")?;
+        if matches!(header[156], b'0' | 0) && name.trim_start_matches("./") == wanted {
+            return Ok(unpacked[start..end].to_vec());
+        }
+        offset = start + size.div_ceil(512) * 512;
+    }
+    bail!("Soloist download has no {wanted}")
+}
+
+fn program(archive: Vec<u8>) -> Result<Vec<u8>> {
+    if cfg!(target_os = "macos") {
+        return tar_member(&archive, EXE);
+    }
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive))?;
+    let mut entry = zip
+        .by_name(EXE)
+        .with_context(|| format!("Soloist download has no {EXE}"))?;
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 /// Downloads the current build when it differs from the installed one and
-/// stages it as `soloist.next.exe`. True when a new build is staged.
+/// stages it. True when a new build is staged.
 fn fetch(bin: &Path) -> Result<bool> {
     let client = client()?;
     let head = client
@@ -136,7 +237,7 @@ fn fetch(bin: &Path) -> Result<bool> {
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_owned();
-    let installed = bin.join("soloist.exe").is_file();
+    let installed = bin.join(EXE).is_file();
     if installed && !etag.is_empty() && read_release(bin).etag == etag {
         return Ok(false);
     }
@@ -152,17 +253,19 @@ fn fetch(bin: &Path) -> Result<bool> {
         archive.len() as u64 <= MAX_ARCHIVE,
         "Soloist download is too large"
     );
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive))?;
-    let mut entry = zip
-        .by_name("soloist.exe")
-        .context("Soloist download has no soloist.exe")?;
+    let bytes = program(archive)?;
     fs::create_dir_all(bin)?;
     let partial = bin.join("soloist.download");
     let mut file = fs::File::create(&partial)?;
-    std::io::copy(&mut entry, &mut file)?;
+    std::io::Write::write_all(&mut file, &bytes)?;
     file.sync_all()?;
     drop(file);
-    let staged = bin.join("soloist.next.exe");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&partial, fs::Permissions::from_mode(0o755))?;
+    }
+    let staged = bin.join(STAGED);
     let result = verify_signature(&partial).and_then(|()| {
         let output = Command::new(&partial)
             .arg("--version")
@@ -188,11 +291,11 @@ fn fetch(bin: &Path) -> Result<bool> {
 
 /// Moves a staged build into place; only while Soloist is not running.
 fn swap_in(bin: &Path) -> Result<()> {
-    let staged = bin.join("soloist.next.exe");
+    let staged = bin.join(STAGED);
     if !staged.is_file() {
         return Ok(());
     }
-    fs::rename(&staged, bin.join("soloist.exe"))?;
+    fs::rename(&staged, bin.join(EXE))?;
     let _ = fs::rename(bin.join("release.next.json"), release_path(bin));
     Ok(())
 }
@@ -223,9 +326,30 @@ fn verify_signature(path: &Path) -> Result<()> {
     })
 }
 
-#[cfg(not(windows))]
+/// Signed with a Developer ID from Spotify's team, as Apple checks it.
+#[cfg(target_os = "macos")]
+fn verify_signature(path: &Path) -> Result<()> {
+    let requirement = format!(
+        "=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists \
+         and certificate leaf[field.1.2.840.113635.100.6.1.13] exists \
+         and certificate leaf[subject.OU] = \"{TEAM}\""
+    );
+    let output = Command::new("/usr/bin/codesign")
+        .args(["--verify", "--strict", "-R", &requirement])
+        .arg(path)
+        .output()
+        .context("Cannot check who signed the Soloist download")?;
+    ensure!(
+        output.status.success(),
+        "Soloist download is not signed by Spotify: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn verify_signature(_: &Path) -> Result<()> {
-    bail!("Soloist is only set up on Windows")
+    bail!("Soloist is not set up on this system")
 }
 
 #[cfg(windows)]
@@ -354,7 +478,7 @@ impl Supervisor {
     pub fn start() -> Self {
         let status = Arc::new(Mutex::new(Status::Starting));
         let stop = Arc::new(AtomicBool::new(false));
-        let thread = (cfg!(windows)).then(|| {
+        let thread = supported().then(|| {
             let status = status.clone();
             let stop = stop.clone();
             thread::Builder::new()
@@ -409,7 +533,35 @@ fn wait(stop: &AtomicBool, duration: Duration) -> bool {
     !stop.load(Ordering::Acquire)
 }
 
+/// A Soloist left behind when Lyssna was killed holds the data folder, and
+/// a new one exits at once. Windows closes it with Lyssna's job instead.
+#[cfg(target_os = "macos")]
+fn stop_stale(exe: &Path, data: &Path) {
+    let Some(pid) = fs::read_to_string(data.join("soloist.pid"))
+        .ok()
+        .and_then(|text| text.trim().parse::<i32>().ok())
+        .filter(|pid| *pid > 1)
+    else {
+        return;
+    };
+    let Ok(output) = Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+    else {
+        return;
+    };
+    if Path::new(String::from_utf8_lossy(&output.stdout).trim()) == exe {
+        log::info!("Soloist: stopping one left running");
+        unsafe { libc::kill(pid, libc::SIGTERM) };
+        thread::sleep(Duration::from_secs(1));
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn stop_stale(_: &Path, _: &Path) {}
+
 fn spawn(exe: &Path, data: &Path, cache: &Path, key: &str) -> Result<Child> {
+    stop_stale(exe, data);
     let _ = fs::remove_file(data.join("ws.port"));
     let child = Command::new(exe)
         .args([
@@ -532,7 +684,7 @@ fn supervise(status: &Mutex<Status>, stop: &AtomicBool) {
                 continue;
             }
         };
-        let exe = bin.join("soloist.exe");
+        let exe = bin.join(EXE);
         if !exe.is_file() || checked.is_none_or(|at| at.elapsed() >= UPDATE_EVERY) {
             if !exe.is_file() {
                 set(status, Status::Installing);
@@ -731,6 +883,45 @@ mod tests {
         assert_eq!(read_release(&dir).etag, "\"b\"");
         swap_in(&dir).unwrap();
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn tar_entry(name: &str, body: &[u8]) -> Vec<u8> {
+        let mut header = [0u8; 512];
+        header[..name.len()].copy_from_slice(name.as_bytes());
+        let size = format!("{:011o}\0", body.len());
+        header[124..136].copy_from_slice(size.as_bytes());
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        let mut entry = header.to_vec();
+        entry.extend_from_slice(body);
+        entry.resize(512 + body.len().div_ceil(512) * 512, 0);
+        entry
+    }
+
+    fn gzip(bytes: &[u8]) -> Vec<u8> {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut encoder, bytes).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn mac_archives_yield_the_soloist_program() {
+        let mut tar = tar_entry("CHANGELOG.md", &[b'x'; 700]);
+        tar.extend(tar_entry("soloist", b"program"));
+        tar.extend([0u8; 1024]);
+        assert_eq!(tar_member(&gzip(&tar), "soloist").unwrap(), b"program");
+        assert!(tar_member(&gzip(&tar), "missing").is_err());
+        let mut cut = tar_entry("soloist", &[b'y'; 600]);
+        cut.truncate(700);
+        assert!(tar_member(&gzip(&cut), "soloist").is_err());
+    }
+
+    #[test]
+    #[ignore = "needs Spotify's Mac archive in LYSSNA_SOLOIST_MAC_ARCHIVE"]
+    fn spotifys_mac_archive_has_the_program() {
+        let path = std::env::var("LYSSNA_SOLOIST_MAC_ARCHIVE").unwrap();
+        let program = tar_member(&fs::read(path).unwrap(), "soloist").unwrap();
+        assert_eq!(&program[..4], &[0xcf, 0xfa, 0xed, 0xfe]);
     }
 
     #[test]
