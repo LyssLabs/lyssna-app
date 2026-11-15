@@ -1052,7 +1052,7 @@ fn preload_selection(action: &PlayerAction) -> Option<(librespot_core::SpotifyUr
 /// How long a selection may take to start loading before Play gives up on it.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 // librespot #1649: refused keys follow the account, not the song.
-pub(crate) const KEYS_REFUSED: &str = "Spotify is refusing to unlock songs for this account on this computer, so they can't play here. Open the Spotify app on this computer or your phone, then choose it under Connect to a device to play through it.";
+pub(crate) const KEYS_REFUSED: &str = "Spotify won't unlock songs for this account in Lyssna's own player. Turn on Play through Spotify Soloist in Settings, under General, Playback. Or open the Spotify app, then pick that app's device from Lyssna's Devices button. Choosing Lyssna in the Spotify app's device list won't work.";
 
 /// Transport commands for the local player diagnostics log.
 fn command_kind(action: &PlayerAction) -> Option<&'static str> {
