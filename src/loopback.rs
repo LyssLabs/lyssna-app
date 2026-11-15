@@ -157,6 +157,7 @@ fn run(pid: u32, stop: &AtomicBool) -> Result<()> {
     let mut heard = None::<Instant>;
     let mut followed = false;
     let mut peak = 0f32;
+    let mut volume = crate::soloist_link::volume();
     while !stop.load(Ordering::Acquire) {
         thread::sleep(Duration::from_millis(15));
         while unsafe { reader.GetNextPacketSize() }? > 0 {
@@ -189,6 +190,13 @@ fn run(pid: u32, stop: &AtomicBool) -> Result<()> {
             // that settles over many seconds: following each moment's
             // loudness instead would flatten the quiet and loud parts the
             // bars should show.
+            // A new volume makes the old level meaningless; start over so
+            // the bars don't depend on it.
+            let now_volume = crate::soloist_link::volume();
+            if now_volume != volume {
+                volume = now_volume;
+                peak = 0.0;
+            }
             peak = loudest.max(peak * 0.9998).max(0.002);
             let gain = 1.0 / peak;
             samples.iter_mut().for_each(|sample| *sample *= gain);
