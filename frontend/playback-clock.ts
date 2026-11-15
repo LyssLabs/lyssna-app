@@ -90,6 +90,12 @@ export class PlaybackClock {
     return Math.max(0, this.read(time) - back * this.rate);
   }
 
+  /** How long until a held song starts. Lyrics count this as time before
+   *  the song, so a line at 0:00 waits out the hold too. */
+  wait(time: number) {
+    return this.advancing ? Math.max(0, this.anchoredAt - time) : 0;
+  }
+
   read(time: number) {
     const elapsed = this.advancing
       ? Math.min(

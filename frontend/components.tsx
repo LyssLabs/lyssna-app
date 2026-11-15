@@ -582,7 +582,22 @@ export function usePlaybackClock(
       ? clock.current.read(now)
       : clock.current.readAgo(now, now - at);
   }, []);
-  return { position: clock.current.read(Math.max(time, now)), read };
+  const shown = Math.max(time, now);
+  return {
+    position: clock.current.read(shown),
+    wait: clock.current.wait(shown),
+    read,
+  };
+}
+
+/** The song position lyrics follow: below zero while a held song waits. */
+export function useLyricPosition(
+  state: Parameters<typeof usePlaybackClock>[0] & Pick<AppState, "settings">,
+) {
+  const { position, wait } = usePlaybackClock(state);
+  return (
+    position - wait + lyricOffset(state.settings, state.playback.item?.uri)
+  );
 }
 
 /** Seek Fade-in Compensation from Spicy Lyrics: a clicked lyric starts
@@ -1336,8 +1351,7 @@ function TimedLyricsPreview({
   state: AppState;
   onPlayer: (request: PlayerRequest) => void;
 }) {
-  const current =
-    usePosition(state) + lyricOffset(state.settings, state.playback.item?.uri);
+  const current = useLyricPosition(state);
   // Re-render when romanized lyrics finish converting.
   useRomanization();
   const lyrics = filterWords(
@@ -1560,8 +1574,9 @@ function SongLyricsPage({
   immersive?: boolean;
   children?: ReactNode;
 } & Links) {
-  const songTime = usePosition(state),
-    current = songTime + lyricOffset(state.settings, state.playback.item?.uri),
+  const { position: songTime, wait } = usePlaybackClock(state),
+    current =
+      songTime - wait + lyricOffset(state.settings, state.playback.item?.uri),
     track = state.playback.item;
   // Full screen seek: preview while dragging, seek once on release.
   const [seeking, setSeeking] = useState<number | null>(null);

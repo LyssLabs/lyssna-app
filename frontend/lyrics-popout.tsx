@@ -14,11 +14,10 @@ import {
   ShuffleIcon,
 } from "./player-icons";
 import { Ambience } from "./ambience";
-import { LyricsDisplay, usePosition } from "./components";
+import { LyricsDisplay, useLyricPosition, usePosition } from "./components";
 import { displayLyrics } from "./word-sync";
 import { romanizeFor, useRomanization } from "./romanization";
 import { filterWords } from "./word-filter";
-import { lyricOffset } from "./lyric-offset";
 import { emptyState, formatTime } from "./state";
 import type { PlayerRequest } from "./types";
 
@@ -227,8 +226,7 @@ function PopoutLyrics({
   lyrics: NonNullable<typeof emptyState.lyrics>;
   onSeek: (ms: number) => void;
 }) {
-  const current =
-    usePosition(state) + lyricOffset(state.settings, state.playback.item?.uri);
+  const current = useLyricPosition(state);
   return (
     <LyricsDisplay
       lyrics={lyrics}

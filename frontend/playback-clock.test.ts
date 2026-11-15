@@ -134,6 +134,9 @@ it("holds a song observed to start later until then", () => {
   };
   clock.observe(next, 3000, 0, 1000, 1000, false);
   expect(clock.read(2000)).toBe(0);
+  expect(clock.wait(2000)).toBe(1000);
   expect(clock.read(3000)).toBe(0);
+  expect(clock.wait(3000)).toBe(0);
   expect(clock.read(4000)).toBe(1000);
+  expect(clock.wait(4000)).toBe(0);
 });
