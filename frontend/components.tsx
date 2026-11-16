@@ -1564,6 +1564,8 @@ export function LyricsPage(props: Parameters<typeof SongLyricsPage>[0]) {
     <SongLyricsPage {...props} />
   );
 }
+/** Up next pops in this long before the song ends. */
+const UP_NEXT_LEAD_MS = 30_000;
 /** The song after this one, with details the queue report may lack filled
  *  from songs Lyssna already knows. */
 function useUpNext(state: AppState) {
@@ -1614,9 +1616,13 @@ function SongLyricsPage({
       songTime - wait + lyricOffset(state.settings, state.playback.item?.uri),
     track = state.playback.item;
   const upNext = useUpNext(state);
+  const upNextShown =
+    !!track?.duration_ms && track.duration_ms - songTime <= UP_NEXT_LEAD_MS;
   const upNextCard = upNext && (
     <button
-      className="lyrics-up-next"
+      className={`lyrics-up-next${upNextShown ? " shown" : ""}`}
+      aria-hidden={!upNextShown}
+      tabIndex={upNextShown ? undefined : -1}
       data-context-route={upNext.id ? `track:${upNext.id}` : undefined}
       onClick={() =>
         onPlayer({

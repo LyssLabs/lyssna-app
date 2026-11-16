@@ -3038,7 +3038,21 @@ small {
   text-align: left;
   color: inherit;
   font: inherit;
-  transition: background 0.2s ease;
+  /* Hidden until the song's last 30 seconds; its space stays reserved so
+     the credits beside it never reflow. */
+  visibility: hidden;
+  opacity: 0;
+  translate: 0 10px;
+  transition:
+    opacity 0.4s ease,
+    translate 0.4s ease,
+    visibility 0.4s,
+    background 0.2s ease;
+}
+.lyrics-up-next.shown {
+  visibility: visible;
+  opacity: 1;
+  translate: 0 0;
 }
 .lyrics-up-next:hover {
   background: light-dark(#ffffff66, #ffffff21);

@@ -1411,7 +1411,7 @@ export function SettingsWindow({
         flag(
           "lyrics_up_next",
           "Show Up next",
-          "Show the next song in the corner of the lyrics page during the last 30 seconds. Click it to skip to that song.",
+          "Show the next song beside the lyric credits during the last 30 seconds. Click it to skip to that song.",
           "queue next song upcoming",
         ),
         <SettingRow

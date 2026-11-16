@@ -19176,7 +19176,7 @@ test("device menu points at the Devices button, which turns green when open or p
   await expect(button).toHaveCSS("color", "rgb(30, 215, 96)");
 });
 
-test("lyrics page shows Up next beside the credits and skips to it", async ({ page }) => {
+test("lyrics page pops Up next in for the last 30 seconds and skips to it", async ({ page }) => {
   await startClient(page);
   const next = {
     ...track,
@@ -19232,6 +19232,23 @@ test("lyrics page shows Up next beside the credits and skips to it", async ({ pa
   await expect(page.locator(".lyric-end-credits .lyrics-up-next")).toHaveCount(
     1,
   );
+  await expect(card).toBeHidden();
+  await page.evaluate(
+    ({ track, playback }) =>
+      (window as any).__clientTest.emit({
+        type: "playback",
+        playback: {
+          ...playback,
+          item: track,
+          is_playing: true,
+          progress_ms: track.duration_ms - 20000,
+        },
+        observed_at: Date.now(),
+        changed: true,
+      }),
+    { track, playback: emptyState.playback },
+  );
+  await expect(card).toBeVisible();
   await expect(card).toContainText("Up next");
   await expect(card).toContainText("Dracula");
   await card.click();
