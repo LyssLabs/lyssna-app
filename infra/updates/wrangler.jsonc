@@ -39,12 +39,12 @@
       "pattern": "updates.lyssna.org"
     },
     {
-      "pattern": "lyssna.org/lyssna.exe",
-      "zone_name": "lyssna.org"
+      "custom_domain": true,
+      "pattern": "lyssna.org"
     },
     {
-      "pattern": "www.lyssna.org/lyssna.exe",
-      "zone_name": "lyssna.org"
+      "custom_domain": true,
+      "pattern": "www.lyssna.org"
     }
   ],
   "secrets": {
