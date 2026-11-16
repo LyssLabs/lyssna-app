@@ -134,6 +134,86 @@ pub fn refused_tracks() -> usize {
     REFUSED_TRACKS.load(Ordering::Relaxed)
 }
 
+// Lyssna: Spotify answers audio key requests that come too fast with
+// refusal code 2 and keeps refusing while they continue (librespot #1649,
+// pacing as proposed in librespot PR #1844). Code 1 is the lasting refusal
+// some accounts get. librespot-core only logs the code, so Lyssna's logger
+// hands it over through `note_audio_key_error`.
+static LAST_KEY_ERROR: AtomicUsize = AtomicUsize::new(0);
+static KEY_TURN: tokio::sync::Mutex<Option<Instant>> = tokio::sync::Mutex::const_new(None);
+static KEY_BACKOFF: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+static KEY_REFUSALS: AtomicUsize = AtomicUsize::new(0);
+const KEY_GAP: Duration = Duration::from_millis(200);
+const KEY_BACKOFF_STEPS: [Duration; 3] = [
+    Duration::from_secs(3),
+    Duration::from_secs(5),
+    Duration::from_secs(10),
+];
+/// Waits of 3, 5, 10, 10 and 10 s: about half a minute, by which Spotify
+/// let keys through again in the reports.
+const KEY_RETRIES: usize = 5;
+const RATE_LIMITED: usize = 2;
+
+/// The refusal code librespot-core logged for the last audio key error.
+pub fn note_audio_key_error(code: u8) {
+    LAST_KEY_ERROR.store(usize::from(code), Ordering::Release);
+}
+
+/// Spotify is refusing audio keys because they were asked for too fast.
+pub fn keys_rate_limited() -> bool {
+    LAST_KEY_ERROR.load(Ordering::Acquire) == RATE_LIMITED
+        && REFUSED_KEYS.load(Ordering::Relaxed) > 0
+}
+
+async fn paced_audio_key(
+    session: &Session,
+    track: SpotifyId,
+    file: crate::core::FileId,
+) -> Result<crate::core::audio_key::AudioKey, Error> {
+    let mut attempt = 0;
+    loop {
+        let result = {
+            let mut last = KEY_TURN.lock().await;
+            let backoff = *KEY_BACKOFF
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(until) = backoff {
+                tokio::time::sleep_until(until.into()).await;
+            }
+            if let Some(previous) = *last {
+                tokio::time::sleep_until((previous + KEY_GAP).into()).await;
+            }
+            *last = Some(Instant::now());
+            LAST_KEY_ERROR.store(0, Ordering::Release);
+            session.audio_key().request(track, file).await
+        };
+        let mut backoff = KEY_BACKOFF
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match result {
+            Ok(key) => {
+                KEY_REFUSALS.store(0, Ordering::Relaxed);
+                *backoff = None;
+                return Ok(key);
+            }
+            Err(error)
+                if error.kind == crate::core::error::ErrorKind::Unavailable
+                    && LAST_KEY_ERROR.load(Ordering::Acquire) == RATE_LIMITED =>
+            {
+                let refusals = KEY_REFUSALS.fetch_add(1, Ordering::Relaxed);
+                let wait = KEY_BACKOFF_STEPS[refusals.min(KEY_BACKOFF_STEPS.len() - 1)];
+                *backoff = Some(Instant::now() + wait);
+                if attempt == KEY_RETRIES {
+                    return Err(error);
+                }
+                warn!("Spotify is limiting audio keys; asking again in {wait:?}");
+                attempt += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 enum PlayerCommand {
     Load {
         track_id: SpotifyUri,
@@ -1142,9 +1222,14 @@ impl PlayerTrackLoader {
             if let Some(loaded) = self.load_bare_track(track_uri.clone(), position_ms).await {
                 return Ok(loaded);
             }
-            warn!("<{track_uri}> failed to load, trying once more");
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            let loaded = self.load_bare_track(track_uri, position_ms).await;
+            // A refused key was already asked again with back-off.
+            let loaded = if REFUSED_KEYS.load(Ordering::Relaxed) > 0 {
+                None
+            } else {
+                warn!("<{track_uri}> failed to load, trying once more");
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                self.load_bare_track(track_uri, position_ms).await
+            };
             if loaded.is_none() && REFUSED_KEYS.load(Ordering::Relaxed) > 0 {
                 REFUSED_TRACKS.fetch_add(1, Ordering::Relaxed);
             }
@@ -1304,7 +1389,7 @@ impl PlayerTrackLoader {
                 if let Some(key) = self.load_cache.keys.get(&cache_key, Instant::now()) {
                     return Ok(key);
                 }
-                let key = self.session.audio_key().request(track_id, file_id).await?;
+                let key = paced_audio_key(&self.session, track_id, file_id).await?;
                 self.load_cache.keys.insert(cache_key, key, Instant::now());
                 Ok::<_, Error>(key)
             };
@@ -1335,8 +1420,19 @@ impl PlayerTrackLoader {
                     Some(key)
                 }
                 Err(e) => {
-                    if e.kind == crate::core::error::ErrorKind::Unavailable {
+                    let refused = e.kind == crate::core::error::ErrorKind::Unavailable;
+                    if refused {
                         REFUSED_KEYS.fetch_add(1, Ordering::Relaxed);
+                    }
+                    // Lyssna: songs are always encrypted, so a refused key
+                    // can't play; decoding anyway only stalls ~10 s on the
+                    // decoder's deadline before giving up.
+                    if refused && audio_item.uri.starts_with("spotify:track:") {
+                        warn!(
+                            "Spotify refused the audio key for <{}>: {e}",
+                            audio_item.uri
+                        );
+                        return None;
                     }
                     warn!("Unable to load key, continuing without decryption: {e}");
                     None

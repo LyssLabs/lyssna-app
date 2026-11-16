@@ -1052,6 +1052,8 @@ fn preload_selection(action: &PlayerAction) -> Option<(librespot_core::SpotifyUr
 /// How long a selection may take to start loading before Play gives up on it.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 // librespot #1649: refused keys follow the account, not the song.
+const KEYS_RATE_LIMITED: &str = "Spotify is unlocking songs slowly after a lot of quick changes. Wait a minute, then press Play.";
+
 pub(crate) fn keys_refused_message() -> &'static str {
     if crate::soloist::supported() {
         "Spotify won't unlock songs for this account in Lyssna's own player. Turn on Play through Spotify Soloist in Settings, under General, Playback. Or open the Spotify app, then pick that app's device from Lyssna's Devices button. Choosing Lyssna in the Spotify app's device list won't work."
@@ -1154,6 +1156,11 @@ impl log::Log for LibrespotLog {
         if message.to_lowercase().contains("token") {
             return;
         }
+        if record.target() == "librespot_core::audio_key"
+            && let Some(code) = audio_key_error_code(&message)
+        {
+            librespot_playback::player::note_audio_key_error(code);
+        }
         let message: String = message.chars().take(300).collect();
         diagnostic(&format!(
             "librespot {} {}: {message}",
@@ -1162,6 +1169,14 @@ impl log::Log for LibrespotLog {
         ));
     }
     fn flush(&self) {}
+}
+/// The refusal code in librespot-core's "error audio key 0 2" line.
+fn audio_key_error_code(message: &str) -> Option<u8> {
+    let code = message
+        .strip_prefix("error audio key ")?
+        .split_whitespace()
+        .nth(1)?;
+    u8::from_str_radix(code, 16).ok()
 }
 fn log_librespot() {
     static LOG: LibrespotLog = LibrespotLog;
@@ -2973,10 +2988,17 @@ async fn run(
                         let uri = track_id.to_uri();
                         unavailable.unavailable(&uri, std::time::Instant::now());
                         if unavailable.key_refused(&uri, librespot_playback::player::refused_tracks()) {
-                            diagnostic("Spotify refused audio keys for two songs in a row; stopped");
                             loaded.store(false, Ordering::Release);
                             intent.reset();
-                            emit(NativeEvent::KeysRefused);
+                            // Rate limiting passes; only a lasting refusal
+                            // means this account needs Soloist.
+                            if librespot_playback::player::keys_rate_limited() {
+                                diagnostic("Spotify rate-limited audio keys for two songs in a row; stopped");
+                                emit(NativeEvent::ControlError(KEYS_RATE_LIMITED.into()));
+                            } else {
+                                diagnostic("Spotify refused audio keys for two songs in a row; stopped");
+                                emit(NativeEvent::KeysRefused);
+                            }
                         }
                     },
                     None => { diagnostic("audio connection ended: player events closed"); connection_lost = true; break; },
@@ -3033,7 +3055,12 @@ async fn run(
             loaded.store(false, Ordering::Release);
             intent.reset();
             emit(NativeEvent::ControlError(
-                "This track is unavailable for your account. Choose another song.".into(),
+                if librespot_playback::player::keys_rate_limited() {
+                    KEYS_RATE_LIMITED
+                } else {
+                    "This track is unavailable for your account. Choose another song."
+                }
+                .into(),
             ));
         }
         if let Some(playing) = intent.next(audio_playing, std::time::Instant::now()) {
@@ -3211,6 +3238,16 @@ mod hosted_jam_tests {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reads_audio_key_refusal_code() {
+        assert_eq!(super::audio_key_error_code("error audio key 0 2"), Some(2));
+        assert_eq!(super::audio_key_error_code("error audio key 0 1"), Some(1));
+        assert_eq!(
+            super::audio_key_error_code("Audio key response timeout"),
+            None
+        );
+    }
+
     #[test]
     fn connect_name_puts_the_computer_first() {
         assert_eq!(super::named_device("ARASHII-PC"), "ARASHII-PC (Lyssna)");
