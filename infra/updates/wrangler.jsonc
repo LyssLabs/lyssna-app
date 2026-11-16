@@ -33,6 +33,18 @@
     {
       "pattern": "www.clypdat.xyz/lyssna.exe",
       "zone_name": "clypdat.xyz"
+    },
+    {
+      "custom_domain": true,
+      "pattern": "updates.lyssna.org"
+    },
+    {
+      "pattern": "lyssna.org/lyssna.exe",
+      "zone_name": "lyssna.org"
+    },
+    {
+      "pattern": "www.lyssna.org/lyssna.exe",
+      "zone_name": "lyssna.org"
     }
   ],
   "secrets": {
