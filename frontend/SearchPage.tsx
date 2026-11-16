@@ -208,12 +208,7 @@ export function SearchPage({
   const query = state.route.slice(7);
   const spotify = !!state.profile;
   const ytmusic = !!state.ytmusic_signed_in && !!query.trim() && (
-    <YouTubeMusicSongs
-      query={query}
-      onPlay={() =>
-        notify("YouTube Music playback arrives in the next update.")
-      }
-    />
+    <YouTubeMusicSongs query={query} onPlay={(track) => playTrack(track)} />
   );
   const loadMore = (shown: SearchCategory) => {
     const kind = {

@@ -806,6 +806,16 @@ test("search lists YouTube Music songs with or without Spotify", async ({
   await expect(songs).toContainText("One More Time (Radio Edit)");
   await expect(songs).toContainText("Song · Daft Punk");
   await expect(songs).toContainText("5:21");
+  await songs.getByRole("button", { name: "Play One More Time (Radio Edit)" }).click();
+  const played = await page.evaluate(() =>
+    (window as any).__clientTest.commands
+      .filter((entry: any) => entry.command === "ytmusic_play")
+      .map((entry: any) => entry.args.track.uri),
+  );
+  expect(played).toEqual(["ytmusic:track:wU26xVT_vBU"]);
+  await expect(page.locator(".player-song")).toContainText(
+    "One More Time (Radio Edit)",
+  );
   // Without Spotify, only YouTube Music's songs show.
   await page.evaluate(() =>
     (window as any).__clientTest.emit({ type: "signed_out" }),

@@ -5899,6 +5899,7 @@ dependencies = [
  "cpal",
  "dasp_sample",
  "num-rational",
+ "symphonia",
 ]
 
 [[package]]

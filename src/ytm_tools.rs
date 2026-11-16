@@ -275,6 +275,9 @@ pub struct Stream {
     pub url: String,
     pub size: Option<u64>,
     pub duration_ms: Option<u64>,
+    /// The headers yt-dlp would send; YouTube checks the User-Agent
+    /// against the client the link was made for.
+    pub headers: Vec<(String, String)>,
 }
 
 /// The audio link in yt-dlp's `--dump-json` output for one chosen format.
@@ -298,10 +301,22 @@ fn stream_from_info(info: &str) -> Result<Stream> {
         .get("duration")
         .and_then(serde_json::Value::as_f64)
         .map(|seconds| (seconds * 1000.0).round() as u64);
+    let headers = chosen
+        .get("http_headers")
+        .or_else(|| info.get("http_headers"))
+        .and_then(serde_json::Value::as_object)
+        .map(|headers| {
+            headers
+                .iter()
+                .filter_map(|(name, value)| Some((name.clone(), value.as_str()?.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(Stream {
         url: url.to_owned(),
         size,
         duration_ms,
+        headers,
     })
 }
 
@@ -401,13 +416,14 @@ mod tests {
 
     #[test]
     fn reads_the_audio_link_from_song_details() {
-        let info = r#"{"id":"wU26xVT_vBU","duration":320.5,"url":"https://rr1.googlevideo.com/videoplayback?itag=140","filesize":5181590}"#;
+        let info = r#"{"id":"wU26xVT_vBU","duration":320.5,"url":"https://rr1.googlevideo.com/videoplayback?itag=140","filesize":5181590,"http_headers":{"User-Agent":"com.google.ios.youtube/20.10.4"}}"#;
         assert_eq!(
             stream_from_info(info).unwrap(),
             Stream {
                 url: "https://rr1.googlevideo.com/videoplayback?itag=140".into(),
                 size: Some(5_181_590),
                 duration_ms: Some(320_500),
+                headers: vec![("User-Agent".into(), "com.google.ios.youtube/20.10.4".into())],
             }
         );
         assert!(stream_from_info(r#"{"url":"http://insecure.example/a"}"#).is_err());

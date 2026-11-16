@@ -91,6 +91,8 @@ pub struct Snapshot {
 struct Inner {
     dj_requests: crate::dj::requests::Requests,
     dj_voice: crate::dj::voice::VoiceCapture,
+    ytmusic: crate::ytm_player::Player,
+    ytmusic_watch: std::sync::Once,
     home_generation: std::sync::atomic::AtomicU64,
     snapshot: Mutex<Snapshot>,
     commands: mpsc::Sender<Command>,
@@ -591,6 +593,8 @@ impl Desktop {
             home_generation: std::sync::atomic::AtomicU64::new(0),
             dj_requests: crate::dj::requests::Requests::default(),
             dj_voice: crate::dj::voice::VoiceCapture::default(),
+            ytmusic: crate::ytm_player::Player::default(),
+            ytmusic_watch: std::sync::Once::new(),
             snapshot: Mutex::new(Snapshot {
                 narrating: false,
                 canvas_url: None,
@@ -1031,6 +1035,8 @@ impl Desktop {
                         Event::LibraryFolders(folders) => {
                             emit(json!({"type":"library_folders","folders":folders}));
                         }
+                        Event::Playback(..) | Event::SoloistPlayback(..)
+                            if crate::ytm_player::active() => {}
                         event @ (Event::Playback(..) | Event::SoloistPlayback(..)) => {
                             let observed_at = match &event {
                                 Event::SoloistPlayback(_, at) => (*at).max(now_ms()),
@@ -2571,6 +2577,30 @@ fn player(
 ) -> std::result::Result<(), String> {
     if !matches!(request.command.as_str(), "volume" | "shuffle" | "repeat") {
         state.0.dj_requests.cancel_all();
+    }
+    if crate::ytm_player::active() {
+        let player = &state.0.ytmusic;
+        let handled = match (request.command.as_str(), &request.uri) {
+            ("pause", _) => Some(player.pause()),
+            ("play", None) => Some(player.resume()),
+            ("previous", _) => Some(player.seek(0)),
+            ("seek", _) => Some(player.seek(request.position_ms.unwrap_or(0))),
+            ("volume", _) => Some(player.volume(request.volume.unwrap_or(100))),
+            ("next", _) => {
+                player.stop();
+                Some(Ok(()))
+            }
+            ("shuffle" | "repeat" | "enqueue" | "remove_from_queue" | "clear_queue", _) => {
+                Some(Ok(()))
+            }
+            _ => {
+                player.stop();
+                None
+            }
+        };
+        if let Some(result) = handled {
+            return result.map_err(|error| format!("{error:#}"));
+        }
     }
     let result = || -> Result<()> {
         let mut snapshot = lock(&state.0.snapshot)?;
@@ -4861,6 +4891,97 @@ async fn ytmusic_search(query: String) -> std::result::Result<Vec<Track>, String
         .map_err(|error| format!("{error:#}"))
 }
 
+/// Mirrors the YouTube Music player into the shared playback the player
+/// bar, lyrics and Now playing read.
+fn watch_ytmusic(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let mut shown = crate::ytm_player::Status::default();
+        let mut sent_at = Instant::now();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            let Some(state) = app.try_state::<Desktop>() else {
+                continue;
+            };
+            let status = state.0.ytmusic.status();
+            if !crate::ytm_player::active() && status.track.is_none() {
+                shown = status;
+                continue;
+            }
+            let changed = status.track.as_ref().map(|track| &track.uri)
+                != shown.track.as_ref().map(|track| &track.uri)
+                || status.playing != shown.playing
+                || status.volume != shown.volume;
+            let drifted = status.position_ms.abs_diff(shown.position_ms) > 1500
+                && sent_at.elapsed() < std::time::Duration::from_millis(400);
+            if !changed && !drifted && sent_at.elapsed() < std::time::Duration::from_secs(5) {
+                continue;
+            }
+            let Ok(mut snapshot) = state.0.snapshot.lock() else {
+                continue;
+            };
+            let item_changed = snapshot.playback.item.as_ref().map(|track| &track.uri)
+                != status.track.as_ref().map(|track| &track.uri);
+            snapshot.playback = crate::model::Playback {
+                item: status.track.clone(),
+                is_playing: status.playing,
+                progress_ms: Some(status.position_ms),
+                device: crate::model::Device {
+                    name: snapshot.local_device_name.clone(),
+                    is_active: true,
+                    volume_percent: Some(status.volume),
+                    kind: "Computer".into(),
+                    ..crate::model::Device::default()
+                },
+                ..crate::model::Playback::default()
+            };
+            snapshot.observed_at = now_ms();
+            let _ = app.emit(
+                "lyssna",
+                json!({"type":"playback","playback":snapshot.playback,"observed_at":snapshot.observed_at,"changed":item_changed}),
+            );
+            drop(snapshot);
+            shown = status;
+            sent_at = Instant::now();
+        }
+    });
+}
+
+/// Plays a YouTube Music song here, pausing Spotify's engine first.
+#[tauri::command]
+async fn ytmusic_play(
+    app: tauri::AppHandle,
+    state: State<'_, Desktop>,
+    track: Track,
+) -> std::result::Result<(), String> {
+    let video_id = crate::ytm_api::video_id(&track.uri)
+        .ok_or("Not a YouTube Music song")?
+        .to_owned();
+    state
+        .0
+        .ytmusic_watch
+        .call_once(|| watch_ytmusic(app.clone()));
+    let path = tauri::async_runtime::spawn_blocking(move || crate::ytm_player::fetch(&video_id))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| format!("{error:#}"))?;
+    if state.0.controls.has_track() {
+        let _ = state.0.controls.send(PlayerAction::Pause);
+    }
+    let volume = lock(&state.0.snapshot)
+        .map(|snapshot| snapshot.settings.volume_percent)
+        .unwrap_or(100);
+    state
+        .0
+        .ytmusic
+        .volume(volume)
+        .map_err(|error| format!("{error:#}"))?;
+    state
+        .0
+        .ytmusic
+        .play(path, track)
+        .map_err(|error| format!("{error:#}"))
+}
+
 #[tauri::command]
 fn ytmusic_sign_out(app: tauri::AppHandle) -> std::result::Result<(), String> {
     crate::ytm_auth::forget().map_err(|error| format!("{error:#}"))?;
@@ -6235,6 +6356,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             ytmusic_import_cookies,
             ytmusic_sign_out,
             ytmusic_search,
+            ytmusic_play,
             resolve_album,
             user_profile,
             follow_user,

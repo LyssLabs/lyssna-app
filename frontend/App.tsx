@@ -2291,6 +2291,11 @@ function App() {
   const playTrack = useCallback(
     (track: Track, index?: number) => {
       if (!playable(track)) return;
+      if (track.uri.startsWith("ytmusic:")) {
+        dispatch({ type: "play_requested", track });
+        void call("ytmusic_play", { track });
+        return;
+      }
       const current = stateRef.current;
       const complete = current.browse_info?.album
         ? { ...track, album: current.browse_info.album }

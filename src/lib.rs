@@ -69,4 +69,5 @@ pub mod whats_new;
 pub mod worker;
 pub mod ytm_api;
 pub mod ytm_auth;
+pub mod ytm_player;
 pub mod ytm_tools;
