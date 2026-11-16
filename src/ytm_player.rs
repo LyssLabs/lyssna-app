@@ -1,20 +1,25 @@
 //! Plays YouTube Music songs on this computer. Spotify's engine needs a
-//! Spotify session, so YouTube Music has its own: the song's AAC stream is
-//! fetched into a cache, then decoded by symphonia through rodio.
+//! Spotify session, so YouTube Music has its own: the song's AAC stream
+//! plays while it downloads into a small cache, decoded by symphonia
+//! through rodio.
 
 use anyhow::{Context, Result, ensure};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, SystemTime};
 
 use crate::model::Track;
 
 const CHUNK: u64 = 10 * 1024 * 1024;
 const MAX_SONG: u64 = 200 * 1024 * 1024;
+/// Enough audio to start without the decoder catching up with the download.
+const START_AFTER: u64 = 256 * 1024;
+const CACHE_SONGS: usize = 50;
+const CACHE_BYTES: u64 = 500 * 1024 * 1024;
 const TICK: Duration = Duration::from_millis(250);
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -34,7 +39,7 @@ pub struct Status {
 }
 
 enum Command {
-    Play(PathBuf, Box<Track>),
+    Play(Audio, Box<Track>),
     Pause,
     Resume,
     Seek(u64),
@@ -89,9 +94,9 @@ impl Player {
         anyhow::bail!("YouTube Music player stopped")
     }
 
-    pub fn play(&self, path: PathBuf, track: Track) -> Result<()> {
+    pub fn play(&self, audio: Audio, track: Track) -> Result<()> {
         ACTIVE.store(true, Ordering::Release);
-        self.send(Command::Play(path, Box::new(track)))
+        self.send(Command::Play(audio, Box::new(track)))
     }
     pub fn pause(&self) -> Result<()> {
         self.send(Command::Pause)
@@ -132,7 +137,7 @@ fn run(commands: &mpsc::Receiver<Command>, status: &Mutex<Status>) {
             Err(RecvTimeoutError::Disconnected) => return,
         };
         match command {
-            Some(Command::Play(path, track)) => {
+            Some(Command::Play(audio, track)) => {
                 sink = None;
                 let started = (|| -> Result<rodio::Sink> {
                     if output.is_none() {
@@ -142,10 +147,9 @@ fn run(commands: &mpsc::Receiver<Command>, status: &Mutex<Status>) {
                         output = Some(stream);
                     }
                     let stream = output.as_ref().context("No audio output")?;
-                    let file = fs::File::open(&path)?;
                     let source = rodio::Decoder::builder()
-                        .with_data(std::io::BufReader::new(file))
-                        .with_byte_len(fs::metadata(&path)?.len())
+                        .with_byte_len(audio.len)
+                        .with_data(std::io::BufReader::new(audio))
                         .with_hint("m4a")
                         .with_seekable(true)
                         .build()
@@ -221,7 +225,74 @@ fn cache_dir() -> Result<PathBuf> {
     Ok(crate::config::data_dir()?.join("ytmusic").join("cache"))
 }
 
-fn download(stream: &crate::ytm_tools::Stream, into: &Path) -> Result<()> {
+#[derive(Default)]
+struct Progress {
+    written: u64,
+    total: Option<u64>,
+    done: bool,
+    failed: bool,
+}
+
+type Shared = Arc<(Mutex<Progress>, Condvar)>;
+
+/// A song's audio as it arrives: reads wait for bytes still downloading.
+pub struct Audio {
+    file: fs::File,
+    len: u64,
+    progress: Option<Shared>,
+    position: u64,
+}
+
+impl Read for Audio {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let wanted = match &self.progress {
+            None => buffer.len(),
+            Some(shared) => {
+                let (lock, ready) = &**shared;
+                let broken = |_| std::io::Error::other("YouTube Music download unavailable");
+                let mut progress = lock.lock().map_err(broken)?;
+                while progress.written <= self.position && !progress.done && !progress.failed {
+                    progress = ready.wait(progress).map_err(broken)?;
+                }
+                if progress.failed && progress.written <= self.position {
+                    return Err(std::io::Error::other("YouTube Music's audio stopped"));
+                }
+                (buffer.len() as u64).min(progress.written.saturating_sub(self.position)) as usize
+            }
+        };
+        if wanted == 0 {
+            return Ok(0);
+        }
+        let read = self.file.read(&mut buffer[..wanted])?;
+        self.position += read as u64;
+        Ok(read)
+    }
+}
+
+impl Seek for Audio {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        let target = match to {
+            SeekFrom::Start(offset) => offset,
+            SeekFrom::End(offset) => self.len.saturating_add_signed(offset),
+            SeekFrom::Current(offset) => self.position.saturating_add_signed(offset),
+        };
+        self.position = self.file.seek(SeekFrom::Start(target))?;
+        Ok(self.position)
+    }
+}
+
+/// Lets the download rename a file the player still has open.
+fn shared_open(options: &mut fs::OpenOptions) -> &mut fs::OpenOptions {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const SHARE_READ_WRITE_DELETE: u32 = 0x1 | 0x2 | 0x4;
+        options.share_mode(SHARE_READ_WRITE_DELETE);
+    }
+    options
+}
+
+fn client(stream: &crate::ytm_tools::Stream) -> Result<reqwest::blocking::Client> {
     let mut headers = reqwest::header::HeaderMap::new();
     for (name, value) in &stream.headers {
         if let (Ok(name), Ok(value)) = (
@@ -231,18 +302,29 @@ fn download(stream: &crate::ytm_tools::Stream, into: &Path) -> Result<()> {
             headers.insert(name, value);
         }
     }
-    let client = reqwest::blocking::Client::builder()
+    Ok(reqwest::blocking::Client::builder()
         .default_headers(headers)
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(120))
-        .build()?;
-    let mut file = fs::File::create(into)?;
+        .build()?)
+}
+
+fn download(stream: &crate::ytm_tools::Stream, file: &mut fs::File, shared: &Shared) -> Result<()> {
+    let client = client(stream)?;
+    let (lock, ready) = &**shared;
+    let update = |change: &dyn Fn(&mut Progress)| {
+        if let Ok(mut progress) = lock.lock() {
+            change(&mut progress);
+        }
+        ready.notify_all();
+    };
     let mut offset = 0u64;
+    let mut piece = vec![0; 64 * 1024];
     // YouTube slows unranged downloads to playback speed; yt-dlp asks for
     // 10 MB ranges for the same reason.
     loop {
         let end = offset + CHUNK - 1;
-        let response = client
+        let mut response = client
             .get(&stream.url)
             .header(reqwest::header::RANGE, format!("bytes={offset}-{end}"))
             .send()
@@ -259,16 +341,27 @@ fn download(stream: &crate::ytm_tools::Stream, into: &Path) -> Result<()> {
             .and_then(|range| range.rsplit_once('/'))
             .and_then(|(_, total)| total.parse::<u64>().ok())
             .or(stream.size);
-        let mut body = Vec::new();
-        response.take(CHUNK + 1).read_to_end(&mut body)?;
-        file.write_all(&body)?;
-        offset += body.len() as u64;
-        ensure!(offset <= MAX_SONG, "This song is too large");
+        if let Some(total) = total {
+            ensure!(total <= MAX_SONG, "This song is too large");
+            update(&|progress| progress.total = Some(total));
+        }
+        let start = offset;
+        loop {
+            let read = response.read(&mut piece)?;
+            if read == 0 {
+                break;
+            }
+            file.write_all(&piece[..read])?;
+            offset += read as u64;
+            ensure!(offset <= MAX_SONG, "This song is too large");
+            update(&|progress| progress.written = offset);
+        }
+        let got = offset - start;
         let done = match total {
             Some(total) => offset >= total,
-            None => (body.len() as u64) < CHUNK,
+            None => got < CHUNK,
         };
-        if done || body.is_empty() {
+        if done || got == 0 {
             break;
         }
     }
@@ -277,38 +370,206 @@ fn download(stream: &crate::ytm_tools::Stream, into: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The song's audio on disk, fetched first when it is not cached.
-pub fn fetch(video_id: &str) -> Result<PathBuf> {
+/// Keeps the songs played most recently, within the cache's limits.
+fn prune(dir: &Path, keep: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut songs: Vec<(SystemTime, u64, PathBuf)> = entries
+        .flatten()
+        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "m4a"))
+        .filter_map(|entry| {
+            let meta = entry.metadata().ok()?;
+            Some((meta.modified().ok()?, meta.len(), entry.path()))
+        })
+        .collect();
+    songs.sort_by_key(|song| std::cmp::Reverse(song.0));
+    let mut bytes = 0;
+    for (index, (_, len, path)) in songs.iter().enumerate() {
+        bytes += len;
+        if path != keep && (index >= CACHE_SONGS || bytes > CACHE_BYTES) {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn finish(result: Result<()>, shared: &Shared, partial: &Path, path: &Path) {
+    let (lock, ready) = &**shared;
+    if let Ok(mut progress) = lock.lock() {
+        progress.done = result.is_ok();
+        progress.failed = result.is_err();
+    }
+    ready.notify_all();
+    match result {
+        Ok(()) => {
+            if fs::rename(partial, path).is_ok()
+                && let Some(dir) = path.parent()
+            {
+                prune(dir, path);
+            }
+        }
+        Err(error) => {
+            crate::native::diagnostic(&format!("YouTube Music download failed: {error:#}"));
+            let _ = fs::remove_file(partial);
+        }
+    }
+}
+
+/// The song's audio, from the cache or streamed while it downloads into it.
+pub fn open(video_id: &str) -> Result<Audio> {
     ensure!(
         crate::ytm_tools::valid_video_id(video_id),
         "Not a YouTube Music song"
     );
     let dir = cache_dir()?;
     let path = dir.join(format!("{video_id}.m4a"));
-    if path.is_file() {
-        return Ok(path);
+    if let Ok(file) = shared_open(fs::OpenOptions::new().read(true).write(true)).open(&path) {
+        let len = file.metadata()?.len();
+        let _ = file.set_modified(SystemTime::now());
+        return Ok(Audio {
+            file,
+            len,
+            progress: None,
+            position: 0,
+        });
     }
     fs::create_dir_all(&dir)?;
     let stream = crate::ytm_tools::resolve(video_id)?;
     let partial = dir.join(format!("{video_id}.download"));
-    let result = download(&stream, &partial);
-    if let Err(error) = result {
-        let _ = fs::remove_file(&partial);
-        return Err(error);
+    let mut writer = shared_open(
+        fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true),
+    )
+    .open(&partial)?;
+    let reader = shared_open(fs::OpenOptions::new().read(true)).open(&partial)?;
+    let shared: Shared = Arc::default();
+    let downloading = shared.clone();
+    std::thread::Builder::new()
+        .name("ytmusic-download".into())
+        .spawn(move || {
+            let result = download(&stream, &mut writer, &downloading);
+            drop(writer);
+            finish(result, &downloading, &partial, &path);
+        })?;
+    let (lock, ready) = &*shared;
+    let broken = |_| anyhow::anyhow!("YouTube Music download unavailable");
+    let mut progress = lock.lock().map_err(broken)?;
+    while progress.written < START_AFTER && !progress.done && !progress.failed {
+        progress = ready.wait(progress).map_err(broken)?;
     }
-    fs::rename(&partial, &path)?;
-    Ok(path)
+    ensure!(
+        !progress.failed,
+        "YouTube Music's audio could not be downloaded"
+    );
+    let len = progress.total.unwrap_or(progress.written);
+    drop(progress);
+    Ok(Audio {
+        file: reader,
+        len,
+        progress: Some(shared),
+        position: 0,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    struct Temp(PathBuf);
+    impl Temp {
+        fn new(name: &str) -> Self {
+            Self(std::env::temp_dir().join(format!("lyssna-ytm-{}-{name}", std::process::id())))
+        }
+    }
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn arriving(name: &str, bytes: &[u8]) -> (Audio, Shared, Temp) {
+        let temp = Temp::new(name);
+        fs::write(&temp.0, bytes).unwrap();
+        let shared: Shared = Arc::default();
+        let audio = Audio {
+            file: fs::File::open(&temp.0).unwrap(),
+            len: bytes.len() as u64,
+            progress: Some(shared.clone()),
+            position: 0,
+        };
+        (audio, shared, temp)
+    }
+
     #[test]
     fn volume_follows_the_slider_squared() {
         assert_eq!(gain(100), 1.0);
         assert_eq!(gain(50), 0.25);
         assert_eq!(gain(0), 0.0);
+    }
+
+    #[test]
+    fn reads_wait_for_audio_still_downloading() {
+        let (mut audio, shared, _temp) = arriving("wait", b"abcdef");
+        shared.0.lock().unwrap().written = 3;
+        let mut buffer = [0; 6];
+        assert_eq!(audio.read(&mut buffer).unwrap(), 3);
+        assert_eq!(&buffer[..3], b"abc");
+        let writer = shared.clone();
+        let later = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            writer.0.lock().unwrap().written = 6;
+            writer.1.notify_all();
+        });
+        assert_eq!(audio.read(&mut buffer).unwrap(), 3);
+        assert_eq!(&buffer[..3], b"def");
+        later.join().unwrap();
+        shared.0.lock().unwrap().done = true;
+        assert_eq!(audio.read(&mut buffer).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_failed_download_ends_the_song_with_an_error() {
+        let (mut audio, shared, _temp) = arriving("failed", b"abc");
+        {
+            let mut progress = shared.0.lock().unwrap();
+            progress.written = 3;
+            progress.failed = true;
+        }
+        let mut buffer = [0; 8];
+        assert_eq!(audio.read(&mut buffer).unwrap(), 3);
+        assert!(audio.read(&mut buffer).is_err());
+    }
+
+    #[test]
+    fn seeking_from_the_end_uses_the_whole_size() {
+        let (mut audio, _shared, _temp) = arriving("seek", b"abcdef");
+        assert_eq!(audio.seek(SeekFrom::End(-2)).unwrap(), 4);
+    }
+
+    #[test]
+    fn the_cache_keeps_the_songs_played_last() {
+        let dir = Temp::new("cache");
+        fs::create_dir_all(&dir.0).unwrap();
+        let now = SystemTime::now();
+        let song = |index: usize| dir.0.join(format!("{index:011}.m4a"));
+        for index in 0..CACHE_SONGS + 2 {
+            fs::write(song(index), b"x").unwrap();
+            fs::File::options()
+                .write(true)
+                .open(song(index))
+                .unwrap()
+                .set_modified(now - Duration::from_secs(index as u64 * 60))
+                .unwrap();
+        }
+        let playing = song(CACHE_SONGS + 1);
+        prune(&dir.0, &playing);
+        assert_eq!(fs::read_dir(&dir.0).unwrap().count(), CACHE_SONGS + 1);
+        assert!(playing.exists());
+        assert!(!song(CACHE_SONGS).exists());
+        assert!(song(CACHE_SONGS - 1).exists());
     }
 
     #[test]

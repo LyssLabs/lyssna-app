@@ -4960,7 +4960,7 @@ async fn ytmusic_play(
         .0
         .ytmusic_watch
         .call_once(|| watch_ytmusic(app.clone()));
-    let path = tauri::async_runtime::spawn_blocking(move || crate::ytm_player::fetch(&video_id))
+    let audio = tauri::async_runtime::spawn_blocking(move || crate::ytm_player::open(&video_id))
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| format!("{error:#}"))?;
@@ -4978,7 +4978,7 @@ async fn ytmusic_play(
     state
         .0
         .ytmusic
-        .play(path, track)
+        .play(audio, track)
         .map_err(|error| format!("{error:#}"))
 }
 
