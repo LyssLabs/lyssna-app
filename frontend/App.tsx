@@ -3913,6 +3913,7 @@ function App() {
               onImport={() => setTtmlOpen("load")}
               onRetry={() => void call("retry_lyrics")}
               onSave={save}
+              queueOpen={sidebar && panel === "queue"}
             >
               {draftLyrics && playingUri && (
                 <div className="ttml-draft-banner" role="status">

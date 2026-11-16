@@ -19247,7 +19247,7 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
     { track, playback: emptyState.playback },
   );
   await expect(page.locator(".lyric-end-credits .lyrics-up-next")).toBeVisible();
-  await expect(card).toContainText("Up next");
+  await expect(card).toContainText("Up Next");
   await expect(card).toContainText("Dracula");
   await card.click();
   await expect
@@ -19260,4 +19260,21 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
       ),
     )
     .toMatchObject({ command: "skip_to", uri: next.uri });
+  await page.evaluate(
+    ({ track, playback }) =>
+      (window as any).__clientTest.emit({
+        type: "playback",
+        playback: {
+          ...playback,
+          item: track,
+          is_playing: true,
+          progress_ms: track.duration_ms - 20000,
+          repeat_state: "track",
+        },
+        observed_at: Date.now(),
+        changed: true,
+      }),
+    { track, playback: emptyState.playback },
+  );
+  await expect(card).toHaveCount(0);
 });

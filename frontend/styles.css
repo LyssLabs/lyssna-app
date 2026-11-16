@@ -3028,67 +3028,115 @@ small {
 .lyrics-up-next {
   flex: 0 1 280px;
   max-width: 50%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  font-size: 15px;
+  /* Small type over a bright cover or Canvas needs a little lift. */
+  text-shadow: 0 1px 12px #00000047;
+}
+.lyrics-up-next-body {
+  grid-area: 1 / 1;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75em;
   min-width: 0;
-  padding: 10px 14px 10px 10px;
-  border-radius: 10px;
-  background: light-dark(#ffffff3d, #ffffff12);
-  text-align: left;
+  padding: 0;
+  border: 0;
+  background: none;
   color: inherit;
   font: inherit;
-  transition: background 0.2s ease;
-  animation: up-next-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    opacity 180ms ease-out,
+    filter 180ms ease-out;
 }
-@keyframes up-next-in {
+/* A queue change while it shows: the new song crossfades over the old,
+   with a touch of blur so the two read as one line changing. */
+.lyrics-up-next-body:not(.first) {
+  animation: up-next-swap 180ms ease-out;
+}
+@keyframes up-next-swap {
   from {
     opacity: 0;
-    translate: 16px 0;
-    scale: 0.96;
+    filter: blur(2px);
   }
 }
-.reduce-motion .lyrics-up-next {
-  animation: none;
+.lyrics-up-next-body.leaving {
+  opacity: 0;
+  filter: blur(2px);
+  pointer-events: none;
 }
-.lyrics-up-next:hover {
-  background: light-dark(#ffffff66, #ffffff21);
+/* The reveal: cover and text rise into place, the text a beat behind.
+   They leave the way they came, faster. */
+.lyrics-up-next-body > :is(.cover, .lyrics-up-next-text) {
+  transition:
+    opacity 180ms ease-out,
+    translate 220ms ease-out;
 }
-.lyrics-up-next > .cover {
+.lyrics-up-next-body.first > :is(.cover, .lyrics-up-next-text) {
+  animation:
+    up-next-fade 400ms ease-out backwards,
+    up-next-rise 450ms ease-out backwards;
+}
+.lyrics-up-next-body.first > .lyrics-up-next-text {
+  animation-delay: 50ms;
+}
+@keyframes up-next-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes up-next-rise {
+  from {
+    translate: 0 8px;
+  }
+}
+.lyrics-up-next.leaving .lyrics-up-next-body > * {
+  opacity: 0;
+  translate: 0 8px;
+}
+.reduce-motion .lyrics-up-next-body.first > * {
+  animation: up-next-fade 400ms ease-out backwards;
+}
+.reduce-motion .lyrics-up-next.leaving .lyrics-up-next-body > * {
+  translate: none;
+}
+.reduce-motion .lyrics-up-next-body {
+  animation-name: none;
+  filter: none;
+}
+.lyrics-up-next-body > .cover {
   flex: none;
-  width: 46px;
-  height: 46px;
-  border-radius: 6px;
+  width: 2.9em;
+  height: 2.9em;
+  border-radius: 0.4em;
+  background: #ffffff14;
+  box-shadow: 0 0.15em 0.6em #00000038;
 }
 .lyrics-up-next-text {
-  display: grid;
-  align-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   min-width: 0;
-  gap: 1px;
-}
-.lyrics-up-next-text > *,
-.lyrics-up-next-text .marquee {
-  line-height: 1.3;
 }
 .lyrics-up-next-text > * {
-  min-width: 0;
-  white-space: nowrap;
+  max-width: 100%;
+  line-height: 1.25;
 }
 .lyrics-up-next-text small {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 0.7em;
+  font-weight: 600;
   opacity: 0.7;
 }
-.lyrics-up-next-text strong {
-  font-size: 15px;
-  color: light-dark(#000, #fff);
-  opacity: 0.85;
+.lyrics-up-next-title {
+  font-weight: 600;
+  color: light-dark(#000000f5, #fffffff5);
 }
-.lyrics-up-next-text span {
-  font-size: 13px;
-  opacity: 0.75;
+.lyrics-up-next-artist {
+  font-size: 0.84em;
+  color: light-dark(#000000a3, #ffffffa3);
 }
 /* Only carries the song menu; the title and artists lay out as before. */
 .lyrics-details {

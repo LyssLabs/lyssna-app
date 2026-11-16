@@ -1566,6 +1566,96 @@ export function LyricsPage(props: Parameters<typeof SongLyricsPage>[0]) {
 }
 /** Up next pops in this long before the song ends. */
 const UP_NEXT_LEAD_MS = 30_000;
+/** The longest exit in the Up next styles; content is dropped after it. */
+const UP_NEXT_EXIT_MS = 220;
+type UpNextBody = { track: Track; leaving: boolean; first: boolean };
+/** The next song beside the credits. It rises in, leaves the way it came,
+ *  and crossfades when the queue changes while it shows. */
+function UpNext({
+  track,
+  reduceMotion,
+  onPlay,
+}: {
+  track?: Track;
+  reduceMotion: boolean;
+  onPlay: (track: Track) => void;
+}) {
+  const [bodies, setBodies] = useState<UpNextBody[]>([]);
+  const [leaving, setLeaving] = useState(false);
+  const latest = useRef(track);
+  latest.current = track;
+  const uri = track?.uri;
+  useEffect(() => {
+    const next = latest.current;
+    if (!next) {
+      setLeaving(true);
+      const timer = setTimeout(() => {
+        setBodies([]);
+        setLeaving(false);
+      }, UP_NEXT_EXIT_MS);
+      return () => clearTimeout(timer);
+    }
+    setLeaving(false);
+    setBodies((old) => {
+      const live = old.filter((body) => !body.leaving);
+      if (live.at(-1)?.track.uri === next.uri) return old;
+      if (!live.length) return [{ track: next, leaving: false, first: true }];
+      return [
+        ...live.map((body) => ({ ...body, leaving: true })),
+        { track: next, leaving: false, first: false },
+      ];
+    });
+  }, [uri]);
+  const swapping = bodies.some((body) => body.leaving);
+  useEffect(() => {
+    if (!swapping) return;
+    const timer = setTimeout(
+      () => setBodies((old) => old.filter((body) => !body.leaving)),
+      UP_NEXT_EXIT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [swapping]);
+  if (!bodies.length) return null;
+  return (
+    <div className={`lyrics-up-next${leaving ? " leaving" : ""}`}>
+      {bodies.map((body) => {
+        const song =
+          !body.leaving && track?.uri === body.track.uri ? track : body.track;
+        const artists = artistNames(song);
+        return (
+          <button
+            key={song.uri}
+            className={`lyrics-up-next-body${body.first ? " first" : ""}${body.leaving ? " leaving" : ""}`}
+            tabIndex={body.leaving || leaving ? -1 : undefined}
+            data-context-route={song.id ? `track:${song.id}` : undefined}
+            onClick={() => onPlay(song)}
+          >
+            <Cover images={song.album.images} />
+            <span className="lyrics-up-next-text">
+              <small>Up Next</small>
+              <Marquee
+                className="lyrics-up-next-title"
+                text={song.name}
+                reduceMotion={reduceMotion}
+              >
+                {song.name}
+              </Marquee>
+              {artists && (
+                <Marquee
+                  className="lyrics-up-next-artist"
+                  text={artists}
+                  reduceMotion={reduceMotion}
+                >
+                  {artists}
+                </Marquee>
+              )}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 /** The song after this one, with details the queue report may lack filled
  *  from songs Lyssna already knows. */
 function useUpNext(state: AppState) {
@@ -1584,6 +1674,8 @@ function useUpNext(state: AppState) {
   );
   return state.settings.lyrics_up_next === false ||
     state.narrating ||
+    // Repeat-one plays this song again, so nothing else is next.
+    state.playback.repeat_state === "track" ||
     !next?.name ||
     next.uri === state.playback.item?.uri
     ? undefined
@@ -1600,6 +1692,7 @@ function SongLyricsPage({
   onSave,
   onCanvasActive,
   immersive = false,
+  queueOpen = false,
   children,
 }: {
   state: AppState;
@@ -1609,6 +1702,8 @@ function SongLyricsPage({
   onSave: (track: Track) => void;
   onCanvasActive?: (active: boolean) => void;
   immersive?: boolean;
+  /** The open queue already lists the next song. */
+  queueOpen?: boolean;
   children?: ReactNode;
 } & Links) {
   const { position: songTime, wait } = usePlaybackClock(state),
@@ -1617,33 +1712,17 @@ function SongLyricsPage({
     track = state.playback.item;
   const upNext = useUpNext(state);
   const upNextShown =
-    !!track?.duration_ms && track.duration_ms - songTime <= UP_NEXT_LEAD_MS;
-  const upNextCard = upNext && upNextShown && (
-    <button
-      className="lyrics-up-next"
-      data-context-route={upNext.id ? `track:${upNext.id}` : undefined}
-      onClick={() =>
-        onPlayer({
-          command: "skip_to",
-          uri: upNext.uri,
-          track: upNext,
-        })
+    !queueOpen &&
+    !!track?.duration_ms &&
+    track.duration_ms - songTime <= UP_NEXT_LEAD_MS;
+  const upNextCard = (
+    <UpNext
+      track={upNextShown ? upNext : undefined}
+      reduceMotion={state.settings.reduce_motion}
+      onPlay={(song) =>
+        onPlayer({ command: "skip_to", uri: song.uri, track: song })
       }
-    >
-      <Cover images={upNext.album.images} />
-      <span className="lyrics-up-next-text">
-        <small>Up next</small>
-        <Marquee text={upNext.name} reduceMotion={state.settings.reduce_motion}>
-          <strong>{upNext.name}</strong>
-        </Marquee>
-        <Marquee
-          text={artistNames(upNext)}
-          reduceMotion={state.settings.reduce_motion}
-        >
-          <span>{artistNames(upNext)}</span>
-        </Marquee>
-      </span>
-    </button>
+    />
   );
   // Full screen seek: preview while dragging, seek once on release.
   const [seeking, setSeeking] = useState<number | null>(null);
