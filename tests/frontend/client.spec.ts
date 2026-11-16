@@ -19279,6 +19279,75 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
   await expect(card).toHaveCount(0);
 });
 
+test("the Now playing card's credits never cover lines still to come", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 760 });
+  await startClient(page);
+  const line = (start: number, text: string) => ({
+    text,
+    start_ms: start,
+    end_ms: start + 2000,
+    background: false,
+    opposite: false,
+    words: [],
+    translation: "",
+    romanization: "",
+  });
+  const lines = [
+    ...Array.from({ length: 12 }, (_, index) =>
+      line(1000 + index * 2000, `Line ${index} with a few more words to wrap`),
+    ),
+    line(25000, "Ooh-ooh-ooh-ooh"),
+    line(27000, "Ooh-ooh-ooh-ooh"),
+  ];
+  await page.evaluate(
+    ({ track, playback }) =>
+      (window as any).__clientTest.emit({
+        type: "playback",
+        playback: {
+          ...playback,
+          item: { ...track, duration_ms: 40000 },
+          is_playing: false,
+          progress_ms: 23500,
+        },
+        observed_at: Date.now(),
+        changed: true,
+      }),
+    { track, playback: emptyState.playback },
+  );
+  await page.evaluate(
+    ({ track, lines }) =>
+      (window as any).__clientTest.emit({
+        type: "lyrics",
+        uri: track.uri,
+        lyrics: {
+          source: "spotify",
+          synced: true,
+          instrumental: false,
+          lines,
+          songwriters: ["Chen Kordova", "Aviv Barenholtz", "Eytan Peled"],
+        },
+      }),
+    { track, lines },
+  );
+  const card = page.locator(".now-playing .lyric-preview .lyric-scroll");
+  await expect(card).toBeVisible();
+  const covered = () =>
+    card.evaluate((box) => {
+      const credits = box.querySelector(":scope > .lyric-end-credits");
+      const above = credits?.previousElementSibling;
+      if (!credits || !above) return 0;
+      return Math.round(
+        above.getBoundingClientRect().bottom - credits.getBoundingClientRect().top,
+      );
+    });
+  for (let check = 0; check < 8; check++) {
+    expect(await covered()).toBeLessThanOrEqual(1);
+    await page.waitForTimeout(150);
+  }
+});
+
 // Room below the credits keeps the scroll resting above the end, with the
 // current line holding it, as long pages do.
 for (const room of [0, 320])

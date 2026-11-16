@@ -668,15 +668,18 @@ export function LyricsDisplay({
   );
   const spring = useRef<ScrollSpring>({ position: 0, velocity: 0, target: 0 });
   const heldEnd = useRef<{ top: number; gap: number } | null>(null);
+  /** The credits are in view at the scroll's target, so they hold. */
+  const holdEnd = useRef(false);
   // Where held credits rest, noted wherever the scroll settles (not only
   // at the very end: the current line can hold the scroll above it), so
   // the first frames of the dots opening are corrected too. A scroll event
   // notes it only when none is known, and a spot the scroll still sits on
   // is kept, or growth read before it is corrected would be taken as rest.
   const noteHeldRest = (container: HTMLElement, settled: boolean) => {
-    const above = container.querySelector(
-      ":scope > .lyric-end-credits",
-    )?.previousElementSibling;
+    const above = container.querySelector(":scope > .lyric-end-credits")
+      ?.previousElementSibling as HTMLElement | null | undefined;
+    if (above && holdEnd.current && creditsInView(container, above))
+      container.setAttribute("data-hold-end", "");
     if (!above || !container.hasAttribute("data-hold-end")) {
       heldEnd.current = null;
       return;
@@ -916,7 +919,14 @@ export function LyricsDisplay({
         : anchored
           ? { top: container.scrollTop, gap: held.gap }
           : held;
-      container.toggleAttribute("data-hold-end", holding);
+      // Pinned only once the credits really sit in view: pinning them while
+      // the scroll is still on its way, or in a card too short to reach
+      // the target, drew them over the lines still below.
+      holdEnd.current = holding;
+      container.toggleAttribute(
+        "data-hold-end",
+        holding && (anchored || creditsInView(container, above!)),
+      );
       if (!following) {
         spring.current.velocity = 0;
         setReturnDirection(
@@ -1647,6 +1657,18 @@ export function LyricsPage(props: Parameters<typeof SongLyricsPage>[0]) {
     <DJLyricsPage state={props.state}>{props.children}</DJLyricsPage>
   ) : (
     <SongLyricsPage {...props} />
+  );
+}
+/** The credits fit whole where they would sit unpinned. Pinned, they would
+ *  otherwise be pulled up over the lines above them. */
+function creditsInView(container: HTMLElement, above: HTMLElement) {
+  const credits = above.nextElementSibling as HTMLElement | null;
+  const height = credits
+    ? credits.offsetHeight + parseFloat(getComputedStyle(credits).marginTop)
+    : 0;
+  return (
+    above.offsetTop + above.offsetHeight + height <=
+    container.scrollTop + container.clientHeight + 2
   );
 }
 /** Up next pops in this long before the song ends. */
