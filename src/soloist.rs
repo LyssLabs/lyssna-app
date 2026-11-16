@@ -300,7 +300,7 @@ fn swap_in(bin: &Path) -> Result<()> {
     Ok(())
 }
 
-trait HiddenCommand {
+pub(crate) trait HiddenCommand {
     fn creation_flags_hidden(&mut self) -> &mut Self;
 }
 impl HiddenCommand for Command {
