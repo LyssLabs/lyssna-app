@@ -19229,10 +19229,8 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
   );
   await page.getByTitle("Lyrics", { exact: true }).click();
   const card = page.locator(".lyrics-up-next");
-  await expect(page.locator(".lyric-end-credits .lyrics-up-next")).toHaveCount(
-    1,
-  );
-  await expect(card).toBeHidden();
+  await expect(page.locator(".lyric-end-credits")).toBeVisible();
+  await expect(card).toHaveCount(0);
   await page.evaluate(
     ({ track, playback }) =>
       (window as any).__clientTest.emit({
@@ -19248,7 +19246,7 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
       }),
     { track, playback: emptyState.playback },
   );
-  await expect(card).toBeVisible();
+  await expect(page.locator(".lyric-end-credits .lyrics-up-next")).toBeVisible();
   await expect(card).toContainText("Up next");
   await expect(card).toContainText("Dracula");
   await card.click();

@@ -3038,21 +3038,18 @@ small {
   text-align: left;
   color: inherit;
   font: inherit;
-  /* Hidden until the song's last 30 seconds; its space stays reserved so
-     the credits beside it never reflow. */
-  visibility: hidden;
-  opacity: 0;
-  translate: 0 10px;
-  transition:
-    opacity 0.4s ease,
-    translate 0.4s ease,
-    visibility 0.4s,
-    background 0.2s ease;
+  transition: background 0.2s ease;
+  animation: up-next-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.lyrics-up-next.shown {
-  visibility: visible;
-  opacity: 1;
-  translate: 0 0;
+@keyframes up-next-in {
+  from {
+    opacity: 0;
+    translate: 16px 0;
+    scale: 0.96;
+  }
+}
+.reduce-motion .lyrics-up-next {
+  animation: none;
 }
 .lyrics-up-next:hover {
   background: light-dark(#ffffff66, #ffffff21);

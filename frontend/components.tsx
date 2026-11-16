@@ -1618,11 +1618,9 @@ function SongLyricsPage({
   const upNext = useUpNext(state);
   const upNextShown =
     !!track?.duration_ms && track.duration_ms - songTime <= UP_NEXT_LEAD_MS;
-  const upNextCard = upNext && (
+  const upNextCard = upNext && upNextShown && (
     <button
-      className={`lyrics-up-next${upNextShown ? " shown" : ""}`}
-      aria-hidden={!upNextShown}
-      tabIndex={upNextShown ? undefined : -1}
+      className="lyrics-up-next"
       data-context-route={upNext.id ? `track:${upNext.id}` : undefined}
       onClick={() =>
         onPlayer({
