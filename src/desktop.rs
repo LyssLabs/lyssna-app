@@ -1718,7 +1718,8 @@ impl Desktop {
                         .is_some_and(|track| track.uri == event.uri)
                     {
                         match event.result {
-                            Ok(lyrics) => {
+                            Ok(mut lyrics) => {
+                                crate::lyrics::split_bracketed_background(&mut lyrics);
                                 snapshot.lyrics = Some(lyrics.clone());
                                 snapshot.lyric_error.clear();
                                 emit(json!({"type":"lyrics","uri":event.uri,"lyrics":lyrics}));

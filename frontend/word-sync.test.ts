@@ -111,32 +111,20 @@ describe("word sync", () => {
     expect(displayLyrics(blank, true, false, 180000)).toBe(blank);
   });
 
-  it("turns bracketed parts into background vocals after their line", () => {
+  it("keeps bracketed parts in their line, as untimed words can't place them", () => {
     const converted = convertToWordSync(
-      lyrics(line("Hold on (hold on)", 1000, 3000)),
+      lyrics(
+        line("Hold on (hold on)", 1000, 3000),
+        line("(say it)", 3000, 3500),
+      ),
     );
     expect(converted.lines.map((item) => [item.text, item.background])).toEqual(
       [
-        ["Hold on", false],
-        ["Hold on", true],
+        ["Hold on (hold on)", false],
+        ["(say it)", false],
       ],
     );
     expect(converted.estimated_words).toBe(true);
-  });
-
-  it("attaches a bracketed-only line to the line before it", () => {
-    const converted = convertToWordSync(
-      lyrics(
-        line("Say my name", 0, 1000),
-        line("(say it)", 1000, 1500),
-        line("Every night", 1500, 2500),
-      ),
-    );
-    expect(converted.lines.map((item) => item.background)).toEqual([
-      false,
-      true,
-      false,
-    ]);
   });
 
   it("trims a line that runs into the next far past its words", () => {

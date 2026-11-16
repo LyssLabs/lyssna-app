@@ -10,12 +10,14 @@ import {
  *
  * Reimplements the behaviour of Spicy Lyrics' ExperimentalWordSync
  * (iPixelGalaxy/spicy-lyrics, AGPL-3.0) for Lyssna's lyric model. Each
- * line's time is spread over its words by letter weight, bracketed parts
- * become background vocals, and a line whose end runs straight into the next
+ * line's time is spread over its words by letter weight, and a line whose
+ * end runs straight into the next
  * line but lasts far longer than its words need is trimmed to a speech-rate
  * estimate. Static lyrics use the track duration and text weights to estimate
  * lines first. These estimates do not detect vocals or instrumental sections.
  * Apple Music syllables that hold several words are split into words.
+ * Unlike Spicy Lyrics, bracketed parts stay in their line: without word
+ * timing there is no telling when a backing vocal is sung.
  */
 
 type Segment = { background: boolean; text: string };
@@ -30,8 +32,6 @@ const VOCABLE =
   /^(oh|ooh|oooh|whoa|woah|ah|aah|ha|hey|yeah|ya|na|la|da|dum|doo|wo)$/;
 /** Line ends this close (ms) to the next start look auto-filled, not sung. */
 const SUSPICIOUS_END_MS = 50;
-/** A gap this long (ms) around a bracketed-only line makes it a lead line. */
-const MEANINGFUL_GAP_MS = 350;
 
 const normalize = (text: string | undefined) =>
   (text ?? "").replace(/\s+/g, " ").trim();
@@ -136,19 +136,6 @@ function buildWords(text: string, start: number, end: number): Word[] {
     end_ms: ranges[index].end,
     estimated: true,
   }));
-}
-
-function capitalizeFirst(words: Word[]) {
-  const first = words[0];
-  if (!first) return;
-  const index = Array.from(first.text).findIndex(
-    (char) => char.toLowerCase() !== char.toUpperCase(),
-  );
-  if (index < 0) return;
-  const chars = Array.from(first.text);
-  if (chars[index] === chars[index].toLowerCase())
-    chars[index] = chars[index].toUpperCase();
-  first.text = chars.join("");
 }
 
 export function isVocableLine(text: string) {
@@ -272,94 +259,24 @@ function timeStaticLyrics(lyrics: Lyrics, durationMs: number): Lyrics {
   };
 }
 
-function backgroundOnly(line: Line | undefined) {
-  const parts = line ? segments(line.text) : [];
-  return parts.length > 0 && parts.every((part) => part.background);
-}
-
 /** Converts line-synced or static lyrics to estimated word timing. */
 export function convertToWordSync(lyrics: Lyrics, durationMs = 0): Lyrics {
   if (!needsWordSync(lyrics, durationMs)) return lyrics;
   if (!lyrics.synced) lyrics = timeStaticLyrics(lyrics, durationMs);
   const source = lyrics.lines.filter((line) => normalize(line.text));
   const output: Line[] = [];
-  let lastLead: Line | undefined;
   source.forEach((line, index) => {
     const end = lyrics.estimated_lines
       ? line.end_ms
       : effectiveLineEnd(source, index);
-    const parts = segments(line.text);
-    const ranges = distribute(
-      line.start_ms,
-      end,
-      parts.map((part) => textWeight(part.text)),
-    );
-    const lead: Word[] = [];
-    const backgrounds: Line[] = [];
-    parts.forEach((part, partIndex) => {
-      const words = buildWords(
-        part.text,
-        ranges[partIndex].start,
-        ranges[partIndex].end,
-      );
-      if (!words.length) return;
-      if (!part.background) {
-        if (lead.length && !/^\s/.test(words[0].text))
-          words[0].text = ` ${words[0].text}`;
-        lead.push(...words);
-        return;
-      }
-      words[0].text = words[0].text.trimStart();
-      capitalizeFirst(words);
-      backgrounds.push({
-        ...line,
-        start_ms: ranges[partIndex].start,
-        end_ms: ranges[partIndex].end,
-        text: words.map((word) => word.text).join(""),
-        translation: "",
-        romanization: "",
-        words,
-        background: true,
-      });
-    });
-    if (lead.length) {
-      lastLead = {
-        ...line,
-        end_ms: end,
-        text: lead.map((word) => word.text).join(""),
-        words: lead,
-      };
-      output.push(lastLead, ...backgrounds);
-      return;
-    }
-    // A bracketed-only line: keep it as a sung line when it stands alone in
-    // a gap or among other bracketed lines, otherwise hang it on the line
-    // before as backing vocals.
-    const gap =
-      line.start_ms - (source[index - 1]?.end_ms ?? -Infinity) >
-        MEANINGFUL_GAP_MS ||
-      (source[index + 1]?.start_ms ?? Infinity) - end > MEANINGFUL_GAP_MS;
-    const standalone =
-      backgroundOnly(source[index - 1]) ||
-      backgroundOnly(source[index + 1]) ||
-      gap;
-    if (!standalone && lastLead && lastLead.opposite === line.opposite) {
-      output.push(...backgrounds);
-      return;
-    }
-    const words = buildWords(
-      backgrounds.map((item) => item.text).join(" "),
-      line.start_ms,
-      end,
-    );
+    const words = buildWords(normalize(line.text), line.start_ms, end);
     if (!words.length) return;
-    lastLead = {
+    output.push({
       ...line,
       end_ms: end,
       text: words.map((word) => word.text).join(""),
       words,
-    };
-    output.push(lastLead);
+    });
   });
   return { ...lyrics, lines: output, estimated_words: true };
 }

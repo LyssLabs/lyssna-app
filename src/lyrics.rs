@@ -232,6 +232,107 @@ pub fn strip_background_parentheses(line: &mut Line) {
     line.words.retain(|word| !word.text.trim().is_empty());
 }
 
+/// Word-timed lines sing a bracketed aside inside a sentence, as in
+/// `I was a girl (I was a girl)`, as background vocals: the bracketed words
+/// move to a background line right after the lead. A line that is all in
+/// brackets stands alone and stays a lead line, and line-timed lyrics are
+/// left alone because their words carry no timing of their own.
+pub fn split_bracketed_background(lyrics: &mut Lyrics) {
+    if !lyrics.synced {
+        return;
+    }
+    let mut lines = Vec::with_capacity(lyrics.lines.len());
+    for line in std::mem::take(&mut lyrics.lines) {
+        match split_bracketed_line(&line) {
+            Some((lead, background)) => {
+                lines.push(lead);
+                lines.push(background);
+            }
+            None => lines.push(line),
+        }
+    }
+    lyrics.lines = lines;
+}
+
+fn split_bracketed_line(line: &Line) -> Option<(Line, Line)> {
+    if line.background || line.words.len() < 2 {
+        return None;
+    }
+    let mut depth = 0usize;
+    let bracketed: Vec<bool> = line
+        .words
+        .iter()
+        .map(|word| {
+            let text = word.text.trim();
+            let inside = depth > 0 || text.starts_with('(');
+            for character in text.chars() {
+                match character {
+                    '(' => depth += 1,
+                    ')' => depth = depth.saturating_sub(1),
+                    _ => {}
+                }
+            }
+            inside
+        })
+        .collect();
+    if bracketed.iter().all(|inside| *inside) || !bracketed.iter().any(|inside| *inside) {
+        return None;
+    }
+    let mut lead = Vec::new();
+    let mut background = Vec::new();
+    for (word, inside) in line.words.iter().zip(&bracketed) {
+        if *inside {
+            let mut word = word.clone();
+            word.text
+                .retain(|character| character != '(' && character != ')');
+            if background.is_empty() {
+                word.text = word.text.trim_start().to_owned();
+            }
+            if !word.text.trim().is_empty() {
+                background.push(word);
+            }
+        } else {
+            let mut word = word.clone();
+            let joined = lead
+                .last()
+                .is_none_or(|previous: &Word| previous.text.ends_with(char::is_whitespace));
+            if joined {
+                word.text = word.text.trim_start().to_owned();
+            }
+            lead.push(word);
+        }
+    }
+    if lead.is_empty() || background.is_empty() {
+        return None;
+    }
+    let joined = |words: &[Word]| {
+        words
+            .iter()
+            .map(|word| word.text.as_str())
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let mut background = Line {
+        start_ms: 0,
+        end_ms: 0,
+        text: joined(&background),
+        translation: String::new(),
+        romanization: String::new(),
+        words: background,
+        background: true,
+        opposite: line.opposite,
+    };
+    fit_to_words(&mut background);
+    let lead = Line {
+        text: joined(&lead),
+        words: lead,
+        ..line.clone()
+    };
+    Some((lead, background))
+}
+
 /// Sort lines chronologically by their source group while keeping each
 /// background vocal directly after the lead line it belongs to.
 pub fn order_with_background(mut lines: Vec<(u64, Line)>) -> Vec<Line> {
@@ -972,6 +1073,84 @@ impl SourceCache {
 }
 #[cfg(test)]
 mod tests {
+    fn timed_line(words: &[(&str, u64)]) -> Line {
+        let words: Vec<Word> = words
+            .iter()
+            .map(|(text, start)| Word {
+                start_ms: *start,
+                end_ms: start + 400,
+                text: (*text).to_owned(),
+            })
+            .collect();
+        Line {
+            start_ms: words[0].start_ms,
+            end_ms: words.last().unwrap().end_ms,
+            text: words.iter().map(|word| word.text.as_str()).collect(),
+            words,
+            ..Line::default()
+        }
+    }
+
+    fn synced(lines: Vec<Line>) -> Lyrics {
+        Lyrics {
+            lines,
+            synced: true,
+            ..Lyrics::default()
+        }
+    }
+
+    #[test]
+    fn bracketed_aside_in_a_timed_line_becomes_background() {
+        let mut lyrics = synced(vec![timed_line(&[
+            ("I", 0),
+            (" was", 400),
+            (" a", 800),
+            (" girl", 1200),
+            (" (I", 1600),
+            (" was", 2000),
+            (" a", 2400),
+            (" girl)", 2800),
+        ])]);
+        split_bracketed_background(&mut lyrics);
+        assert_eq!(lyrics.lines.len(), 2);
+        let (lead, background) = (&lyrics.lines[0], &lyrics.lines[1]);
+        assert_eq!(lead.text, "I was a girl");
+        assert!(!lead.background);
+        assert_eq!(lead.end_ms, 3200);
+        assert_eq!(background.text, "I was a girl");
+        assert!(background.background);
+        assert_eq!(background.words[0].text, "I");
+        assert_eq!((background.start_ms, background.end_ms), (1600, 3200));
+    }
+
+    #[test]
+    fn bracketed_words_mid_sentence_leave_the_lead_spaced() {
+        let mut lyrics = synced(vec![timed_line(&[
+            ("Hold", 0),
+            (" (oh)", 400),
+            (" me", 800),
+            (" close", 1200),
+        ])]);
+        split_bracketed_background(&mut lyrics);
+        assert_eq!(lyrics.lines[0].text, "Hold me close");
+        assert_eq!(lyrics.lines[0].words[1].text, " me");
+        assert_eq!(lyrics.lines[1].text, "oh");
+    }
+
+    #[test]
+    fn whole_bracketed_or_untimed_lines_stay_lead() {
+        let alone = timed_line(&[("(I", 0), (" was", 400), (" a", 800), (" girl)", 1200)]);
+        let untimed = Line {
+            text: "I was a girl (I was a girl)".into(),
+            ..Line::default()
+        };
+        let mut lyrics = synced(vec![alone, untimed]);
+        split_bracketed_background(&mut lyrics);
+        assert_eq!(lyrics.lines.len(), 2);
+        assert!(lyrics.lines.iter().all(|line| !line.background));
+        assert_eq!(lyrics.lines[0].text, "(I was a girl)");
+    }
+
     use super::*;
     #[test]
     fn ttml_songwriters_survive_cache_serialization() {
