@@ -678,8 +678,16 @@ export function LyricsDisplay({
   const noteHeldRest = (container: HTMLElement, settled: boolean) => {
     const above = container.querySelector(":scope > .lyric-end-credits")
       ?.previousElementSibling as HTMLElement | null | undefined;
-    if (above && holdEnd.current && creditsInView(container, above))
-      container.setAttribute("data-hold-end", "");
+    // Re-checked as the scroll moves: pinned credits left behind by a
+    // scroll back up were drawn over the lines below them.
+    if (above) {
+      const rest = heldEnd.current;
+      const anchored = !!rest && Math.abs(container.scrollTop - rest.top) < 2;
+      container.toggleAttribute(
+        "data-hold-end",
+        holdEnd.current && (anchored || creditsInView(container, above)),
+      );
+    }
     if (!above || !container.hasAttribute("data-hold-end")) {
       heldEnd.current = null;
       return;

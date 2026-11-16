@@ -19348,6 +19348,82 @@ test("the Now playing card's credits never cover lines still to come", async ({
   }
 });
 
+test("Now playing card credits let go when the lyrics scroll back up", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 760 });
+  await startClient(page);
+  const line = (start: number, text: string) => ({
+    text,
+    start_ms: start,
+    end_ms: start + 2000,
+    background: false,
+    opposite: false,
+    words: [],
+    translation: "",
+    romanization: "",
+  });
+  const lines = [
+    ...Array.from({ length: 10 }, (_, index) =>
+      line(1000 + index * 2000, `Line ${index}`),
+    ),
+    line(21000, "Let's all live in your imaginary life"),
+    line(23000, "Life"),
+    line(25000, "Life"),
+    line(27000, "Life"),
+  ];
+  const at = (progress: number) =>
+    page.evaluate(
+      ({ track, playback, progress }) =>
+        (window as any).__clientTest.emit({
+          type: "playback",
+          playback: {
+            ...playback,
+            item: { ...track, duration_ms: 40000 },
+            is_playing: false,
+            progress_ms: progress,
+          },
+          observed_at: Date.now(),
+          changed: true,
+        }),
+      { track, playback: emptyState.playback, progress },
+    );
+  await at(27500);
+  await page.evaluate(
+    ({ track, lines }) =>
+      (window as any).__clientTest.emit({
+        type: "lyrics",
+        uri: track.uri,
+        lyrics: {
+          source: "spotify",
+          synced: true,
+          instrumental: false,
+          lines,
+          songwriters: ["Chevelle", "Peter Loeffler"],
+        },
+      }),
+    { track, lines },
+  );
+  const card = page.locator(".now-playing .lyric-preview .lyric-scroll");
+  await expect(card).toBeVisible();
+  await page.waitForTimeout(1500);
+  await at(21500);
+  const covered = () =>
+    card.evaluate((box) => {
+      const credits = box.querySelector(":scope > .lyric-end-credits");
+      const above = credits?.previousElementSibling;
+      if (!credits || !above) return 0;
+      return Math.round(
+        above.getBoundingClientRect().bottom - credits.getBoundingClientRect().top,
+      );
+    });
+  await page.waitForTimeout(400);
+  for (let check = 0; check < 8; check++) {
+    expect(await covered()).toBeLessThanOrEqual(1);
+    await page.waitForTimeout(150);
+  }
+});
+
 // Room below the credits keeps the scroll resting above the end, with the
 // current line holding it, as long pages do.
 for (const room of [0, 320])
