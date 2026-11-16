@@ -21,7 +21,7 @@
 > [!WARNING]
 > **Newer Spotify accounts may not play.** Spotify changed how it hands out audio decryption keys, and accounts created after an apparent cutoff (around 2023–2024) no longer get them through librespot. Songs fail with an audio key error. This is a Spotify-side restriction that affects every librespot version, and no workaround is known; see [librespot #1649](https://github.com/librespot-org/librespot/issues/1649).
 >
-> On Windows, Lyssna can play these accounts through Spotify Soloist, Spotify's official background player. Turn on **Play through Spotify Soloist** in Settings. It needs a free Soloist API key from Spotify for Developers and a one-time pick of the device in the Spotify app.
+> On Windows and Apple silicon Macs, Lyssna can play these accounts through Spotify Soloist, Spotify's official background player. Turn on **Play through Spotify Soloist** in Settings. It needs a free Soloist API key from Spotify for Developers and a one-time pick of the device in the Spotify app. See [FAQ: Spotify Soloist](#faq-spotify-soloist).
 
 ## What it is
 
@@ -52,6 +52,63 @@ Press **F11** for full-screen lyrics over the Canvas. The controls fade out unti
 Sign-in uses OAuth with PKCE through a state-checked loopback callback. No Spotify developer app is needed, and later launches reuse the saved session.
 
 On macOS, Lyssna sends stereo playback through AVFoundation with stereo spatialization enabled. On an Apple silicon Mac with compatible AirPods, play a song, open the AirPods menu in the menu bar, and choose **Fixed** or **Head Tracked** under **Spatialize Stereo**. macOS controls the effect; the decoded music remains stereo. Availability depends on your Mac, headphones, and system settings. See [Apple's Spatial Audio guide](https://support.apple.com/guide/airpods/control-spatial-audio-and-head-tracking-dev00eb7e0a3/web).
+
+## FAQ: Spotify Soloist
+
+<details>
+<summary>Why do songs fail with an audio key error?</summary>
+
+Spotify stopped handing out audio decryption keys to librespot for accounts created after an apparent cutoff around 2023–2024. Lyssna's own player is built on librespot, so those accounts can browse, search and see lyrics, but songs won't play. The block is on Spotify's side and affects every librespot client; see [librespot #1649](https://github.com/librespot-org/librespot/issues/1649). Older accounts usually play fine without Soloist.
+
+</details>
+
+<details>
+<summary>What is Spotify Soloist?</summary>
+
+Soloist is Spotify's official background player for developers. Spotify unlocks songs for it the same way it does for its own apps, so accounts refused by librespot play through it. Lyssna starts Soloist in the background and drives it: play, pause, seek, skip, queue, shuffle, repeat and volume all work from Lyssna's own controls.
+
+Soloist isn't part of Lyssna. Lyssna downloads it from Spotify's servers onto your computer, checks that Spotify signed it, and keeps it up to date. Nothing from Soloist ships in Lyssna's download.
+
+</details>
+
+<details>
+<summary>Which computers can run it?</summary>
+
+- Windows 10 or 11, x64.
+- Apple silicon Macs (M1 or newer) on macOS 13 or later.
+
+Intel Macs can't run Soloist. On those, play through the Spotify app instead: open it, then pick its device from Lyssna's **Devices** button.
+
+</details>
+
+<details>
+<summary>How do I set it up?</summary>
+
+1. Open **Settings**, then **General**, and turn on **Play through Spotify Soloist** under **Playback**. Lyssna downloads Soloist from Spotify.
+2. Create a Soloist API key at [Spotify for Developers](https://developer.spotify.com/), then paste it into the **Soloist API key** field. It's free. Lyssna keeps it in Windows Credential Manager, or in its encrypted credential store on macOS.
+3. On your phone, open the Spotify app on the same Wi-Fi, tap the devices icon and pick **Lyssna Player**. You only do this once.
+
+When the status reads **Ready**, songs play through Soloist.
+
+</details>
+
+<details>
+<summary>Do I still need Spotify Premium?</summary>
+
+Yes. Soloist plays for Premium accounts only, the same as librespot.
+
+</details>
+
+<details>
+<summary>What works differently while Soloist plays?</summary>
+
+- **Audio output:** Soloist plays through your system's default output, so Lyssna's output picker is greyed out. Change the output in your operating system's sound settings.
+- **Visualiser bars:** the playing bars don't move.
+- **Crossfade:** **Crossfade songs** and its length work. Soloist only reads them when it starts, so a change takes effect the next time playback is paused. **Crossfade when you pick or skip** is unavailable.
+- **Volume normalization:** always off under Soloist.
+- **DJ:** hidden while Soloist is on.
+
+</details>
 
 ## Privacy
 
