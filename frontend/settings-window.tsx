@@ -507,9 +507,10 @@ export function SettingsWindow({
         flag(
           "crossfade",
           "Crossfade songs",
-          "Fade each song into the next when one runs into the other, as Spotify does.",
+          soloistPlays
+            ? "Fade each song into the next when one runs into the other, as Spotify does. Spotify Soloist picks this up the next time playback is paused."
+            : "Fade each song into the next when one runs into the other, as Spotify does.",
           "crossfade fade transition gapless overlap blend",
-          soloistPlays,
         ),
         settings.crossfade ? (
           <SettingRow
@@ -517,7 +518,6 @@ export function SettingsWindow({
             label={`Crossfade length: ${settings.crossfade_seconds || 5} s`}
             help="How long the end of one song overlaps the start of the next."
             keywords="crossfade seconds length duration"
-            unavailable={soloistPlays}
           >
             <span className="settings-range">
               <input

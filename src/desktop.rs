@@ -179,6 +179,9 @@ fn set_soloist(inner: &Inner, wanted: bool) {
         return;
     };
     if wanted && slot.is_none() {
+        if let Ok(snapshot) = inner.snapshot.lock() {
+            crate::soloist::set_crossfade(snapshot.settings.active_crossfade_seconds());
+        }
         *slot = Some(crate::soloist::Supervisor::start());
         if let (Ok(data), Ok(mut link)) = (crate::soloist::data_dir(), inner.soloist_link.lock()) {
             let events = inner.events_in.clone();
@@ -222,6 +225,7 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                             hold = None;
                         }
                     }
+                    crate::soloist::set_playing(state.playing);
                     if state.playing {
                         last_playing = Some(state.clone());
                     }

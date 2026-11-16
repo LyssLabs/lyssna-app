@@ -598,7 +598,18 @@ static CROSSFADE_SECONDS: AtomicU8 = AtomicU8::new(0);
 
 /// Lyssna's Crossfade songs setting, applied when Soloist next starts.
 pub fn set_crossfade(seconds: u8) {
-    CROSSFADE_SECONDS.store(seconds, Ordering::Release);
+    if CROSSFADE_SECONDS.swap(seconds, Ordering::AcqRel) != seconds {
+        PREFS_CHANGED.store(true, Ordering::Release);
+    }
+}
+
+static PREFS_CHANGED: AtomicBool = AtomicBool::new(false);
+static PLAYING: AtomicBool = AtomicBool::new(false);
+
+/// Soloist reads its prefs only at start, so a changed setting restarts it
+/// once nothing is playing; Play then resumes the last song.
+pub fn set_playing(playing: bool) {
+    PLAYING.store(playing, Ordering::Release);
 }
 
 /// Updates `existing` prefs with volume normalization off and crossfade
@@ -760,6 +771,7 @@ fn supervise(status: &Mutex<Status>, stop: &AtomicBool) {
         }
         let started = Instant::now();
         let mut seed_restart = false;
+        PREFS_CHANGED.store(false, Ordering::Release);
         let code = loop {
             if stop.load(Ordering::Acquire) {
                 let _ = child.kill();
@@ -789,6 +801,13 @@ fn supervise(status: &Mutex<Status>, stop: &AtomicBool) {
                 }
                 Ok(false) => set(status, Status::NeedsPairing),
                 Err(_) => {}
+            }
+            if !PLAYING.load(Ordering::Acquire) && PREFS_CHANGED.swap(false, Ordering::AcqRel) {
+                log::info!("Soloist: restarting to apply crossfade");
+                seed_restart = true;
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
             }
             // A newer build waits in staging; Soloist swaps it in next start.
             if checked.is_some_and(|at| at.elapsed() >= UPDATE_EVERY) {
