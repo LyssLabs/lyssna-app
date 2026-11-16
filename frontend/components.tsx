@@ -668,6 +668,28 @@ export function LyricsDisplay({
   );
   const spring = useRef<ScrollSpring>({ position: 0, velocity: 0, target: 0 });
   const heldEnd = useRef<{ end: number; gap: number } | null>(null);
+  // Held credits need their resting spot once the scroll settles there, not
+  // only when it was aimed, or the first frames of the dots opening go
+  // uncorrected.
+  const noteHeldRest = (container: HTMLElement) => {
+    const above = container.querySelector(
+      ":scope > .lyric-end-credits",
+    )?.previousElementSibling;
+    const rest = container.scrollHeight - container.clientHeight;
+    if (
+      heldEnd.current ||
+      !above ||
+      !container.hasAttribute("data-hold-end") ||
+      Math.abs(container.scrollTop - rest) >= 2
+    )
+      return;
+    const viewport = container.getBoundingClientRect();
+    const scale = viewport.height / container.clientHeight || 1;
+    heldEnd.current = {
+      end: rest,
+      gap: (viewport.bottom - above.getBoundingClientRect().bottom) / scale,
+    };
+  };
   const waiting = useRef<HTMLDivElement>(null);
   const gap = lyrics.synced ? vocalGap(lyrics.lines, positionMs) : undefined;
   const gaps = useMemo(
@@ -788,7 +810,10 @@ export function LyricsDisplay({
         motion.velocity = 0;
         last = time;
         if (elapsed < GLIDE_MS) frame = requestAnimationFrame(tick);
-        else glide.current = undefined;
+        else {
+          glide.current = undefined;
+          noteHeldRest(container);
+        }
         return;
       }
       container.scrollTop = stepScroll(
@@ -801,7 +826,10 @@ export function LyricsDisplay({
         Math.abs(motion.velocity) > 0.5
       )
         frame = requestAnimationFrame(tick);
-      else container.scrollTop = motion.target;
+      else {
+        container.scrollTop = motion.target;
+        noteHeldRest(container);
+      }
     };
     const retarget = () => {
       const stacked = container
@@ -1013,6 +1041,7 @@ export function LyricsDisplay({
           setAtEnd(
             node.scrollTop + node.clientHeight >= node.scrollHeight - 24,
           );
+          noteHeldRest(node);
           if (!following)
             setReturnDirection(
               node.scrollTop > spring.current.target ? "up" : "down",

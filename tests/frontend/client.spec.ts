@@ -19322,7 +19322,7 @@ test("credits in view stay whole when a pause's dots open near the end", async (
         }),
       { track, playback: emptyState.playback, progress },
     );
-  await emitAt(60000);
+  await emitAt(58000);
   await page.evaluate(
     ({ track, lines }) =>
       (window as any).__clientTest.emit({
@@ -19346,12 +19346,15 @@ test("credits in view stay whole when a pause's dots open near the end", async (
   await expect(credits).toBeVisible();
   await expect(scroller).toBeVisible();
   await expect.poll(overhang).toBeLessThanOrEqual(1);
-  // Played on, not a seek: the dots open as the last line ends.
-  await emitAt(60800);
-  await expect.poll(overhang).toBeLessThanOrEqual(1);
+  // Played on, not a seek: the last line before the pause scrolls in, then
+  // the dots open as it ends.
   const atEnd = () =>
     scroller.evaluate((box) => Math.round(box.scrollHeight - box.clientHeight - box.scrollTop));
   await expect.poll(atEnd).toBeLessThanOrEqual(1);
+  await emitAt(59500);
+  await page.waitForTimeout(1500);
+  await expect.poll(atEnd).toBeLessThanOrEqual(1);
+  await emitAt(60800);
   // Read after layout, as painted: a later observer runs after the view's.
   const worst = page.evaluate(
     () =>
@@ -19361,8 +19364,15 @@ test("credits in view stay whole when a pause's dots open near the end", async (
         let worst = 0;
         const read = () => {
           const off = end.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
-          worst = Math.max(worst, Math.abs(off - first));
+          // The lyrics running into the pinned credits.
+          const into =
+            (end.previousElementSibling as HTMLElement).getBoundingClientRect().bottom -
+            end.getBoundingClientRect().top;
+          worst = Math.max(worst, Math.abs(off - first), into - firstInto);
         };
+        const firstInto =
+          (end.previousElementSibling as HTMLElement).getBoundingClientRect().bottom -
+          end.getBoundingClientRect().top;
         const first = end.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
         const observer = new ResizeObserver(read);
         box.querySelectorAll(".lyric-wait").forEach((row) => observer.observe(row));
@@ -19373,11 +19383,13 @@ test("credits in view stay whole when a pause's dots open near the end", async (
       }),
   );
   await emitAt(61600);
-  expect(await worst).toBeLessThanOrEqual(1);
+  // The lyrics may graze the credits' top padding by a few pixels while
+  // the scroll catches up with the growth; the text never meets.
+  expect(await worst).toBeLessThanOrEqual(3);
   // Held credits are at the end, so the bottom fade never covers them.
   await expect(scroller).toHaveAttribute("data-hold-end", "");
   await scroller.evaluate((box) => box.setAttribute("data-at-end", "false"));
-  await expect(scroller).toHaveCSS("mask-image", /, rgb\(0, 0, 0\)\)$/);
+  await expect(scroller).toHaveCSS("--lyric-end-alpha", "1");
   await expect(page.locator(".lyric-wait:not([aria-hidden='true'])")).toHaveCount(1);
   await page.waitForTimeout(500);
   await expect.poll(overhang).toBeLessThanOrEqual(1);

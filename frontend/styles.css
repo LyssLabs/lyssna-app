@@ -3328,7 +3328,20 @@ small {
   overflow-anchor: none;
   scrollbar-width: none;
   padding-inline: calc(var(--lyric-size) * 0.35);
-  mask-image: linear-gradient(transparent, #000 10%, #000 88%, transparent);
+  /* The bottom edge fades in and out instead of switching at the end. */
+  --lyric-end-alpha: 0;
+  mask-image: linear-gradient(
+    transparent,
+    #000 10%,
+    #000 88%,
+    rgb(0 0 0 / var(--lyric-end-alpha))
+  );
+  transition: --lyric-end-alpha 0.45s ease;
+}
+@property --lyric-end-alpha {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
 }
 /* Popping and glowing words can reach past the text column. On the lyrics
    page the scroller reaches into the gap around it, so only the page box
@@ -3343,7 +3356,7 @@ small {
 }
 .lyric-scroll[data-at-end="true"],
 .lyric-scroll[data-hold-end] {
-  mask-image: linear-gradient(transparent, #000 10%, #000);
+  --lyric-end-alpha: 1;
 }
 .compact .lyric-scroll[data-at-end="true"],
 .compact .lyric-scroll[data-hold-end] {
