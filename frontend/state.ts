@@ -259,12 +259,17 @@ export const emptyState: AppState = {
   clock_revision: 0,
   pages: {},
 };
+/** Either a Spotify or a YouTube Music sign-in unlocks the client. */
 export function sessionScreen(
-  state: Pick<AppState, "booted" | "profile" | "restoring_session">,
+  state: Pick<
+    AppState,
+    "booted" | "profile" | "restoring_session" | "ytmusic_signed_in"
+  >,
 ): "restoring" | "setup" | "client" {
-  return !state.booted || (!state.profile && state.restoring_session)
+  const signedIn = !!state.profile || !!state.ytmusic_signed_in;
+  return !state.booted || (!signedIn && state.restoring_session)
     ? "restoring"
-    : state.profile
+    : signedIn
       ? "client"
       : "setup";
 }

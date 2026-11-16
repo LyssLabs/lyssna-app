@@ -2,17 +2,27 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 
 export type ProfileAction =
-  "account" | "profile" | "recents" | "settings" | "sign-out";
+  | "account"
+  | "profile"
+  | "recents"
+  | "settings"
+  | "sign-out"
+  | "spotify-sign-in"
+  | "ytmusic-sign-out";
 
 /** Avatar button with Spotify's account dropdown. */
 export function ProfileMenu({
   name,
   image,
   hidden = [],
+  spotify = true,
+  ytmusic = false,
   onAction,
 }: {
   name: string;
   image?: string;
+  spotify?: boolean;
+  ytmusic?: boolean;
   /** Items removed through Spotify+; Settings always stays. */
   hidden?: ProfileAction[];
   onAction: (action: ProfileAction) => void;
@@ -36,16 +46,16 @@ export function ProfileMenu({
   }, [open]);
   const item = (action: ProfileAction, label: ReactNode, end?: ReactNode) =>
     !hidden.includes(action) && (
-    <button
-      role="menuitem"
-      onClick={() => {
-        setOpen(false);
-        onAction(action);
-      }}
-    >
-      <span>{label}</span>
-      {end}
-    </button>
+      <button
+        role="menuitem"
+        onClick={() => {
+          setOpen(false);
+          onAction(action);
+        }}
+      >
+        <span>{label}</span>
+        {end}
+      </button>
     );
   return (
     <div className="profile-menu-root" ref={root}>
@@ -65,12 +75,20 @@ export function ProfileMenu({
       </button>
       {open && (
         <div className="profile-menu" role="menu" aria-label="Account">
-          {item("account", "Account", <ExternalLink size={17} />)}
-          {item("profile", "Profile")}
-          {item("recents", "Recents")}
+          {spotify ? (
+            <>
+              {item("account", "Account", <ExternalLink size={17} />)}
+              {item("profile", "Profile")}
+              {item("recents", "Recents")}
+            </>
+          ) : (
+            item("spotify-sign-in", "Sign in with Spotify")
+          )}
           {item("settings", "Settings")}
-          {!hidden.includes("sign-out") && <hr />}
-          {item("sign-out", "Log out")}
+          {(ytmusic || (spotify && !hidden.includes("sign-out"))) && <hr />}
+          {ytmusic && item("ytmusic-sign-out", "Log out of YouTube Music")}
+          {spotify &&
+            item("sign-out", ytmusic ? "Log out of Spotify" : "Log out")}
         </div>
       )}
     </div>

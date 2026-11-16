@@ -3558,8 +3558,20 @@ function App() {
           <ProfileMenu
             name={profileName}
             image={profileImage}
+            spotify={!!state.profile}
+            ytmusic={!!state.ytmusic_signed_in}
             onAction={(action) => {
-              if (action === "account")
+              if (action === "spotify-sign-in") {
+                dispatch({ type: "login_pending" });
+                void rpc("sign_in", { clientId: "" }).catch((error) =>
+                  dispatch({
+                    type: "login_failed",
+                    issue: { message: String(error), retry_saved: false },
+                  }),
+                );
+              } else if (action === "ytmusic-sign-out")
+                void call("ytmusic_sign_out");
+              else if (action === "account")
                 void call("open_link", {
                   url: "https://www.spotify.com/account/overview/",
                 });

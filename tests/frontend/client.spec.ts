@@ -738,6 +738,41 @@ test("developer connection remains optional and validates its Client ID", async 
   expect(request.args.clientId).toBe("a".repeat(32));
 });
 
+test("a YouTube Music sign-in unlocks the client without Spotify", async ({
+  page,
+}) => {
+  await startClient(page);
+  await page.evaluate(() =>
+    (window as any).__clientTest.emit({ type: "signed_out" }),
+  );
+  await expect(page.getByRole("dialog")).toContainText(
+    "Sign in with YouTube Music (experimental)",
+  );
+  await page.evaluate(() =>
+    (window as any).__clientTest.emit({
+      type: "ytmusic",
+      signed_in: true,
+      notice: "",
+    }),
+  );
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await page.getByRole("button", { name: "Account menu", exact: true }).click();
+  const menu = page.getByRole("menu", { name: "Account" });
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "Sign in with Spotify",
+    "Settings",
+    "Log out of YouTube Music",
+  ]);
+  await menu.getByRole("menuitem", { name: "Log out of YouTube Music" }).click();
+  expect(
+    await page.evaluate(() =>
+      (window as any).__clientTest.commands.some(
+        (entry: any) => entry.command === "ytmusic_sign_out",
+      ),
+    ),
+  ).toBe(true);
+});
+
 test("failed saved sign-in stays locked, supports retry and cancellable fresh sign-in", async ({
   page,
 }) => {

@@ -211,6 +211,21 @@ describe("asynchronous playback and browsing", () => {
       "setup",
     );
   });
+  it("unlocks with a YouTube Music sign-in alone and locks once it ends", () => {
+    const booted = reducer(emptyState, {
+      type: "bootstrap",
+      snapshot: { ...emptyState, login_pending: true, ytmusic_signed_in: true },
+    });
+    expect(sessionScreen(booted)).toBe("client");
+    const spotifyOut = reducer(booted, { type: "signed_out" });
+    expect(sessionScreen(spotifyOut)).toBe("client");
+    const ytmusicOut = reducer(spotifyOut, {
+      type: "ytmusic",
+      signed_in: false,
+      notice: "",
+    });
+    expect(sessionScreen(ytmusicOut)).toBe("setup");
+  });
   it("rebases a batched same-song native takeover to actual audio position", () => {
     const song = { ...track, duration_ms: 180000 };
     const before = {
