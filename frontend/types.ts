@@ -177,6 +177,7 @@ export interface Settings {
   experimental_word_sync?: boolean;
   lyrics_hide_artwork?: boolean;
   lyrics_artwork_right?: boolean;
+  lyrics_up_next?: boolean;
   lyrics_compact?: boolean;
   ttml_creator?: boolean;
   lyrics_toolbar_bottom?: boolean;

@@ -234,6 +234,7 @@ pub struct Settings {
     /// Lyrics page layout toggles from the lyrics toolbar.
     pub lyrics_hide_artwork: bool,
     pub lyrics_artwork_right: bool,
+    pub lyrics_up_next: bool,
     pub lyrics_compact: bool,
     pub ttml_creator: bool,
     /// The lyrics toolbar sits at the bottom of the page instead of the top.
@@ -404,6 +405,7 @@ impl Default for Settings {
             experimental_word_sync: false,
             lyrics_hide_artwork: false,
             lyrics_artwork_right: false,
+            lyrics_up_next: true,
             lyrics_compact: false,
             ttml_creator: false,
             lyrics_toolbar_bottom: false,

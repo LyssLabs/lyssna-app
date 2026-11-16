@@ -613,6 +613,7 @@ export function LyricsDisplay({
   onSeek,
   compact = false,
   writers = [],
+  upNext,
 }: {
   lyrics: Lyrics;
   positionMs: number;
@@ -620,6 +621,8 @@ export function LyricsDisplay({
   onSeek: (ms: number) => void;
   compact?: boolean;
   writers?: string[];
+  /** Sits beside the credits at the end of the lyrics. */
+  upNext?: ReactNode;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
@@ -1022,11 +1025,14 @@ export function LyricsDisplay({
           <div className="lyric-end-credits">
             {writerCredits}
             {footerMode === "off" && (
-              <LyricCredits
-                lyrics={lyrics}
-                expanded
-                discord={settings.lyrics_discord_usernames !== false}
-              />
+              <div className={upNext ? "lyric-credits-row" : undefined}>
+                <LyricCredits
+                  lyrics={lyrics}
+                  expanded
+                  discord={settings.lyrics_discord_usernames !== false}
+                />
+                {upNext}
+              </div>
             )}
           </div>
         )}
@@ -1038,11 +1044,14 @@ export function LyricsDisplay({
           aria-label="Pinned lyrics footer"
         >
           {footerMode === "full" && writerCredits}
-          <LyricCredits
-            lyrics={lyrics}
-            expanded
-            discord={settings.lyrics_discord_usernames !== false}
-          />
+          <div className={upNext ? "lyric-credits-row" : undefined}>
+            <LyricCredits
+              lyrics={lyrics}
+              expanded
+              discord={settings.lyrics_discord_usernames !== false}
+            />
+            {upNext}
+          </div>
         </div>
       )}
       {!following &&
@@ -1162,7 +1171,9 @@ const LyricCredits = memo(function LyricCredits({
               {person.avatar?.startsWith("https://") && (
                 <img src={person.avatar} alt="" />
               )}
-              <span className="community-name">@{nameOf(person)}</span>
+              <Marquee text={`@${nameOf(person)}`} className="community-name">
+                @{nameOf(person)}
+              </Marquee>
             </>
           );
           return (
@@ -1553,6 +1564,30 @@ export function LyricsPage(props: Parameters<typeof SongLyricsPage>[0]) {
     <SongLyricsPage {...props} />
   );
 }
+/** The song after this one, with details the queue report may lack filled
+ *  from songs Lyssna already knows. */
+function useUpNext(state: AppState) {
+  const next = state.details.queue[0];
+  const known = useMemo(
+    () =>
+      knownTracks([
+        state.tracks,
+        ...Object.values(state.pages).map((page) => page.tracks),
+      ]),
+    [state.tracks, state.pages],
+  );
+  const filled = useMemo(
+    () => next && fillFromKnown(next, known),
+    [next, known],
+  );
+  return state.settings.lyrics_up_next === false ||
+    state.narrating ||
+    !next?.name ||
+    next.uri === state.playback.item?.uri
+    ? undefined
+    : filled;
+}
+
 function SongLyricsPage({
   state,
   onPlayer,
@@ -1578,6 +1613,34 @@ function SongLyricsPage({
     current =
       songTime - wait + lyricOffset(state.settings, state.playback.item?.uri),
     track = state.playback.item;
+  const upNext = useUpNext(state);
+  const upNextCard = upNext && (
+    <button
+      className="lyrics-up-next"
+      data-context-route={upNext.id ? `track:${upNext.id}` : undefined}
+      onClick={() =>
+        onPlayer({
+          command: "skip_to",
+          uri: upNext.uri,
+          track: upNext,
+        })
+      }
+    >
+      <Cover images={upNext.album.images} />
+      <span className="lyrics-up-next-text">
+        <small>Up next</small>
+        <Marquee text={upNext.name} reduceMotion={state.settings.reduce_motion}>
+          <strong>{upNext.name}</strong>
+        </Marquee>
+        <Marquee
+          text={artistNames(upNext)}
+          reduceMotion={state.settings.reduce_motion}
+        >
+          <span>{artistNames(upNext)}</span>
+        </Marquee>
+      </span>
+    </button>
+  );
   // Full screen seek: preview while dragging, seek once on release.
   const [seeking, setSeeking] = useState<number | null>(null);
   // After release the bar holds the chosen spot until playback reports it,
@@ -2033,6 +2096,7 @@ function SongLyricsPage({
                         state.settings.lyrics_discord_usernames !== false
                       }
                     />
+                    {upNextCard}
                   </>
                 }
               />
@@ -2042,6 +2106,7 @@ function SongLyricsPage({
                 writers={state.playback.item?.songwriters}
                 positionMs={current}
                 settings={state.settings}
+                upNext={upNextCard}
                 onSeek={(ms) => onPlayer({ command: "seek", positionMs: ms })}
               />
             ) : !state.lyric_error &&

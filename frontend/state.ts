@@ -176,6 +176,7 @@ export const emptyState: AppState = {
     experimental_word_sync: false,
     lyrics_hide_artwork: false,
     lyrics_artwork_right: false,
+    lyrics_up_next: true,
     lyrics_compact: false,
     ttml_creator: false,
     lyrics_toolbar_bottom: false,

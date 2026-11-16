@@ -19175,3 +19175,74 @@ test("device menu points at the Devices button, which turns green when open or p
   await expect(button).toHaveClass(/\bconnected\b/);
   await expect(button).toHaveCSS("color", "rgb(30, 215, 96)");
 });
+
+test("lyrics page shows Up next beside the credits and skips to it", async ({ page }) => {
+  await startClient(page);
+  const next = {
+    ...track,
+    id: "upnextsong".padEnd(22, "x"),
+    uri: `spotify:track:${"upnextsong".padEnd(22, "x")}`,
+    name: "Dracula",
+  };
+  await page.evaluate(
+    ({ track, next, playback }) => {
+      const host = (window as any).__clientTest;
+      host.emit({
+        type: "playback",
+        playback: {
+          ...playback,
+          item: track,
+          is_playing: true,
+          progress_ms: 0,
+        },
+        observed_at: Date.now(),
+        changed: true,
+      });
+      host.emit({
+        type: "playing_details",
+        uri: track.uri,
+        details: { artists: track.artists, queue: [next], queued: 0 },
+      });
+      host.emit({
+        type: "lyrics",
+        uri: track.uri,
+        lyrics: {
+          source: "spotify",
+          synced: true,
+          instrumental: false,
+          lines: [
+            {
+              text: "Only line",
+              start_ms: 1000,
+              end_ms: 3000,
+              background: false,
+              opposite: false,
+              words: [],
+              translation: "",
+              romanization: "",
+            },
+          ],
+        },
+      });
+    },
+    { track, next, playback: emptyState.playback },
+  );
+  await page.getByTitle("Lyrics", { exact: true }).click();
+  const card = page.locator(".lyrics-up-next");
+  await expect(page.locator(".lyric-end-credits .lyrics-up-next")).toHaveCount(
+    1,
+  );
+  await expect(card).toContainText("Up next");
+  await expect(card).toContainText("Dracula");
+  await card.click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__clientTest.commands
+            .filter((entry: any) => entry.command === "player")
+            .at(-1)?.args.request,
+      ),
+    )
+    .toMatchObject({ command: "skip_to", uri: next.uri });
+});

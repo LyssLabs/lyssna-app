@@ -1408,6 +1408,12 @@ export function SettingsWindow({
           "Put the album cover on the right of the lyrics.",
           "cover side swap",
         ),
+        flag(
+          "lyrics_up_next",
+          "Show Up next",
+          "Show the next song in the corner of the lyrics page during the last 30 seconds. Click it to skip to that song.",
+          "queue next song upcoming",
+        ),
         <SettingRow
           key="toolbar-position"
           label="View controls position"

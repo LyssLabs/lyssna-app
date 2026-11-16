@@ -3015,6 +3015,70 @@ small {
 .library-item .cover.artist-cover img {
   border-radius: 50%;
 }
+/* The next song, beside the community credits under Written by. */
+.lyric-credits-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.lyric-credits-row > .lyric-source {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.lyrics-up-next {
+  flex: 0 1 280px;
+  max-width: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px 10px 10px;
+  border-radius: 10px;
+  background: light-dark(#ffffff3d, #ffffff12);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  transition: background 0.2s ease;
+}
+.lyrics-up-next:hover {
+  background: light-dark(#ffffff66, #ffffff21);
+}
+.lyrics-up-next > .cover {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 6px;
+}
+.lyrics-up-next-text {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  gap: 1px;
+}
+.lyrics-up-next-text > *,
+.lyrics-up-next-text .marquee {
+  line-height: 1.3;
+}
+.lyrics-up-next-text > * {
+  min-width: 0;
+  white-space: nowrap;
+}
+.lyrics-up-next-text small {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.lyrics-up-next-text strong {
+  font-size: 15px;
+  color: light-dark(#000, #fff);
+  opacity: 0.85;
+}
+.lyrics-up-next-text span {
+  font-size: 13px;
+  opacity: 0.75;
+}
 /* Only carries the song menu; the title and artists lay out as before. */
 .lyrics-details {
   display: contents;
@@ -6380,9 +6444,9 @@ input[type="range"]:hover {
   max-width: 100%;
 }
 .community-credits .community-name {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   /* Room inside the clip for tall or slanted custom fonts, so descenders
      and italic overhangs are not cut off; the margin keeps the layout. */
   padding: 0.25em 0.15em;
