@@ -5388,6 +5388,23 @@ input[type="range"]:hover {
 .setup-dialog .pill.primary.setup-sign-in:disabled {
   opacity: 0.6;
 }
+.setup-ytmusic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid light-dark(#0000001a, #ffffff1a);
+}
+.setup-dialog .pill.setup-ytmusic-sign-in {
+  width: 100%;
+  min-height: 44px;
+  font-weight: 700;
+}
+.setup-dialog .pill.setup-ytmusic-sign-in:hover {
+  transform: none;
+}
 .setup-mode {
   margin-top: 20px;
   font-size: 13px;

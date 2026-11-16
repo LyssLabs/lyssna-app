@@ -60,6 +60,8 @@ pub struct Snapshot {
     keys_refused: bool,
     provider_configured: bool,
     provider_builtin: bool,
+    /// A YouTube Music session is saved.
+    ytmusic_signed_in: bool,
     provider_kind: Option<String>,
     login_pending: bool,
     login_issue: Option<auth::LoginIssue>,
@@ -614,6 +616,7 @@ impl Desktop {
                 soloist: None,
                 keys_refused: false,
                 provider_configured: crate::provider::configured(),
+                ytmusic_signed_in: crate::ytm_auth::signed_in(),
                 provider_builtin: crate::provider::builtin_configured(),
                 provider_kind: crate::provider::kind(),
                 login_pending: true,
@@ -4750,6 +4753,110 @@ async fn open_lyrics_popout(app: tauri::AppHandle) -> std::result::Result<(), St
     };
     result().map_err(error)
 }
+const YTMUSIC_SIGN_IN: &str = "ytmusic-sign-in";
+/// YouTube Music's own Google sign-in, ending on music.youtube.com.
+const YTMUSIC_SIGN_IN_URL: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
+
+/// Google's and YouTube's own pages only: the sign-in window never leaves
+/// them.
+fn ytmusic_sign_in_page(url: &tauri::Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let within = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
+    url.as_str() == "about:blank"
+        || (url.scheme() == "https" && (within("google.com") || within("youtube.com")))
+}
+
+fn set_ytmusic_signed_in(app: &tauri::AppHandle, signed_in: bool, notice: &str) {
+    if let Some(state) = app.try_state::<Desktop>()
+        && let Ok(mut snapshot) = state.0.snapshot.lock()
+    {
+        snapshot.ytmusic_signed_in = signed_in;
+    }
+    let _ = app.emit(
+        "lyssna",
+        json!({"type":"ytmusic","signed_in":signed_in,"notice":notice}),
+    );
+}
+
+/// Opens Google's sign-in in a private window. The listener types their
+/// password into Google's page; Lyssna only reads the youtube.com session
+/// cookies once music.youtube.com is reached, keeps them in the credential
+/// store, and closes the window. A private window keeps nothing on disk.
+#[tauri::command]
+async fn ytmusic_sign_in(app: tauri::AppHandle) -> std::result::Result<(), String> {
+    let _ = tauri::async_runtime::spawn_blocking(crate::chrome_release::current).await;
+    let result = || -> Result<()> {
+        if let Some(window) = app.get_webview_window(YTMUSIC_SIGN_IN) {
+            window.show()?;
+            window.set_focus()?;
+            return Ok(());
+        }
+        let window = tauri::WebviewWindowBuilder::new(
+            &app,
+            YTMUSIC_SIGN_IN,
+            tauri::WebviewUrl::External("about:blank".parse()?),
+        )
+        .title("Sign in to YouTube Music")
+        .inner_size(480., 680.)
+        .incognito(true)
+        .additional_browser_args(BROWSER_ARGS)
+        .on_navigation(ytmusic_sign_in_page)
+        .build()?;
+        navigate_as_chrome(&window, YTMUSIC_SIGN_IN_URL.parse()?, String::new());
+        let watched = window.clone();
+        let events = app.clone();
+        std::thread::spawn(move || {
+            let music: tauri::Url = "https://music.youtube.com/".parse().expect("static URL");
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(800));
+                let Ok(cookies) = watched.cookies_for_url(music.clone()) else {
+                    // The window was closed before signing in.
+                    set_ytmusic_signed_in(&events, crate::ytm_auth::signed_in(), "");
+                    return;
+                };
+                let session = crate::ytm_auth::Session::from_cookies(
+                    cookies.iter().map(|cookie| (cookie.name(), cookie.value())),
+                );
+                if let Some(session) = session {
+                    let saved = crate::ytm_auth::save(&session);
+                    let _ = watched.close();
+                    match saved {
+                        Ok(()) => set_ytmusic_signed_in(&events, true, ""),
+                        Err(error) => set_ytmusic_signed_in(&events, false, &format!("{error:#}")),
+                    }
+                    return;
+                }
+            }
+        });
+        Ok(())
+    };
+    result().map_err(|error| format!("{error:#}"))
+}
+
+/// The fallback when Google refuses the sign-in window: a cookies.txt
+/// exported from a browser signed in to YouTube Music.
+#[tauri::command]
+fn ytmusic_import_cookies(
+    app: tauri::AppHandle,
+    contents: String,
+) -> std::result::Result<(), String> {
+    let session = crate::ytm_auth::Session::from_cookies_txt(&contents).ok_or(
+        "That file has no YouTube Music sign-in. Export cookies from a browser signed in to music.youtube.com.",
+    )?;
+    crate::ytm_auth::save(&session).map_err(|error| format!("{error:#}"))?;
+    set_ytmusic_signed_in(&app, true, "");
+    Ok(())
+}
+
+#[tauri::command]
+fn ytmusic_sign_out(app: tauri::AppHandle) -> std::result::Result<(), String> {
+    crate::ytm_auth::forget().map_err(|error| format!("{error:#}"))?;
+    set_ytmusic_signed_in(&app, false, "");
+    Ok(())
+}
+
 #[tauri::command]
 async fn open_creator_profile(
     app: tauri::AppHandle,
@@ -6113,6 +6220,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             saved_status,
             open_link,
             open_creator_profile,
+            ytmusic_sign_in,
+            ytmusic_import_cookies,
+            ytmusic_sign_out,
             resolve_album,
             user_profile,
             follow_user,

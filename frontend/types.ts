@@ -371,6 +371,7 @@ export interface Snapshot {
   keys_refused?: boolean;
   provider_configured: boolean;
   provider_builtin?: boolean;
+  ytmusic_signed_in?: boolean;
   provider_kind?: "spicy" | "legacy";
   login_pending: boolean;
   can_follow: boolean;
@@ -508,6 +509,7 @@ export type AppEvent =
   | { type: "profile"; profile: Profile }
   | { type: "signed_out" | "login_finished" }
   | { type: "provider_configured"; kind?: "spicy" | "legacy" }
+  | { type: "ytmusic"; signed_in: boolean; notice: string }
   | { type: "native"; ready: boolean; status: string }
   | {
       type: "soloist";

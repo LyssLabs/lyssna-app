@@ -458,6 +458,7 @@ export function reducer(state: AppState, action: Action): AppState {
         provider_builtin: state.provider_builtin,
         provider_configured: state.provider_configured,
         provider_kind: state.provider_kind,
+        ytmusic_signed_in: state.ytmusic_signed_in,
         native_status: "Waiting for sign-in",
       };
     case "home_loading":
@@ -841,6 +842,14 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, saved: { ...state.saved, ...action.items } };
     case "settings":
       return { ...state, settings: action.settings };
+    case "ytmusic":
+      return {
+        ...state,
+        ytmusic_signed_in: action.signed_in,
+        toast: action.notice
+          ? { message: action.notice, error: true, serial: Date.now() }
+          : state.toast,
+      };
     case "provider_configured":
       return {
         ...state,

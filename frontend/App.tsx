@@ -6449,6 +6449,10 @@ function App() {
             );
           }}
           onCancel={() => void call("cancel_sign_in")}
+          onYouTubeMusic={() => void call("ytmusic_sign_in")}
+          onYouTubeMusicCookies={(contents) =>
+            void call("ytmusic_import_cookies", { contents })
+          }
           onOpenDashboard={() =>
             void call("open_link", {
               url: "https://developer.spotify.com/dashboard",
@@ -6933,14 +6937,19 @@ function Setup({
   onSignIn,
   onRetry,
   onCancel,
+  onYouTubeMusic,
+  onYouTubeMusicCookies,
   onOpenDashboard,
 }: {
   state: AppState;
   onSignIn: (id: string) => void;
   onRetry: () => void;
   onCancel: () => void;
+  onYouTubeMusic: () => void;
+  onYouTubeMusicCookies: (contents: string) => void;
   onOpenDashboard: () => void;
 }) {
+  const cookiesInput = useRef<HTMLInputElement>(null);
   const [id, setId] = useState(state.settings.client_id);
   const [developerMode, setDeveloperMode] = useState(false);
   useEffect(() => {
@@ -7052,6 +7061,42 @@ function Setup({
               : "Developer connection (optional)"}
           </button>
         )}
+        <div className="setup-ytmusic">
+          {state.ytmusic_signed_in ? (
+            <p className="setup-help">Signed in to YouTube Music</p>
+          ) : (
+            <>
+              <button
+                className="pill setup-ytmusic-sign-in"
+                disabled={!state.booted}
+                onClick={onYouTubeMusic}
+              >
+                Sign in with YouTube Music (experimental)
+              </button>
+              <p className="setup-help">
+                Plays YouTube Music through unofficial access, against YouTube's
+                terms. Google could restrict the account you use.
+              </p>
+              <button
+                className="text-link muted"
+                onClick={() => cookiesInput.current?.click()}
+              >
+                Sign-in window blocked? Import a cookies.txt file
+              </button>
+              <input
+                className="file-input"
+                type="file"
+                accept=".txt"
+                ref={cookiesInput}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void file.text().then(onYouTubeMusicCookies);
+                  event.target.value = "";
+                }}
+              />
+            </>
+          )}
+        </div>
         <small>No password or client secret is stored in Lyssna.</small>
       </section>
     </div>
