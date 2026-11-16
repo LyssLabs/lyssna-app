@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { rpc } from "./bridge";
 import {
   CircleCheck,
@@ -31,6 +31,98 @@ import {
   type SearchEntry,
 } from "./search-results";
 import "./SearchPage.css";
+
+function clock(ms: number) {
+  const seconds = Math.round(ms / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** Songs from YouTube Music for this search, fetched apart from Spotify's. */
+function YouTubeMusicSongs({
+  query,
+  onPlay,
+}: {
+  query: string;
+  onPlay: (track: Track) => void;
+}) {
+  const [found, setFound] = useState<{
+    query: string;
+    tracks: Track[];
+    error: string;
+  }>();
+  useEffect(() => {
+    let current = true;
+    rpc<Track[]>("ytmusic_search", { query })
+      .then((tracks) => current && setFound({ query, tracks, error: "" }))
+      .catch(
+        (error) =>
+          current && setFound({ query, tracks: [], error: String(error) }),
+      );
+    return () => {
+      current = false;
+    };
+  }, [query]);
+  const shown = found?.query === query ? found : undefined;
+  return (
+    <section
+      className="search-song-results search-ytmusic"
+      aria-label="YouTube Music songs"
+    >
+      <h2>YouTube Music</h2>
+      {!shown ? (
+        <div className="search-loading" role="status">
+          <LoaderCircle className="spin" size={22} /> Searching YouTube Music…
+        </div>
+      ) : shown.error ? (
+        <div className="search-result-message" role="status">
+          <span>{shown.error}</span>
+        </div>
+      ) : !shown.tracks.length ? (
+        <p className="search-ytmusic-empty">No songs found.</p>
+      ) : (
+        shown.tracks.map((track) => (
+          <article
+            key={track.uri}
+            className="search-result-row"
+            data-ytmusic-uri={track.uri}
+          >
+            <button
+              className="search-result-art"
+              onClick={() => onPlay(track)}
+              aria-label={`Play ${track.name}`}
+            >
+              <Cover images={track.album.images} />
+              <Play size={23} fill="currentColor" className="search-art-play" />
+            </button>
+            <div className="search-result-copy">
+              <button
+                className="search-result-title"
+                onClick={() => onPlay(track)}
+              >
+                {track.name}
+              </button>
+              <div className="search-result-subtitle">
+                {track.explicit && (
+                  <span className="explicit-badge" aria-label="Explicit">
+                    {EXPLICIT_MARK}
+                  </span>
+                )}
+                <span>
+                  Song · {track.artists.map((artist) => artist.name).join(", ")}
+                </span>
+              </div>
+            </div>
+            {!!track.duration_ms && (
+              <span className="search-result-kind">
+                {clock(track.duration_ms)}
+              </span>
+            )}
+          </article>
+        ))
+      )}
+    </section>
+  );
+}
 
 export function SearchPage({
   state,
@@ -114,6 +206,15 @@ export function SearchPage({
     else navigate(entry.route);
   };
   const query = state.route.slice(7);
+  const spotify = !!state.profile;
+  const ytmusic = !!state.ytmusic_signed_in && !!query.trim() && (
+    <YouTubeMusicSongs
+      query={query}
+      onPlay={() =>
+        notify("YouTube Music playback arrives in the next update.")
+      }
+    />
+  );
   const loadMore = (shown: SearchCategory) => {
     const kind = {
       Songs: "tracks",
@@ -272,6 +373,18 @@ export function SearchPage({
     category === "All"
       ? entries
       : entries.filter((entry) => entry.kind === category.slice(0, -1));
+  if (!spotify)
+    return (
+      <section
+        className="search-page"
+        aria-label={`Search results for ${query}`}
+      >
+        <h1 className="search-accessible-title">
+          Search results for “{query}”
+        </h1>
+        {ytmusic}
+      </section>
+    );
   return (
     <section
       className="search-page"
@@ -345,12 +458,16 @@ export function SearchPage({
                   .map((entry) => row(entry))}
               </section>
             )}
+            {ytmusic}
           </>
         ) : category === "Songs" ? (
-          <section className="search-song-results" aria-label="Songs">
-            <h2 className="search-accessible-title">Songs</h2>
-            {filtered.map((entry) => row(entry))}
-          </section>
+          <>
+            <section className="search-song-results" aria-label="Songs">
+              <h2 className="search-accessible-title">Songs</h2>
+              {filtered.map((entry) => row(entry))}
+            </section>
+            {ytmusic}
+          </>
         ) : (
           shelf(category)
         )}

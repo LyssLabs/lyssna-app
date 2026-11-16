@@ -773,6 +773,55 @@ test("a YouTube Music sign-in unlocks the client without Spotify", async ({
   ).toBe(true);
 });
 
+test("search lists YouTube Music songs with or without Spotify", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__presetAnswers = {
+      ytmusic_search: [
+        {
+          id: null,
+          uri: "ytmusic:track:wU26xVT_vBU",
+          name: "One More Time (Radio Edit)",
+          explicit: false,
+          duration_ms: 321000,
+          artists: [{ id: null, uri: "", name: "Daft Punk" }],
+          album: { id: null, uri: "", name: "One More Time", images: [] },
+        },
+      ],
+    };
+  });
+  await startClient(page);
+  await page.evaluate(() =>
+    (window as any).__clientTest.emit({
+      type: "ytmusic",
+      signed_in: true,
+      notice: "",
+    }),
+  );
+  const box = page.getByPlaceholder("What do you want to play?");
+  await box.fill("one more time");
+  await box.press("Enter");
+  const songs = page.getByRole("region", { name: "YouTube Music songs" });
+  await expect(songs).toContainText("One More Time (Radio Edit)");
+  await expect(songs).toContainText("Song · Daft Punk");
+  await expect(songs).toContainText("5:21");
+  // Without Spotify, only YouTube Music's songs show.
+  await page.evaluate(() =>
+    (window as any).__clientTest.emit({ type: "signed_out" }),
+  );
+  await box.fill("one more time again");
+  await box.press("Enter");
+  await expect(songs).toContainText("One More Time (Radio Edit)");
+  await expect(page.getByRole("tablist", { name: "Search categories" })).toHaveCount(0);
+  const searches = await page.evaluate(() =>
+    (window as any).__clientTest.commands
+      .filter((entry: any) => entry.command === "ytmusic_search")
+      .map((entry: any) => entry.args.query),
+  );
+  expect(searches).toContain("one more time again");
+});
+
 test("failed saved sign-in stays locked, supports retry and cancellable fresh sign-in", async ({
   page,
 }) => {

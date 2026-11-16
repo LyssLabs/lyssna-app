@@ -286,3 +286,11 @@
   gap: 8px;
   margin: 16px auto 32px;
 }
+
+.search-ytmusic .search-loading {
+  justify-content: flex-start;
+}
+.search-ytmusic-empty {
+  color: var(--muted, #a7a7a7);
+  font-size: 14px;
+}

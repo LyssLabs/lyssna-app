@@ -774,7 +774,13 @@ function App() {
   }, [call, notify]);
   const navigate = useCallback(
     (key: string, push = true) => {
-      if (!stateRef.current.profile) return;
+      const spotify = !!stateRef.current.profile;
+      // YouTube Music alone can only search.
+      if (
+        !spotify &&
+        !(stateRef.current.ytmusic_signed_in && key.startsWith("search:"))
+      )
+        return;
       // Opening a page shuffles Random anew; Back and Forward keep it.
       if (push) shuffleSeeds.current.delete(key);
       if (push && routeRef.current !== key) {
@@ -812,7 +818,7 @@ function App() {
       openedAt.current = { key, at: performance.now() };
       dispatch({ type: "navigate", key, generation: next });
       mainScroll.current?.scrollTo({ top: 0 });
-      void call("browse", { key, generation: next, offset: 0 });
+      if (spotify) void call("browse", { key, generation: next, offset: 0 });
     },
     [call],
   );
@@ -3337,7 +3343,7 @@ function App() {
               aria-label="Search Spotify"
               placeholder="What do you want to play?"
               value={query}
-              disabled={!state.profile}
+              disabled={!state.profile && !state.ytmusic_signed_in}
               onChange={(event) => {
                 setQuery(event.target.value);
                 setSuggestionsClosed(false);

@@ -4854,6 +4854,14 @@ fn ytmusic_import_cookies(
 }
 
 #[tauri::command]
+async fn ytmusic_search(query: String) -> std::result::Result<Vec<Track>, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::ytm_api::search_songs(&query))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| format!("{error:#}"))
+}
+
+#[tauri::command]
 fn ytmusic_sign_out(app: tauri::AppHandle) -> std::result::Result<(), String> {
     crate::ytm_auth::forget().map_err(|error| format!("{error:#}"))?;
     set_ytmusic_signed_in(&app, false, "");
@@ -6226,6 +6234,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             ytmusic_sign_in,
             ytmusic_import_cookies,
             ytmusic_sign_out,
+            ytmusic_search,
             resolve_album,
             user_profile,
             follow_user,
