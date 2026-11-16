@@ -888,10 +888,12 @@ export function LyricsDisplay({
         !!above &&
         above.offsetTop + above.offsetHeight <
           spring.current.target + container.clientHeight;
+      // The card keeps its faded line above the current one even here;
+      // aiming at the line's top edge slid it to the very top and back.
       if (holding)
         spring.current.target = Math.max(
           spring.current.target,
-          Math.min(end, line.offsetTop),
+          Math.min(end, line.offsetTop - (card ? focus : 0)),
         );
       // The dots grow over half a second; a spring chasing them would let
       // the credits dip out of view first. Shifting in the same frame keeps

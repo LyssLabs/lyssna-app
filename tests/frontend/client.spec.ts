@@ -19348,6 +19348,75 @@ test("the Now playing card's credits never cover lines still to come", async ({
   }
 });
 
+test("the Now playing card keeps a line above the current one up to the end", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 760 });
+  await startClient(page);
+  const lines = Array.from({ length: 16 }, (_, index) => ({
+    text: index % 3 ? `Life ${index}` : `A longer line ${index} that wraps onto two rows`,
+    start_ms: 1000 + index * 2000,
+    end_ms: 2900 + index * 2000,
+    background: false,
+    opposite: false,
+    words: [],
+    translation: "",
+    romanization: "",
+  }));
+  const at = (progress: number) =>
+    page.evaluate(
+      ({ track, playback, progress }) =>
+        (window as any).__clientTest.emit({
+          type: "playback",
+          playback: {
+            ...playback,
+            item: { ...track, duration_ms: 40000 },
+            is_playing: false,
+            progress_ms: progress,
+          },
+          observed_at: Date.now(),
+          changed: true,
+        }),
+      { track, playback: emptyState.playback, progress },
+    );
+  await at(17500);
+  await page.evaluate(
+    ({ track, lines }) =>
+      (window as any).__clientTest.emit({
+        type: "lyrics",
+        uri: track.uri,
+        lyrics: {
+          source: "spotify",
+          synced: true,
+          instrumental: false,
+          lines,
+          songwriters: ["Chevelle", "Peter Loeffler"],
+        },
+      }),
+    { track, lines },
+  );
+  const card = page.locator(".now-playing .lyric-preview .lyric-scroll");
+  await expect(card).toBeVisible();
+  const tops: number[] = [];
+  for (let index = 9; index < lines.length; index++) {
+    await at(lines[index].start_ms + 500);
+    await page.waitForTimeout(1200);
+    tops.push(
+      await card.evaluate(
+        (box, index) =>
+          Math.round(
+            box
+              .querySelectorAll(":scope > .lyric-line")
+              [index].getBoundingClientRect().top -
+              box.getBoundingClientRect().top,
+          ),
+        index,
+      ),
+    );
+  }
+  for (const top of tops) expect(top).toBeGreaterThanOrEqual(30);
+});
+
 test("Now playing card credits let go when the lyrics scroll back up", async ({
   page,
 }) => {
