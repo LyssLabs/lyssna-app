@@ -603,6 +603,10 @@ pub fn set_crossfade(seconds: u8) {
     }
 }
 
+pub fn crossfades() -> bool {
+    CROSSFADE_SECONDS.load(Ordering::Acquire) > 0
+}
+
 static PREFS_CHANGED: AtomicBool = AtomicBool::new(false);
 static PLAYING: AtomicBool = AtomicBool::new(false);
 

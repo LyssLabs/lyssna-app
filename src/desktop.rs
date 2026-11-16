@@ -206,9 +206,11 @@ fn set_soloist(inner: &Inner, wanted: bool) {
                         }
                     }
                     // After a song ends on its own, the next one's audio
-                    // trails Soloist's first reports of it.
+                    // trails Soloist's first reports of it. A crossfade
+                    // starts it under the last song's tail instead.
                     let uri = state.track.as_ref().map(|track| track.uri.clone());
-                    if let (Some(previous), Some(uri)) = (&last_playing, &uri)
+                    if !crate::soloist::crossfades()
+                        && let (Some(previous), Some(uri)) = (&last_playing, &uri)
                         && let Some(lag) = crate::soloist_link::handover_lag(previous, &state)
                     {
                         native::diagnostic(&format!("soloist holds the next song {lag} ms"));
