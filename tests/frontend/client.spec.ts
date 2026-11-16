@@ -19280,7 +19280,7 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
 });
 
 test("credits in view stay whole when a pause's dots open near the end", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 640 });
+  await page.setViewportSize({ width: 1280, height: 760 });
   await startClient(page);
   await page.evaluate(
     (settings) =>
@@ -19346,8 +19346,32 @@ test("credits in view stay whole when a pause's dots open near the end", async (
   await expect(credits).toBeVisible();
   await expect(scroller).toBeVisible();
   await expect.poll(overhang).toBeLessThanOrEqual(1);
-  await emitAt(66000);
+  // Played on, not a seek: the dots open as the last line ends.
+  await emitAt(60800);
+  await expect.poll(overhang).toBeLessThanOrEqual(1);
+  const worst = page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const box = document.querySelector(".lyrics-page .lyric-scroll")!;
+        const end = box.querySelector(":scope > .lyric-end-credits")!;
+        let worst = 0;
+        const started = performance.now();
+        const sample = () => {
+          worst = Math.max(
+            worst,
+            end.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom,
+          );
+          if (performance.now() - started < 1200) requestAnimationFrame(sample);
+          else resolve(Math.round(worst));
+        };
+        requestAnimationFrame(sample);
+      }),
+  );
+  await emitAt(61600);
+  // Frames are sampled before the resize observer corrects that frame's
+  // growth, so a few pixels show here that never paint.
+  expect(await worst).toBeLessThanOrEqual(6);
   await expect(page.locator(".lyric-wait:not([aria-hidden='true'])")).toHaveCount(1);
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(500);
   await expect.poll(overhang).toBeLessThanOrEqual(1);
 });

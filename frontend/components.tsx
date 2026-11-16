@@ -667,6 +667,7 @@ export function LyricsDisplay({
     [lyrics],
   );
   const spring = useRef<ScrollSpring>({ position: 0, velocity: 0, target: 0 });
+  const heldEnd = useRef<number | null>(null);
   const waiting = useRef<HTMLDivElement>(null);
   const gap = lyrics.synced ? vocalGap(lyrics.lines, positionMs) : undefined;
   const gaps = useMemo(
@@ -839,17 +840,31 @@ export function LyricsDisplay({
       const credits = container.querySelector<HTMLElement>(
         ":scope > .lyric-end-credits",
       );
-      if (
-        credits &&
-        credits.offsetTop < spring.current.target + container.clientHeight
-      )
+      const end = container.scrollHeight - container.clientHeight;
+      const holding =
+        !!credits &&
+        credits.offsetTop < spring.current.target + container.clientHeight;
+      if (holding)
         spring.current.target = Math.max(
           spring.current.target,
-          Math.min(
-            container.scrollHeight - container.clientHeight,
-            line.offsetTop,
-          ),
+          Math.min(end, line.offsetTop),
         );
+      // The dots grow over half a second; a spring chasing them would let
+      // the credits dip out of view first. Shifting in the same frame keeps
+      // them still while the lyrics move up.
+      const held = heldEnd.current;
+      if (
+        holding &&
+        following &&
+        held !== null &&
+        end > held &&
+        Math.abs(container.scrollTop - held) < 2
+      ) {
+        container.scrollTop += end - held;
+        spring.current.position = container.scrollTop;
+        if (glide.current) glide.current.from += end - held;
+      }
+      heldEnd.current = holding ? end : null;
       if (!following) {
         spring.current.velocity = 0;
         setReturnDirection(
