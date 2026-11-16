@@ -3341,10 +3341,12 @@ small {
 .lyric-scroll::-webkit-scrollbar {
   display: none;
 }
-.lyric-scroll[data-at-end="true"] {
+.lyric-scroll[data-at-end="true"],
+.lyric-scroll[data-hold-end] {
   mask-image: linear-gradient(transparent, #000 10%, #000);
 }
-.compact .lyric-scroll[data-at-end="true"] {
+.compact .lyric-scroll[data-at-end="true"],
+.compact .lyric-scroll[data-hold-end] {
   mask-image: none;
 }
 .lyric-spacer {

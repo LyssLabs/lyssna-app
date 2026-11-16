@@ -19374,6 +19374,10 @@ test("credits in view stay whole when a pause's dots open near the end", async (
   );
   await emitAt(61600);
   expect(await worst).toBeLessThanOrEqual(1);
+  // Held credits are at the end, so the bottom fade never covers them.
+  await expect(scroller).toHaveAttribute("data-hold-end", "");
+  await scroller.evaluate((box) => box.setAttribute("data-at-end", "false"));
+  await expect(scroller).toHaveCSS("mask-image", /, rgb\(0, 0, 0\)\)$/);
   await expect(page.locator(".lyric-wait:not([aria-hidden='true'])")).toHaveCount(1);
   await page.waitForTimeout(500);
   await expect.poll(overhang).toBeLessThanOrEqual(1);
