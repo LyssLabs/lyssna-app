@@ -87,7 +87,12 @@ test("fixed links always download the current stable release", async () => {
   assert.equal((await request("latest/lyssna.exe")).status, 404);
   await put("releases/0.4.0/windows-x86_64/lyssna.exe", "first");
   await put(channel, release("0.4.0", "first"));
-  for (const [path, name] of [["latest/lyssna.exe", "lyssna.exe"], ["lyssna.exe", "lyssna.exe"]]) {
+  for (const [path, name] of [
+    ["latest/lyssna_setup.exe", "lyssna_setup.exe"],
+    ["lyssna_setup.exe", "lyssna_setup.exe"],
+    ["latest/lyssna.exe", "lyssna_setup.exe"],
+    ["lyssna.exe", "lyssna_setup.exe"],
+  ]) {
     const response = await request(path);
     assert.equal(response.status, 200);
     assert.equal(await response.text(), "first");

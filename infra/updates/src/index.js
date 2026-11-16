@@ -7,10 +7,13 @@ const channels = new Map([
   ["channels/stable/windows-x86_64.json", "spotiflex.exe"],
 ]);
 
-// Fixed links that always download the current stable release.
+// Fixed links that always download the current stable release, saved as
+// lyssna_setup.exe. The lyssna.exe paths stay for links already shared.
 const latest = new Map([
-  ["latest/lyssna.exe", "lyssna.exe"],
-  ["lyssna.exe", "lyssna.exe"],
+  ["latest/lyssna_setup.exe", "lyssna_setup.exe"],
+  ["lyssna_setup.exe", "lyssna_setup.exe"],
+  ["latest/lyssna.exe", "lyssna_setup.exe"],
+  ["lyssna.exe", "lyssna_setup.exe"],
 ]);
 const stable = "channels/stable/lyssna-windows-x86_64.json";
 
