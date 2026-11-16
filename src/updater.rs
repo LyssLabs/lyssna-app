@@ -20,7 +20,7 @@ use sha2::{Digest, Sha256};
 
 use crate::config::data_dir;
 
-pub const BASE_URL: &str = "https://updates.clypdat.xyz";
+pub const BASE_URL: &str = "https://updates.lyssna.org";
 pub const TARGET: &str = "windows-x86_64";
 pub const CHANNEL: &str = "channels/stable/lyssna-windows-x86_64.json";
 /// Copies from before the rename read this channel and only accept `spotiflex.exe`.
