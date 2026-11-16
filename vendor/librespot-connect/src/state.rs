@@ -582,6 +582,29 @@ mod dj_tests {
     }
 
     #[tokio::test]
+    async fn a_restored_dj_session_with_a_repeated_set_plays_it_once() {
+        let mut state = state();
+        let mut page = segment(0, 5, "hm://lexicon/session/1");
+        let again = segment(0, 5, "hm://lexicon/session/1");
+        page.tracks.extend(again.tracks.clone());
+        page.tracks.extend(again.tracks);
+        let restored = Context {
+            uri: Some(DJ.into()),
+            pages: vec![page],
+            ..Default::default()
+        };
+        state
+            .update_context(restored, ContextType::Default)
+            .unwrap();
+        let ctx = state.get_context(ContextType::Default).unwrap();
+        assert_eq!(ctx.tracks.len(), 5);
+        assert_eq!(
+            ctx.tracks.last().and_then(|t| t.get_context_index()),
+            Some(4)
+        );
+    }
+
+    #[tokio::test]
     async fn a_dj_set_served_again_is_not_played_again() {
         let mut state = state();
         let first = Context {

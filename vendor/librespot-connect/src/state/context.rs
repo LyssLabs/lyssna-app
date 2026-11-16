@@ -236,6 +236,17 @@ impl ConnectState {
                     Some(0),
                     None,
                 );
+                // Lyssna: a restored DJ session can carry one set served
+                // several times over, which would loop the same few songs.
+                if context.uri.as_deref() == Some(crate::dj_cache::DJ_URI) {
+                    let mut seen = std::collections::HashSet::new();
+                    new_context
+                        .tracks
+                        .retain(|track| track.uri.is_empty() || seen.insert(track.uri.clone()));
+                    for (index, track) in new_context.tracks.iter_mut().enumerate() {
+                        track.set_context_index(index);
+                    }
+                }
 
                 // when we update the same context, we should try to preserve the previous position
                 // otherwise we might load the entire context twice, unless it's the search context
