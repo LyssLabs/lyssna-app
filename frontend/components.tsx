@@ -865,6 +865,7 @@ export function LyricsDisplay({
         if (glide.current) glide.current.from += end - held;
       }
       heldEnd.current = holding ? end : null;
+      container.toggleAttribute("data-hold-end", holding);
       if (!following) {
         spring.current.velocity = 0;
         setReturnDirection(

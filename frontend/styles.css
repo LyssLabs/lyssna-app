@@ -3580,6 +3580,14 @@ small {
     height 0.45s cubic-bezier(0.2, 0.7, 0.25, 1) 0.15s,
     padding 0.45s cubic-bezier(0.2, 0.7, 0.25, 1) 0.15s;
 }
+/* With the credits held at the bottom, the lyrics move up exactly as the
+   dots open, so they open evenly instead of with a quick start. */
+.lyric-scroll[data-hold-end] .lyric-wait:not([aria-hidden="true"]) {
+  transition:
+    opacity 0.3s ease,
+    height 0.7s cubic-bezier(0.45, 0, 0.25, 1),
+    padding 0.7s cubic-bezier(0.45, 0, 0.25, 1);
+}
 .lyric-wait.opposite {
   justify-content: flex-end;
 }
