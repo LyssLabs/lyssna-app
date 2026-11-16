@@ -824,6 +824,18 @@ test("search lists YouTube Music songs with or without Spotify", async ({
   await box.press("Enter");
   await expect(songs).toContainText("One More Time (Radio Edit)");
   await expect(page.getByRole("tablist", { name: "Search categories" })).toHaveCount(0);
+  // The page under the signed-out lock stays usable with YouTube Music.
+  await songs.getByRole("button", { name: "Play One More Time (Radio Edit)" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__clientTest.commands.filter(
+            (entry: any) => entry.command === "ytmusic_play",
+          ).length,
+      ),
+    )
+    .toBe(2);
   const searches = await page.evaluate(() =>
     (window as any).__clientTest.commands
       .filter((entry: any) => entry.command === "ytmusic_search")

@@ -3633,7 +3633,7 @@ function App() {
             ...(leftWidth ? { "--left-width": `${leftWidth}px` } : {}),
           } as CSSProperties
         }
-        inert={!state.profile}
+        inert={sessionScreen(state) !== "client"}
       >
         <aside
           className={`library-panel ${state.settings.compact_library ? "compact-library" : ""}`}
@@ -5421,7 +5421,7 @@ function App() {
         <footer
           className="player-bar ttml-player-bar"
           ref={setTtmlBarSlot}
-          inert={!state.profile}
+          inert={sessionScreen(state) !== "client"}
         />
       ) : (
         <PlayerBar
@@ -6696,7 +6696,7 @@ function PlayerBar({
   return (
     <footer
       className={`player-bar ${elsewhere ? "has-elsewhere" : ""}`}
-      inert={!state.profile}
+      inert={sessionScreen(state) !== "client"}
     >
       <div className="player-song">
         {state.narrating ? (

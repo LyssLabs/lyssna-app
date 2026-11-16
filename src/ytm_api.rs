@@ -232,6 +232,15 @@ mod tests {
     }
 
     #[test]
+    fn found_songs_come_back_from_the_page_intact() {
+        for song in songs_from_search(&fixture()) {
+            let sent = serde_json::to_string(&song).unwrap();
+            let back: Track = serde_json::from_str(&sent).unwrap();
+            assert_eq!(back.uri, song.uri);
+        }
+    }
+
+    #[test]
     fn reads_clock_durations() {
         assert_eq!(duration_ms("5:21"), Some(321_000));
         assert_eq!(duration_ms("1:02:03"), Some(3_723_000));
