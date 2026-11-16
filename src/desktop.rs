@@ -4801,6 +4801,9 @@ async fn ytmusic_sign_in(app: tauri::AppHandle) -> std::result::Result<(), Strin
         .title("Sign in to YouTube Music")
         .inner_size(480., 680.)
         .incognito(true)
+        // Its own WebView2 browser process: one crashed on Google's
+        // sign-in page and took the main window's view down with it.
+        .data_directory(crate::config::data_dir()?.join("ytmusic").join("webview"))
         .additional_browser_args(BROWSER_ARGS)
         .on_navigation(ytmusic_sign_in_page)
         .build()?;
