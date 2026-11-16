@@ -19278,3 +19278,76 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
   );
   await expect(card).toHaveCount(0);
 });
+
+test("credits in view stay whole when a pause's dots open near the end", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 640 });
+  await startClient(page);
+  await page.evaluate(
+    (settings) =>
+      (window as any).__clientTest.emit({
+        type: "settings",
+        settings: { ...settings, lyrics_pinned_footer: "no_writers" },
+      }),
+    emptyState.settings,
+  );
+  const line = (start: number, text: string) => ({
+    text,
+    start_ms: start,
+    end_ms: start + 2000,
+    background: false,
+    opposite: false,
+    words: [],
+    translation: "",
+    romanization: "",
+  });
+  const lines = [
+    ...Array.from({ length: 30 }, (_, index) => line(1000 + index * 2000, `Line ${index}`)),
+    line(75000, "Closing line"),
+    line(77000, "Closing line two"),
+    line(79000, "Closing line three"),
+  ];
+  const emitAt = (progress: number) =>
+    page.evaluate(
+      ({ track, playback, progress }) =>
+        (window as any).__clientTest.emit({
+          type: "playback",
+          playback: {
+            ...playback,
+            item: { ...track, duration_ms: 84000 },
+            is_playing: false,
+            progress_ms: progress,
+          },
+          observed_at: Date.now(),
+          changed: true,
+        }),
+      { track, playback: emptyState.playback, progress },
+    );
+  await emitAt(60000);
+  await page.evaluate(
+    ({ track, lines }) =>
+      (window as any).__clientTest.emit({
+        type: "lyrics",
+        uri: track.uri,
+        lyrics: { source: "spotify", synced: true, instrumental: false, lines, songwriters: ["Writer One", "Writer Two"] },
+      }),
+    { track, lines },
+  );
+  await page.getByTitle("Lyrics", { exact: true }).click();
+  const scroller = page.locator(".lyrics-page .lyric-scroll");
+  const credits = page.locator(".lyrics-page .lyric-scroll > .lyric-end-credits");
+  const overhang = () =>
+    page.evaluate(() => {
+      const box = document.querySelector(".lyrics-page .lyric-scroll")!.getBoundingClientRect();
+      const end = document
+        .querySelector(".lyrics-page .lyric-scroll > .lyric-end-credits")!
+        .getBoundingClientRect();
+      return Math.round(end.bottom - box.bottom);
+    });
+  await expect(credits).toBeVisible();
+  await expect(scroller).toBeVisible();
+  await expect.poll(overhang).toBeLessThanOrEqual(1);
+  await emitAt(66000);
+  await expect(page.locator(".lyric-wait:not([aria-hidden='true'])")).toHaveCount(1);
+  await page.waitForTimeout(1500);
+  await expect.poll(overhang).toBeLessThanOrEqual(1);
+});

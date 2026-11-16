@@ -833,6 +833,23 @@ export function LyricsDisplay({
           line.offsetTop + (centred ? line.offsetHeight / 2 : 0) - focus,
         ),
       );
+      // Credits in view stay whole: when a pause's dots open near the end,
+      // the lyrics move up rather than the credits being pushed off the
+      // bottom. The current line still stays in view.
+      const credits = container.querySelector<HTMLElement>(
+        ":scope > .lyric-end-credits",
+      );
+      if (
+        credits &&
+        credits.offsetTop < spring.current.target + container.clientHeight
+      )
+        spring.current.target = Math.max(
+          spring.current.target,
+          Math.min(
+            container.scrollHeight - container.clientHeight,
+            line.offsetTop,
+          ),
+        );
       if (!following) {
         spring.current.velocity = 0;
         setReturnDirection(
@@ -874,7 +891,7 @@ export function LyricsDisplay({
     observer.observe(container);
     observer.observe(line);
     container
-      .querySelectorAll(".lyric-wait")
+      .querySelectorAll(".lyric-wait, :scope > .lyric-end-credits")
       .forEach((row) => observer.observe(row));
     const album = container
       .closest(".lyrics-page")
