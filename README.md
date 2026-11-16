@@ -55,6 +55,16 @@ On macOS, Lyssna sends stereo playback through AVFoundation with stereo spatiali
 
 ## FAQ: Spotify Soloist
 
+> [!CAUTION]
+> **Use Soloist at your own risk.** Lyssna is not affiliated with, endorsed by or supported by Spotify. Soloist is a Spotify developer product. Lyssna uses it with the API key you create, under your Spotify account, so you are responsible for following the [Spotify Developer Terms](https://developer.spotify.com/terms) and Spotify's Terms of Use.
+>
+> - Spotify can change, limit or withdraw Soloist, its API keys or its downloads at any time, without notice. Playback through Soloist can stop working until Lyssna catches up, or for good.
+> - Spotify decides what an account may do. Lyssna can't promise that using Soloist this way won't lead Spotify to restrict your API key or your account.
+> - Lyssna doesn't control Soloist. Bugs, outages and audio problems inside Soloist are Spotify's, and Lyssna's maintainers can't fix them.
+> - Lyssna is provided as is, with no warranty, under the [GNU AGPL v3](LICENSE).
+>
+> If any of that isn't acceptable to you, leave **Play through Spotify Soloist** off.
+
 <details>
 <summary>Why do songs fail with an audio key error?</summary>
 
