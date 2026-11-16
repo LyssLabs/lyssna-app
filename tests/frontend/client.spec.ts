@@ -19279,9 +19279,15 @@ test("lyrics page pops Up next in for the last 30 seconds and skips to it", asyn
   await expect(card).toHaveCount(0);
 });
 
-test("credits in view stay whole when a pause's dots open near the end", async ({ page }) => {
+// Room below the credits keeps the scroll resting above the end, with the
+// current line holding it, as long pages do.
+for (const room of [0, 320])
+test(`credits in view stay whole when a pause's dots open near the end (${room}px below)`, async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 760 });
   await startClient(page);
+  await page.addStyleTag({
+    content: `.lyrics-page .lyric-scroll > .lyric-end-credits { margin-bottom: ${room}px; }`,
+  });
   await page.evaluate(
     (settings) =>
       (window as any).__clientTest.emit({
@@ -19348,12 +19354,17 @@ test("credits in view stay whole when a pause's dots open near the end", async (
   await expect.poll(overhang).toBeLessThanOrEqual(1);
   // Played on, not a seek: the last line before the pause scrolls in, then
   // the dots open as it ends.
-  const atEnd = () =>
-    scroller.evaluate((box) => Math.round(box.scrollHeight - box.clientHeight - box.scrollTop));
-  await expect.poll(atEnd).toBeLessThanOrEqual(1);
+  const resting = () =>
+    scroller.evaluate(
+      (box) =>
+        new Promise<number>((resolve) => {
+          const from = box.scrollTop;
+          setTimeout(() => resolve(Math.abs(box.scrollTop - from)), 300);
+        }),
+    );
   await emitAt(59500);
   await page.waitForTimeout(1500);
-  await expect.poll(atEnd).toBeLessThanOrEqual(1);
+  await expect.poll(resting).toBe(0);
   await emitAt(60800);
   // Read after layout, as painted: a later observer runs after the view's.
   const worst = page.evaluate(

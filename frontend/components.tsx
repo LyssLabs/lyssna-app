@@ -667,26 +667,27 @@ export function LyricsDisplay({
     [lyrics],
   );
   const spring = useRef<ScrollSpring>({ position: 0, velocity: 0, target: 0 });
-  const heldEnd = useRef<{ end: number; gap: number } | null>(null);
-  // Held credits need their resting spot once the scroll settles there, not
-  // only when it was aimed, or the first frames of the dots opening go
-  // uncorrected.
-  const noteHeldRest = (container: HTMLElement) => {
+  const heldEnd = useRef<{ top: number; gap: number } | null>(null);
+  // Where held credits rest, noted wherever the scroll settles (not only
+  // at the very end: the current line can hold the scroll above it), so
+  // the first frames of the dots opening are corrected too. A scroll event
+  // notes it only when none is known, and a spot the scroll still sits on
+  // is kept, or growth read before it is corrected would be taken as rest.
+  const noteHeldRest = (container: HTMLElement, settled: boolean) => {
     const above = container.querySelector(
       ":scope > .lyric-end-credits",
     )?.previousElementSibling;
-    const rest = container.scrollHeight - container.clientHeight;
-    if (
-      heldEnd.current ||
-      !above ||
-      !container.hasAttribute("data-hold-end") ||
-      Math.abs(container.scrollTop - rest) >= 2
-    )
+    if (!above || !container.hasAttribute("data-hold-end")) {
+      heldEnd.current = null;
+      return;
+    }
+    const held = heldEnd.current;
+    if (held && (!settled || Math.abs(container.scrollTop - held.top) < 0.5))
       return;
     const viewport = container.getBoundingClientRect();
     const scale = viewport.height / container.clientHeight || 1;
     heldEnd.current = {
-      end: rest,
+      top: container.scrollTop,
       gap: (viewport.bottom - above.getBoundingClientRect().bottom) / scale,
     };
   };
@@ -812,7 +813,7 @@ export function LyricsDisplay({
         if (elapsed < GLIDE_MS) frame = requestAnimationFrame(tick);
         else {
           glide.current = undefined;
-          noteHeldRest(container);
+          noteHeldRest(container, true);
         }
         return;
       }
@@ -828,7 +829,7 @@ export function LyricsDisplay({
         frame = requestAnimationFrame(tick);
       else {
         container.scrollTop = motion.target;
-        noteHeldRest(container);
+        noteHeldRest(container, true);
       }
     };
     const retarget = () => {
@@ -890,14 +891,14 @@ export function LyricsDisplay({
       const scale = viewport.height / container.clientHeight || 1;
       const gap = () =>
         (viewport.bottom - above!.getBoundingClientRect().bottom) / scale;
-      // The gap is kept from when the scroll first rested at the end, so
-      // rounding can't add up while the dots keep growing.
+      // The gap is kept from when the scroll rested, so rounding can't add
+      // up while the dots keep growing.
       const held = heldEnd.current;
       const anchored =
         holding &&
         following &&
         !!held &&
-        Math.abs(container.scrollTop - held.end) < 2;
+        Math.abs(container.scrollTop - held.top) < 2;
       if (anchored) {
         const shift = held.gap - gap();
         if (shift > 0) {
@@ -906,11 +907,15 @@ export function LyricsDisplay({
           if (glide.current) glide.current.from += shift;
         }
       }
-      const rest = container.scrollHeight - container.clientHeight;
-      heldEnd.current =
-        holding && Math.abs(container.scrollTop - rest) < 2
-          ? { end: rest, gap: anchored ? held.gap : gap() }
-          : null;
+      // A pause opening above held credits only pushes the lyrics up; the
+      // scroll stays where it rested rather than re-aiming at the dots.
+      if (anchored && line === waiting.current)
+        spring.current.target = container.scrollTop;
+      heldEnd.current = !holding
+        ? null
+        : anchored
+          ? { top: container.scrollTop, gap: held.gap }
+          : held;
       container.toggleAttribute("data-hold-end", holding);
       if (!following) {
         spring.current.velocity = 0;
@@ -1041,7 +1046,7 @@ export function LyricsDisplay({
           setAtEnd(
             node.scrollTop + node.clientHeight >= node.scrollHeight - 24,
           );
-          noteHeldRest(node);
+          noteHeldRest(node, false);
           if (!following)
             setReturnDirection(
               node.scrollTop > spring.current.target ? "up" : "down",
