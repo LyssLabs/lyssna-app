@@ -292,6 +292,7 @@ fn shared_open(options: &mut fs::OpenOptions) -> &mut fs::OpenOptions {
 }
 
 fn download(
+    video_id: &str,
     stream: &crate::ytm_tools::Stream,
     info_file: &Path,
     file: &mut fs::File,
@@ -309,7 +310,40 @@ fn download(
         update(&|progress| progress.total = Some(total));
     }
     fs::write(info_file, &stream.info)?;
-    let mut child = crate::ytm_tools::download_song(info_file)?;
+    let mut written = 0u64;
+    let described = attempt(
+        &crate::ytm_tools::Song::Described(info_file),
+        file,
+        &mut written,
+        shared,
+    );
+    match described {
+        // YouTube now and then refuses a link outright; a fresh lookup
+        // gets another one.
+        Err(error) if written == 0 => {
+            crate::native::diagnostic(&format!(
+                "YouTube Music link refused, asking again: {error:#}"
+            ));
+            attempt(
+                &crate::ytm_tools::Song::Fresh(video_id),
+                file,
+                &mut written,
+                shared,
+            )?;
+        }
+        result => result?,
+    }
+    file.sync_all()?;
+    Ok(())
+}
+
+fn attempt(
+    song: &crate::ytm_tools::Song,
+    file: &mut fs::File,
+    offset: &mut u64,
+    shared: &Shared,
+) -> Result<()> {
+    let mut child = crate::ytm_tools::download_song(song)?;
     let mut stdout = child.stdout.take().context("yt-dlp gave no audio")?;
     let mut stderr = child.stderr.take().context("yt-dlp gave no errors")?;
     let errors = std::thread::spawn(move || {
@@ -317,7 +351,6 @@ fn download(
         let _ = stderr.read_to_end(&mut text);
         text
     });
-    let mut offset = 0u64;
     let mut piece = vec![0; 64 * 1024];
     let copied = (|| -> Result<()> {
         loop {
@@ -326,9 +359,12 @@ fn download(
                 return Ok(());
             }
             file.write_all(&piece[..read])?;
-            offset += read as u64;
-            ensure!(offset <= MAX_SONG, "This song is too large");
-            update(&|progress| progress.written = offset);
+            *offset += read as u64;
+            ensure!(*offset <= MAX_SONG, "This song is too large");
+            if let Ok(mut progress) = shared.0.lock() {
+                progress.written = *offset;
+            }
+            shared.1.notify_all();
         }
     })();
     if copied.is_err() {
@@ -342,8 +378,7 @@ fn download(
         "yt-dlp could not download the song: {}",
         crate::ytm_tools::failure(&errors)
     );
-    ensure!(offset > 0, "YouTube Music sent no audio");
-    file.sync_all()?;
+    ensure!(*offset > 0, "YouTube Music sent no audio");
     Ok(())
 }
 
@@ -423,11 +458,12 @@ pub fn open(video_id: &str) -> Result<Audio> {
     let reader = shared_open(fs::OpenOptions::new().read(true)).open(&partial)?;
     let shared: Shared = Arc::default();
     let downloading = shared.clone();
+    let id = video_id.to_owned();
     std::thread::Builder::new()
         .name("ytmusic-download".into())
         .spawn(move || {
             let info_file = partial.with_extension("info.json");
-            let result = download(&stream, &info_file, &mut writer, &downloading);
+            let result = download(&id, &stream, &info_file, &mut writer, &downloading);
             let _ = fs::remove_file(&info_file);
             drop(writer);
             finish(result, &downloading, &partial, &path);

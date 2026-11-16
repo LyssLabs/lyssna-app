@@ -346,9 +346,28 @@ pub fn resolve(video_id: &str) -> Result<Stream> {
 /// yt-dlp downloading the song it described in `info_file` to its stdout.
 /// It knows the headers and tokens YouTube checks on the audio link, so a
 /// plain request for the link is refused with HTTP 403.
-pub fn download_song(info_file: &Path) -> Result<std::process::Child> {
+pub enum Song<'a> {
+    /// The details a lookup already wrote, so YouTube is not asked twice.
+    Described(&'a Path),
+    /// A fresh lookup, for when YouTube refused the described link.
+    Fresh(&'a str),
+}
+
+pub fn download_song(song: &Song) -> Result<std::process::Child> {
     let tools = ensure()?;
-    Command::new(&tools.yt_dlp)
+    let mut command = Command::new(&tools.yt_dlp);
+    match song {
+        Song::Described(info_file) => {
+            command.arg("--load-info-json").arg(info_file);
+        }
+        Song::Fresh(video_id) => {
+            ensure!(valid_video_id(video_id), "Not a YouTube Music song");
+            command
+                .arg("--no-playlist")
+                .arg(format!("https://music.youtube.com/watch?v={video_id}"));
+        }
+    }
+    command
         .arg("--no-config")
         .arg("--quiet")
         .arg("--no-warnings")
@@ -356,8 +375,6 @@ pub fn download_song(info_file: &Path) -> Result<std::process::Child> {
         .arg("--no-part")
         .arg("--js-runtimes")
         .arg(format!("deno:{}", tools.deno.display()))
-        .arg("--load-info-json")
-        .arg(info_file)
         .args(["-f", "140/bestaudio[acodec^=mp4a]", "-o", "-"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
