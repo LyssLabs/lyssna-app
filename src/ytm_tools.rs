@@ -275,15 +275,14 @@ pub struct Stream {
     pub url: String,
     pub size: Option<u64>,
     pub duration_ms: Option<u64>,
-    /// The headers yt-dlp would send; YouTube checks the User-Agent
-    /// against the client the link was made for.
-    pub headers: Vec<(String, String)>,
+    /// yt-dlp's details for the song, which its download reuses.
+    pub info: String,
 }
 
 /// The audio link in yt-dlp's `--dump-json` output for one chosen format.
-fn stream_from_info(info: &str) -> Result<Stream> {
+fn stream_from_info(info_text: &str) -> Result<Stream> {
     let info: serde_json::Value =
-        serde_json::from_str(info).context("yt-dlp gave no song details")?;
+        serde_json::from_str(info_text).context("yt-dlp gave no song details")?;
     let chosen = info
         .get("requested_formats")
         .and_then(|formats| formats.get(0))
@@ -301,22 +300,11 @@ fn stream_from_info(info: &str) -> Result<Stream> {
         .get("duration")
         .and_then(serde_json::Value::as_f64)
         .map(|seconds| (seconds * 1000.0).round() as u64);
-    let headers = chosen
-        .get("http_headers")
-        .or_else(|| info.get("http_headers"))
-        .and_then(serde_json::Value::as_object)
-        .map(|headers| {
-            headers
-                .iter()
-                .filter_map(|(name, value)| Some((name.clone(), value.as_str()?.to_owned())))
-                .collect()
-        })
-        .unwrap_or_default();
     Ok(Stream {
         url: url.to_owned(),
         size,
         duration_ms,
-        headers,
+        info: info_text.to_owned(),
     })
 }
 
@@ -353,6 +341,42 @@ pub fn resolve(video_id: &str) -> Result<Stream> {
         );
     }
     stream_from_info(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// yt-dlp downloading the song it described in `info_file` to its stdout.
+/// It knows the headers and tokens YouTube checks on the audio link, so a
+/// plain request for the link is refused with HTTP 403.
+pub fn download_song(info_file: &Path) -> Result<std::process::Child> {
+    let tools = ensure()?;
+    Command::new(&tools.yt_dlp)
+        .arg("--no-config")
+        .arg("--quiet")
+        .arg("--no-warnings")
+        .arg("--no-progress")
+        .arg("--no-part")
+        .arg("--js-runtimes")
+        .arg(format!("deno:{}", tools.deno.display()))
+        .arg("--load-info-json")
+        .arg(info_file)
+        .args(["-f", "140/bestaudio[acodec^=mp4a]", "-o", "-"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .creation_flags_hidden()
+        .spawn()
+        .context("Cannot run yt-dlp")
+}
+
+/// The last error line yt-dlp printed.
+pub fn failure(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    text.lines()
+        .rev()
+        .find(|line| line.contains("ERROR"))
+        .unwrap_or("no reason given")
+        .chars()
+        .take(200)
+        .collect()
 }
 
 #[cfg(test)]
@@ -416,14 +440,14 @@ mod tests {
 
     #[test]
     fn reads_the_audio_link_from_song_details() {
-        let info = r#"{"id":"wU26xVT_vBU","duration":320.5,"url":"https://rr1.googlevideo.com/videoplayback?itag=140","filesize":5181590,"http_headers":{"User-Agent":"com.google.ios.youtube/20.10.4"}}"#;
+        let info = r#"{"id":"wU26xVT_vBU","duration":320.5,"url":"https://rr1.googlevideo.com/videoplayback?itag=140","filesize":5181590}"#;
         assert_eq!(
             stream_from_info(info).unwrap(),
             Stream {
                 url: "https://rr1.googlevideo.com/videoplayback?itag=140".into(),
                 size: Some(5_181_590),
                 duration_ms: Some(320_500),
-                headers: vec![("User-Agent".into(), "com.google.ios.youtube/20.10.4".into())],
+                info: info.into(),
             }
         );
         assert!(stream_from_info(r#"{"url":"http://insecure.example/a"}"#).is_err());

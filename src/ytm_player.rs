@@ -14,7 +14,6 @@ use std::time::{Duration, SystemTime};
 
 use crate::model::Track;
 
-const CHUNK: u64 = 10 * 1024 * 1024;
 const MAX_SONG: u64 = 200 * 1024 * 1024;
 /// Enough audio to start without the decoder catching up with the download.
 const START_AFTER: u64 = 256 * 1024;
@@ -292,25 +291,12 @@ fn shared_open(options: &mut fs::OpenOptions) -> &mut fs::OpenOptions {
     options
 }
 
-fn client(stream: &crate::ytm_tools::Stream) -> Result<reqwest::blocking::Client> {
-    let mut headers = reqwest::header::HeaderMap::new();
-    for (name, value) in &stream.headers {
-        if let (Ok(name), Ok(value)) = (
-            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
-            reqwest::header::HeaderValue::from_str(value),
-        ) {
-            headers.insert(name, value);
-        }
-    }
-    Ok(reqwest::blocking::Client::builder()
-        .default_headers(headers)
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(120))
-        .build()?)
-}
-
-fn download(stream: &crate::ytm_tools::Stream, file: &mut fs::File, shared: &Shared) -> Result<()> {
-    let client = client(stream)?;
+fn download(
+    stream: &crate::ytm_tools::Stream,
+    info_file: &Path,
+    file: &mut fs::File,
+    shared: &Shared,
+) -> Result<()> {
     let (lock, ready) = &**shared;
     let update = |change: &dyn Fn(&mut Progress)| {
         if let Ok(mut progress) = lock.lock() {
@@ -318,55 +304,46 @@ fn download(stream: &crate::ytm_tools::Stream, file: &mut fs::File, shared: &Sha
         }
         ready.notify_all();
     };
+    if let Some(total) = stream.size {
+        ensure!(total <= MAX_SONG, "This song is too large");
+        update(&|progress| progress.total = Some(total));
+    }
+    fs::write(info_file, &stream.info)?;
+    let mut child = crate::ytm_tools::download_song(info_file)?;
+    let mut stdout = child.stdout.take().context("yt-dlp gave no audio")?;
+    let mut stderr = child.stderr.take().context("yt-dlp gave no errors")?;
+    let errors = std::thread::spawn(move || {
+        let mut text = Vec::new();
+        let _ = stderr.read_to_end(&mut text);
+        text
+    });
     let mut offset = 0u64;
     let mut piece = vec![0; 64 * 1024];
-    // YouTube slows unranged downloads to playback speed; yt-dlp asks for
-    // 10 MB ranges for the same reason.
-    loop {
-        let end = offset + CHUNK - 1;
-        let mut response = client
-            .get(&stream.url)
-            .header(reqwest::header::RANGE, format!("bytes={offset}-{end}"))
-            .send()
-            .context("Cannot reach YouTube Music's audio")?;
-        ensure!(
-            response.status().is_success(),
-            "YouTube Music's audio returned HTTP {}",
-            response.status().as_u16()
-        );
-        let total = response
-            .headers()
-            .get(reqwest::header::CONTENT_RANGE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|range| range.rsplit_once('/'))
-            .and_then(|(_, total)| total.parse::<u64>().ok())
-            .or(stream.size);
-        if let Some(total) = total {
-            ensure!(total <= MAX_SONG, "This song is too large");
-            update(&|progress| progress.total = Some(total));
-        }
-        let start = offset;
+    let copied = (|| -> Result<()> {
         loop {
-            let read = response.read(&mut piece)?;
+            let read = stdout.read(&mut piece)?;
             if read == 0 {
-                break;
+                return Ok(());
             }
             file.write_all(&piece[..read])?;
             offset += read as u64;
             ensure!(offset <= MAX_SONG, "This song is too large");
             update(&|progress| progress.written = offset);
         }
-        let got = offset - start;
-        let done = match total {
-            Some(total) => offset >= total,
-            None => got < CHUNK,
-        };
-        if done || got == 0 {
-            break;
-        }
+    })();
+    if copied.is_err() {
+        let _ = child.kill();
     }
-    file.sync_all()?;
+    let status = child.wait()?;
+    let errors = errors.join().unwrap_or_default();
+    copied?;
+    ensure!(
+        status.success(),
+        "yt-dlp could not download the song: {}",
+        crate::ytm_tools::failure(&errors)
+    );
     ensure!(offset > 0, "YouTube Music sent no audio");
+    file.sync_all()?;
     Ok(())
 }
 
@@ -449,14 +426,20 @@ pub fn open(video_id: &str) -> Result<Audio> {
     std::thread::Builder::new()
         .name("ytmusic-download".into())
         .spawn(move || {
-            let result = download(&stream, &mut writer, &downloading);
+            let info_file = partial.with_extension("info.json");
+            let result = download(&stream, &info_file, &mut writer, &downloading);
+            let _ = fs::remove_file(&info_file);
             drop(writer);
             finish(result, &downloading, &partial, &path);
         })?;
     let (lock, ready) = &*shared;
     let broken = |_| anyhow::anyhow!("YouTube Music download unavailable");
     let mut progress = lock.lock().map_err(broken)?;
-    while progress.written < START_AFTER && !progress.done && !progress.failed {
+    // Without the size, seeking from the end needs the whole song first.
+    while (progress.written < START_AFTER || progress.total.is_none())
+        && !progress.done
+        && !progress.failed
+    {
         progress = ready.wait(progress).map_err(broken)?;
     }
     ensure!(
