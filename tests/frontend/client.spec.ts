@@ -19349,28 +19349,31 @@ test("credits in view stay whole when a pause's dots open near the end", async (
   // Played on, not a seek: the dots open as the last line ends.
   await emitAt(60800);
   await expect.poll(overhang).toBeLessThanOrEqual(1);
+  const atEnd = () =>
+    scroller.evaluate((box) => Math.round(box.scrollHeight - box.clientHeight - box.scrollTop));
+  await expect.poll(atEnd).toBeLessThanOrEqual(1);
+  // Read after layout, as painted: a later observer runs after the view's.
   const worst = page.evaluate(
     () =>
       new Promise<number>((resolve) => {
         const box = document.querySelector(".lyrics-page .lyric-scroll")!;
         const end = box.querySelector(":scope > .lyric-end-credits")!;
         let worst = 0;
-        const started = performance.now();
-        const sample = () => {
-          worst = Math.max(
-            worst,
-            end.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom,
-          );
-          if (performance.now() - started < 1200) requestAnimationFrame(sample);
-          else resolve(Math.round(worst));
+        const read = () => {
+          const off = end.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
+          worst = Math.max(worst, Math.abs(off - first));
         };
-        requestAnimationFrame(sample);
+        const first = end.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
+        const observer = new ResizeObserver(read);
+        box.querySelectorAll(".lyric-wait").forEach((row) => observer.observe(row));
+        setTimeout(() => {
+          observer.disconnect();
+          resolve(Math.round(worst * 100) / 100);
+        }, 1200);
       }),
   );
   await emitAt(61600);
-  // Frames are sampled before the resize observer corrects that frame's
-  // growth, so a few pixels show here that never paint.
-  expect(await worst).toBeLessThanOrEqual(6);
+  expect(await worst).toBeLessThanOrEqual(1);
   await expect(page.locator(".lyric-wait:not([aria-hidden='true'])")).toHaveCount(1);
   await page.waitForTimeout(500);
   await expect.poll(overhang).toBeLessThanOrEqual(1);

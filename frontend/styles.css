@@ -3582,6 +3582,12 @@ small {
 }
 /* With the credits held at the bottom, the lyrics move up exactly as the
    dots open, so they open evenly instead of with a quick start. */
+/* Scrolling moves in whole pixels and the dots grow in fractions, so
+   layout pins the held credits to the bottom exactly. */
+.lyric-scroll[data-hold-end] > .lyric-end-credits {
+  position: sticky;
+  bottom: 0;
+}
 .lyric-scroll[data-hold-end] .lyric-wait:not([aria-hidden="true"]) {
   transition:
     opacity 0.3s ease,

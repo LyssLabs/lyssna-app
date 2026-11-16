@@ -667,7 +667,7 @@ export function LyricsDisplay({
     [lyrics],
   );
   const spring = useRef<ScrollSpring>({ position: 0, velocity: 0, target: 0 });
-  const heldEnd = useRef<number | null>(null);
+  const heldEnd = useRef<{ end: number; gap: number } | null>(null);
   const waiting = useRef<HTMLDivElement>(null);
   const gap = lyrics.synced ? vocalGap(lyrics.lines, positionMs) : undefined;
   const gaps = useMemo(
@@ -841,9 +841,13 @@ export function LyricsDisplay({
         ":scope > .lyric-end-credits",
       );
       const end = container.scrollHeight - container.clientHeight;
+      // Read from the row above: held credits are sticky, which moves
+      // their own offsetTop.
+      const above = credits?.previousElementSibling as HTMLElement | null;
       const holding =
-        !!credits &&
-        credits.offsetTop < spring.current.target + container.clientHeight;
+        !!above &&
+        above.offsetTop + above.offsetHeight <
+          spring.current.target + container.clientHeight;
       if (holding)
         spring.current.target = Math.max(
           spring.current.target,
@@ -852,19 +856,33 @@ export function LyricsDisplay({
       // The dots grow over half a second; a spring chasing them would let
       // the credits dip out of view first. Shifting in the same frame keeps
       // them still while the lyrics move up.
+      // Measured from where the lyrics end, not the whole-pixel scroll
+      // height, which lags the dots' fractional growth.
+      const viewport = container.getBoundingClientRect();
+      const scale = viewport.height / container.clientHeight || 1;
+      const gap = () =>
+        (viewport.bottom - above!.getBoundingClientRect().bottom) / scale;
+      // The gap is kept from when the scroll first rested at the end, so
+      // rounding can't add up while the dots keep growing.
       const held = heldEnd.current;
-      if (
+      const anchored =
         holding &&
         following &&
-        held !== null &&
-        end > held &&
-        Math.abs(container.scrollTop - held) < 2
-      ) {
-        container.scrollTop += end - held;
-        spring.current.position = container.scrollTop;
-        if (glide.current) glide.current.from += end - held;
+        !!held &&
+        Math.abs(container.scrollTop - held.end) < 2;
+      if (anchored) {
+        const shift = held.gap - gap();
+        if (shift > 0) {
+          container.scrollTop += shift;
+          spring.current.position = container.scrollTop;
+          if (glide.current) glide.current.from += shift;
+        }
       }
-      heldEnd.current = holding ? end : null;
+      const rest = container.scrollHeight - container.clientHeight;
+      heldEnd.current =
+        holding && Math.abs(container.scrollTop - rest) < 2
+          ? { end: rest, gap: anchored ? held.gap : gap() }
+          : null;
       container.toggleAttribute("data-hold-end", holding);
       if (!following) {
         spring.current.velocity = 0;
