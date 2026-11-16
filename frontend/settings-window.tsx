@@ -629,12 +629,15 @@ export function SettingsWindow({
             <option value="minimized">Minimized</option>
           </select>
         </SettingRow>,
-        flag(
-          "keep_playing_on_close",
-          "Close button should minimize the Lyssna window",
-          "",
-          "close minimize minimise tray background notification area system tray quit keep playing",
-        ),
+        // macOS always keeps Lyssna in the Dock when its window closes.
+        IS_MAC
+          ? null
+          : flag(
+              "keep_playing_on_close",
+              "Close button should minimize the Lyssna window",
+              "",
+              "close minimize minimise tray background notification area system tray quit keep playing",
+            ),
       ],
     ],
     [

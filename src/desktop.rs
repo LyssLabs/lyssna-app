@@ -5759,6 +5759,7 @@ fn quit_app(app: tauri::AppHandle) {
 }
 /// Notification-area icon, like Spotify's: click to show the window, or use
 /// the menu to control playback or quit while the window is hidden.
+#[cfg(not(target_os = "macos"))]
 fn install_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -5925,10 +5926,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 window.on_window_event(move |event| {
                     // Signed in, the close button can keep music playing from
                     // the tray. Before sign-in it always quits.
+                    // On macOS closing the window always hides it, as Mac apps do;
+                    // the Dock icon brings it back.
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event
                         && let Some(state) = activity.app_handle().try_state::<Desktop>()
                         && lock(&state.0.snapshot).is_ok_and(|snapshot| {
-                            snapshot.settings.keep_playing_on_close && snapshot.profile.is_some()
+                            (cfg!(target_os = "macos") || snapshot.settings.keep_playing_on_close)
+                                && snapshot.profile.is_some()
                         })
                     {
                         api.prevent_close();
@@ -5980,6 +5984,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(error) = stream_deck::start(app.handle().clone()) {
                 eprintln!("Stream Deck control unavailable: {error}");
             }
+            // macOS keeps Lyssna in the Dock instead of the menu bar.
+            #[cfg(not(target_os = "macos"))]
             install_tray(app)?;
             // The tray icon shows only while closing keeps music playing.
             let keep_playing = crate::config::Settings::load()
@@ -6137,6 +6143,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             && let Some(link) = urls.iter().find_map(|url| crate::links::parse(url.as_str()))
         {
             follow_link(app, link);
+        }
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = &event
+            && let Some(window) = app.get_webview_window("main")
+        {
+            set_window_shown(&window, true);
         }
         if matches!(&event,tauri::RunEvent::WindowEvent{label,event:tauri::WindowEvent::Destroyed,..}if label=="main"){app.exit(0);}
         if matches!(event, tauri::RunEvent::Exit)
