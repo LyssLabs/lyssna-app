@@ -34,7 +34,7 @@ import {
 } from "./setting-row";
 import { cloneElement, isValidElement, type ReactElement } from "react";
 import { IS_MAC } from "./platform";
-import { CREDITS, Credits } from "./credits";
+import { CREDITS, Credits, PEOPLE } from "./credits";
 import { FontSettings } from "./custom-fonts";
 import { DEFAULT_MARKER, MARKER_COLOURS } from "./highlighter";
 import { OffsetSetting } from "./lyric-offset";
@@ -1697,7 +1697,7 @@ export function SettingsWindow({
           key="credits"
           stacked
           label="Credits and licences"
-          keywords={`about credits licence license ${CREDITS.map((credit) => `${credit.name} ${credit.by}`).join(" ")}`}
+          keywords={`about credits licence license ${CREDITS.map((credit) => `${credit.name} ${credit.by}`).join(" ")} ${PEOPLE.map((person) => person.name).join(" ")}`}
         >
           <Credits onOpen={onOpen} />
         </SettingRow>,

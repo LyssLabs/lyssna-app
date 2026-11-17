@@ -5620,10 +5620,9 @@ fn creator_profile_url(username: &str) -> Result<url::Url> {
 /// Spotify and lyrics pages, plus the credited projects' repositories.
 fn allowed_link(url: &url::Url) -> bool {
     /// Profiles and repositories named in Settings > Credits and licences.
-    const CREDITED: [&str; 8] = [
+    const CREDITED: [&str; 7] = [
         "/Stormanzanii",
         "/iPixelGalaxy",
-        "/Spikerko",
         "/iPixelGalaxy/spotify-plus",
         "/iPixelGalaxy/spicy-lyrics",
         "/librespot-org/librespot",
@@ -6750,7 +6749,6 @@ mod tests {
         assert!(allowed("https://open.spotify.com/track/abc"));
         assert!(allowed("https://github.com/iPixelGalaxy/spotify-plus"));
         assert!(allowed("https://github.com/LyssLabs/lyssna-app"));
-        assert!(allowed("https://github.com/Spikerko"));
         assert!(allowed("https://lrc.red/"));
         assert!(!allowed("https://github.com/someone/else"));
         assert!(!allowed(

@@ -7,22 +7,14 @@ export const PEOPLE = [
   {
     login: "iPixelGalaxy",
     name: "iPixelGalaxy",
-    role: "Spicy Lyrics fork",
+    role: "Lyssna Lyrics fork",
   },
-  { login: "Spikerko", name: "Spikerko", role: "Creator of Spicy Lyrics" },
 ] as const;
 
 /** Who Lyssna builds on, and under which licence. Shown in Settings and
  *  in the Lyrics settings About screen; README.md's Credits section lists the
  *  same people and projects, so keep the two in step. */
 export const CREDITS = [
-  {
-    name: "Spicy Lyrics",
-    by: "Spikerko · fork by iPixelGalaxy",
-    licence: "AGPL-3.0",
-    note: "Lyrics display, Space Gravity, word sync and the TTML tools reimplement its behaviour. Thanks to iPixelGalaxy for the fork Lyssna follows.",
-    url: "https://github.com/iPixelGalaxy/spicy-lyrics",
-  },
   {
     name: "librespot",
     by: "librespot contributors",

@@ -13,8 +13,6 @@ const DEFAULT_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 
 pub(crate) enum OutputStream {
     Cpal(CpalStream),
-    #[cfg(windows)]
-    Wasapi(crate::wasapi_output::OutputStream),
     #[cfg(target_os = "macos")]
     Native(crate::macos_audio::OutputStream),
 }
@@ -23,8 +21,6 @@ impl OutputStream {
     pub(crate) fn mixer(&self) -> &Mixer {
         match self {
             Self::Cpal(stream) => &stream.mixer,
-            #[cfg(windows)]
-            Self::Wasapi(stream) => stream.mixer(),
             #[cfg(target_os = "macos")]
             Self::Native(stream) => stream.mixer(),
         }
@@ -35,11 +31,6 @@ impl OutputStream {
     pub(crate) fn freeze(&self) -> bool {
         match self {
             Self::Cpal(stream) => stream.stream.pause().is_ok(),
-            #[cfg(windows)]
-            Self::Wasapi(stream) => {
-                stream.freeze();
-                true
-            }
             #[cfg(target_os = "macos")]
             Self::Native(_) => false,
         }
@@ -49,8 +40,6 @@ impl OutputStream {
             Self::Cpal(stream) => {
                 let _ = stream.stream.play();
             }
-            #[cfg(windows)]
-            Self::Wasapi(stream) => stream.thaw(),
             #[cfg(target_os = "macos")]
             Self::Native(_) => {}
         }
@@ -234,14 +223,6 @@ impl OutputChoice {
                 Err(error) => {
                     log::warn!("Native macOS audio unavailable: {error}; using CoreAudio output")
                 }
-            }
-        }
-        #[cfg(windows)]
-        if name.is_none() {
-            let choice = self.clone();
-            match crate::wasapi_output::OutputStream::open(move || choice.retry_stream(revision)) {
-                Ok(stream) => return Ok(OutputStream::Wasapi(stream)),
-                Err(error) => log::warn!("Low-latency audio output unavailable: {error}"),
             }
         }
         let host = cpal::default_host();

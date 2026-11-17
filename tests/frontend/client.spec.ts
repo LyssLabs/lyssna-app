@@ -5485,7 +5485,7 @@ test("Spotify+ copy actions, folder choice and contributor credits", async ({
   // Credits list the creator first, with GitHub avatars.
   await page.getByRole("button", { name: /About and credits/ }).click();
   const people = page.locator(".lyrics-settings .credit-person");
-  await expect(people).toHaveCount(3);
+  await expect(people).toHaveCount(2);
   await expect(people.first()).toContainText("Arashii");
   await expect(people.first().locator("img")).toHaveAttribute(
     "src",
@@ -6744,10 +6744,10 @@ test("lyrics toolbar toggles romanization, word sync and layout", async ({
   await expect(dialog.locator(".lyrics-settings-wordmark")).toHaveCount(1);
   await expect(dialog.getByRole("tab", { name: "About" })).toHaveCount(0);
   await dialog.getByRole("button", { name: /About and credits/ }).click();
-  await expect(dialog.locator(".credit-person")).toHaveCount(3);
+  await expect(dialog.locator(".credit-person")).toHaveCount(2);
   // Same order as README.md's Credits.
   await expect(dialog.locator(".credit-row").first()).toContainText(
-    "Spicy Lyrics",
+    "librespot",
   );
   await expect(
     dialog.locator(".credit-row", { hasText: "Spotify+" }),
@@ -6762,12 +6762,12 @@ test("lyrics toolbar toggles romanization, word sync and layout", async ({
             .at(-1)?.args.url,
       ),
     )
-    .toBe("https://github.com/iPixelGalaxy/spicy-lyrics");
+    .toBe("https://github.com/librespot-org/librespot");
   await dialog.getByRole("button", { name: /Back to settings/ }).click();
   await expect(dialog.locator(".credit-person")).toHaveCount(0);
   // Credits remain searchable after moving About out of the tab bar.
-  await dialog.getByLabel("Search settings").fill("Spikerko");
-  await expect(dialog.locator(".credit-person")).toHaveCount(3);
+  await dialog.getByLabel("Search settings").fill("iPixelGalaxy");
+  await expect(dialog.locator(".credit-person")).toHaveCount(2);
   await dialog.getByLabel("Search settings").fill("");
   await expect(dialog.locator(".credit-person")).toHaveCount(0);
   await dialog.getByRole("tab", { name: "General" }).click();
