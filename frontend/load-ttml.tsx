@@ -238,6 +238,7 @@ export function LoadTtml({
               results={bulkResults}
               search={searchSongs}
               attach={attachSong}
+              onDone={onClose}
             />
           </div>
         ) : (

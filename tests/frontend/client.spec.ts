@@ -8841,6 +8841,8 @@ test("Bulk Load saves named songs and matches the rest by search", async ({
   await expect(bulk).toContainText("2 of 2 saved");
   await expect(bulk).toContainText("Saved for Timing test");
   await expect(bulk).toContainText("Saved for Sugar · Test artist and 1 more");
+  await bulk.getByRole("button", { name: "Done" }).click();
+  await expect(bulk).toBeHidden();
   const uris = await page.evaluate(() =>
     (window as any).__clientTest.commands
       .filter((entry: any) => entry.command === "attach_lyrics")

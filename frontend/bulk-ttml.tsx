@@ -190,7 +190,9 @@ export function BulkTtml({
   results,
   search,
   attach,
+  onDone,
 }: {
+  onDone: () => void;
   files: BulkFile[];
   results: BulkLyric[] | null;
   search: (query: string) => Promise<Track[]>;
@@ -251,11 +253,9 @@ export function BulkTtml({
             );
           })}
         </ul>
-        {pending.length > 0 && (
-          <button className="bulk-ttml-again" onClick={() => setStep(0)}>
-            Review the files that needed a song
-          </button>
-        )}
+        <button className="bulk-ttml-done" onClick={onDone}>
+          Done
+        </button>
       </>
     );
   const file = files[current];

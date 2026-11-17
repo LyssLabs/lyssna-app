@@ -1890,7 +1890,7 @@ small {
 }
 .bulk-ttml-find > button,
 .bulk-ttml-nav button,
-.bulk-ttml-again {
+.bulk-ttml-done {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1993,8 +1993,13 @@ small {
 .bulk-ttml-nav button:disabled {
   opacity: 0.4;
 }
-.bulk-ttml-again {
-  margin-top: 10px;
+.bulk-ttml-done {
+  display: flex;
+  width: fit-content;
+  margin: 12px 0 0 auto;
+  color: #000;
+  background: #1ed760;
+  box-shadow: none;
 }
 .dialog :is(.bulk-ttml-error, .bulk-ttml-none) {
   display: flex;
