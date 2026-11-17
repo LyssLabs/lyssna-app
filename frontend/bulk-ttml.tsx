@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Check,
   ChevronLeft,
@@ -55,12 +55,14 @@ function MatchStep({
   error: initialError,
   search,
   onPick,
+  nav,
 }: {
   file: BulkFile;
   query: string;
   error: string | null;
   search: (query: string) => Promise<Track[]>;
   onPick: (songs: Track[]) => Promise<void>;
+  nav: (save: ReactNode) => ReactNode;
 }) {
   const [query, setQuery] = useState(initial);
   const [chosen, setChosen] = useState<Track[]>([]);
@@ -158,21 +160,23 @@ function MatchStep({
           No songs found. Try other words, or skip this file.
         </p>
       )}
-      {chosen.length > 0 && (
-        <button
-          className="bulk-ttml-save"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            setError(null);
-            onPick(chosen).catch((why) => {
-              setError(String(why));
-              setBusy(false);
-            });
-          }}
-        >
-          Save for {chosen.length} {chosen.length === 1 ? "song" : "songs"}
-        </button>
+      {nav(
+        chosen.length > 0 && (
+          <button
+            className="bulk-ttml-save"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              onPick(chosen).catch((why) => {
+                setError(String(why));
+                setBusy(false);
+              });
+            }}
+          >
+            Save for {chosen.length} {chosen.length === 1 ? "song" : "songs"}
+          </button>
+        ),
       )}
     </>
   );
@@ -297,17 +301,25 @@ export function BulkTtml({
             );
             setStep((at) => at + 1);
           }}
+          nav={(save) => (
+            <div className="bulk-ttml-nav">
+              <button
+                onClick={() => setStep((at) => at - 1)}
+                disabled={step === 0}
+              >
+                <ChevronLeft size={15} />
+                Previous
+              </button>
+              <span>
+                <button onClick={() => setStep((at) => at + 1)}>
+                  {songs[current].length ? "Next" : "Skip"}
+                  <SkipForward size={14} />
+                </button>
+                {save}
+              </span>
+            </div>
+          )}
         />
-      </div>
-      <div className="bulk-ttml-nav">
-        <button onClick={() => setStep((at) => at - 1)} disabled={step === 0}>
-          <ChevronLeft size={15} />
-          Previous
-        </button>
-        <button onClick={() => setStep((at) => at + 1)}>
-          {songs[current].length ? "Next" : "Skip"}
-          <SkipForward size={14} />
-        </button>
       </div>
     </div>
   );
