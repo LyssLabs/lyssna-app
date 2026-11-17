@@ -1,12 +1,21 @@
 /** Animator presets and Custom tuning (reimplemented from
  * `src/utils/Lyrics/Animator/Tuning.ts`, AGPL-3.0): parameters, ranges,
  * defaults, value cleaning, saved presets, Randomize and SLP1 share codes.
- * Default plays the standard animation unchanged; Custom rests unsung text
- * at full size and applies these values to the curves and springs. */
+ * Lyssna is the fork's Lyssna preset: these defaults on the tuned curves.
+ * Legacy is Lyssna's earlier animation. Custom applies edited values. */
 
-export type AnimatorPreset = "Default" | "Custom";
+export type AnimatorPreset = "Lyssna" | "Legacy" | "Custom";
 export type AnimatorDetail = "Basic" | "Advanced" | "Full" | "Full + Extras";
-export const ANIMATOR_PRESETS: AnimatorPreset[] = ["Default", "Custom"];
+export const ANIMATOR_PRESETS: AnimatorPreset[] = [
+  "Lyssna",
+  "Legacy",
+  "Custom",
+];
+export const ANIMATOR_PRESET_LABELS: Record<AnimatorPreset, string> = {
+  Lyssna: "Lyssna (Default)",
+  Legacy: "Lyssna (legacy)",
+  Custom: "Custom",
+};
 export const ANIMATOR_DETAILS: AnimatorDetail[] = [
   "Basic",
   "Advanced",
@@ -52,7 +61,7 @@ export const ANIMATOR_PARAMETERS: readonly AnimatorParameter[] = [
     step: 0.005,
     typedMin: -100,
     typedMax: 100,
-    defaultValue: 1.075,
+    defaultValue: 1.0505,
   },
   {
     id: "letterPeakScale",
@@ -209,24 +218,22 @@ export const ANIMATOR_DEFAULTS = Object.freeze(
     ANIMATOR_PARAMETERS.map((item) => [item.id, item.defaultValue]),
   ) as AnimatorValues,
 );
-/** The standard animation's values (main 2a14863f), kept apart from the
- * editable defaults. Words rest at full size here rather than 0.95, so they peak at 1.075 instead of 1.0505 to keep more of
- * the pop. */
-export const UPSTREAM_ANIMATOR_VALUES: Readonly<AnimatorValues> = Object.freeze(
-  {
-    wordPeakScale: 1.075,
-    letterPeakScale: 1.175,
-    verticalStrength: 1,
-    glowStrength: 1,
-    blurStrength: 1,
-    scaleFrequency: 0.88,
-    scaleDamping: 0.64,
-    verticalFrequency: 1.45,
-    verticalDamping: 0.4,
-    glowFrequency: 1.18,
-    glowDamping: 0.56,
-  },
-);
+/** Lyssna (legacy): upstream's values (main 2a14863f) with words resting at
+ * full size rather than 0.95, so they peak at 1.075 instead of 1.0505 to keep
+ * more of the pop. */
+export const LEGACY_ANIMATOR_VALUES: Readonly<AnimatorValues> = Object.freeze({
+  wordPeakScale: 1.075,
+  letterPeakScale: 1.175,
+  verticalStrength: 1,
+  glowStrength: 1,
+  blurStrength: 1,
+  scaleFrequency: 0.88,
+  scaleDamping: 0.64,
+  verticalFrequency: 1.45,
+  verticalDamping: 0.4,
+  glowFrequency: 1.18,
+  glowDamping: 0.56,
+});
 const parameter = (id: AnimatorParameterId) =>
   ANIMATOR_PARAMETERS.find((entry) => entry.id === id)!;
 /** Clamps a typed value to its bounds at four decimals. */
@@ -273,21 +280,21 @@ export function cleanSavedPresets(input: unknown): SavedAnimatorPreset[] {
 export const presetOf = (settings: AnimatorSettings = {}): AnimatorPreset =>
   ANIMATOR_PRESETS.includes(settings.preset as AnimatorPreset)
     ? settings.preset!
-    : "Default";
+    : "Lyssna";
 /** The values the animator plays. */
 export function animatorValues(
   settings: AnimatorSettings = {},
 ): AnimatorValues {
   const preset = presetOf(settings);
-  return preset === "Default"
-    ? { ...UPSTREAM_ANIMATOR_VALUES }
+  return preset === "Legacy"
+    ? { ...LEGACY_ANIMATOR_VALUES }
     : {
         ...ANIMATOR_DEFAULTS,
         ...(preset === "Custom" ? cleanAnimatorValues(settings.custom) : {}),
       };
 }
-/** Unsung text rests at full size under every preset. Upstream's Default
- *  rests it at 0.95, but words shrunk toward their own centres open wide
+/** Unsung text rests at full size under every preset, as the fork's Lyssna
+ *  preset. Upstream rests it at 0.95, but words shrunk toward their own centres open wide
  *  gaps between them that close again as they are sung. */
 export const idleScale = (_settings: AnimatorSettings = {}) => 1;
 
@@ -322,7 +329,7 @@ export const resetValues = (settings: AnimatorSettings): AnimatorSettings => ({
   ...settings,
   custom: { ...ANIMATOR_DEFAULTS },
 });
-/** The saved-preset list's built-in entry: upstream values. */
+/** The saved-preset list's built-in entry: Lyssna (Default)'s values. */
 export const DEFAULT_PRESET_ID = "default";
 export function loadPreset(
   settings: AnimatorSettings,

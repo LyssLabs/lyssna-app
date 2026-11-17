@@ -7,6 +7,8 @@ import {
   deletePreset,
   idleScale,
   importCode,
+  presetOf,
+  type AnimatorPreset,
   loadPreset,
   randomize,
   savePreset,
@@ -17,31 +19,42 @@ import {
 import { MOTION, tuneMotion } from "./lyric-motion";
 
 describe("animator presets", () => {
-  it("plays upstream values under Default and rests text at full size", () => {
+  it("plays Lyssna (Default) unless Legacy or Custom is chosen", () => {
+    expect(presetOf({})).toBe("Lyssna");
+    // Saved before Lyssna (Default) existed, "Default" meant the default.
+    expect(presetOf({ preset: "Default" as AnimatorPreset })).toBe("Lyssna");
     expect(animatorValues({})).toEqual(ANIMATOR_DEFAULTS);
+    expect(animatorValues({}).wordPeakScale).toBe(1.0505);
     // Unsung words keep the spacing sung ones have.
     expect(idleScale({})).toBe(1);
     expect(idleScale({ preset: "Custom" })).toBe(1);
-    // Default ignores Custom values.
+    // Lyssna and Legacy ignore Custom values.
     expect(
-      animatorValues({ preset: "Default", custom: { wordPeakScale: 2 } })
+      animatorValues({ preset: "Lyssna", custom: { wordPeakScale: 2 } })
+        .wordPeakScale,
+    ).toBe(1.0505);
+    expect(
+      animatorValues({ preset: "Legacy", custom: { wordPeakScale: 2 } })
         .wordPeakScale,
     ).toBe(1.075);
   });
   it("copies the playing values the first time Custom is chosen", () => {
-    const custom = choosePreset({ preset: "Default" }, "Custom");
+    const custom = choosePreset({ preset: "Lyssna" }, "Custom");
     expect(custom.custom).toEqual(ANIMATOR_DEFAULTS);
+    expect(
+      choosePreset({ preset: "Legacy" }, "Custom").custom?.wordPeakScale,
+    ).toBe(1.075);
     const kept = choosePreset(
-      { preset: "Default", custom: { glowStrength: 2 } },
+      { preset: "Legacy", custom: { glowStrength: 2 } },
       "Custom",
     );
     expect(kept.custom).toEqual({ glowStrength: 2 });
   });
   it("switches to Custom on edit and clamps typed values", () => {
-    const edited = setValue({ preset: "Default" }, "glowStrength", 1e9);
+    const edited = setValue({ preset: "Lyssna" }, "glowStrength", 1e9);
     expect(edited.preset).toBe("Custom");
     expect(animatorValues(edited).glowStrength).toBe(100);
-    expect(animatorValues(edited).wordPeakScale).toBe(1.075);
+    expect(animatorValues(edited).wordPeakScale).toBe(1.0505);
   });
   it("saves, overwrites by name, loads and deletes presets", () => {
     let settings = setValue({}, "scaleDamping", 0.9);
@@ -57,7 +70,7 @@ describe("animator presets", () => {
       selected: null,
     });
   });
-  it("loads the built-in Default entry as upstream values", () => {
+  it("loads the built-in Default entry as Lyssna (Default)'s values", () => {
     const loaded = loadPreset(
       setValue({}, "glowStrength", 3),
       DEFAULT_PRESET_ID,
@@ -67,7 +80,7 @@ describe("animator presets", () => {
   });
   it("round-trips SLP1 share codes and renames duplicates", () => {
     const code = shareCode("Bouncy", { verticalDamping: 0.2 });
-    expect(code).toMatch(/^SLP1:Bouncy\|1\.075,1\.175,/);
+    expect(code).toMatch(/^SLP1:Bouncy\|1\.0505,1\.175,/);
     const first = importCode({}, code);
     expect(first.name).toBe("Bouncy");
     expect(first.settings.custom?.verticalDamping).toBe(0.2);
@@ -90,8 +103,46 @@ describe("animator presets", () => {
     expect(random.custom?.wordPeakScale).toBe(2);
     expect(random.custom?.scaleFrequency).toBe(0.88);
   });
+  it("matches the fork's Lyssna preset curve for curve", () => {
+    // The fork's rebuildAnimatorTuning with its Lyssna preset and default
+    // values, outside Simple mode: idle 1 on word and letter scale, peaks
+    // 1.0505 and 1.175 at 0.7, upstream lift and glow, and its springs.
+    tuneMotion({ preset: "Lyssna" });
+    expect(MOTION.idleScale).toBe(1);
+    for (const [at, value] of [
+      [0, 1],
+      [0.7, 1.0505],
+      [1, 1],
+    ])
+      expect(MOTION.scale(at)).toBeCloseTo(value, 10);
+    for (const [at, value] of [
+      [0, 1],
+      [0.7, 1.175],
+      [1, 1],
+    ])
+      expect(MOTION.letterScale(at)).toBeCloseTo(value, 10);
+    for (const [at, value] of [
+      [0, 1 / 100],
+      [0.9, -(1 / 60)],
+      [1, 0],
+    ])
+      expect(MOTION.lift(at)).toBeCloseTo(value, 10);
+    for (const [at, value] of [
+      [0, 0],
+      [0.15, 1],
+      [0.6, 1],
+      [1, 0],
+    ])
+      expect(MOTION.glow(at)).toBeCloseTo(value, 10);
+    expect(MOTION.springs).toEqual({
+      scale: [0.88, 0.64],
+      lift: [1.45, 0.4],
+      glow: [1.18, 0.56],
+    });
+    expect(MOTION.blurPerLine).toBe(1.25);
+  });
   it("tunes the motion curves", () => {
-    tuneMotion({ preset: "Default" });
+    tuneMotion({ preset: "Legacy" });
     expect(MOTION.scale(0)).toBeCloseTo(1);
     expect(MOTION.scale(0.7)).toBeCloseTo(1.075);
     tuneMotion(setValue({}, "wordPeakScale", 1.2));

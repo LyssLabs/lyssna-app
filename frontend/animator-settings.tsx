@@ -6,6 +6,7 @@ import {
   ANIMATOR_DEFAULTS,
   ANIMATOR_DETAILS,
   ANIMATOR_PRESETS,
+  ANIMATOR_PRESET_LABELS,
   DEFAULT_PRESET_ID,
   animatorValues,
   choosePreset,
@@ -32,7 +33,7 @@ const readClipboard = () =>
   rpc<string>("read_clipboard").catch(() => navigator.clipboard.readText());
 
 const PRESET_HELP =
-  "Default is the standard animation. Custom stores live tuning.";
+  "Lyssna (Default) is the standard animation, Lyssna (legacy) the earlier one. Custom stores live tuning.";
 
 /** The Animator Presets row, with Manage for Custom tuning. */
 export function AnimatorPresetRow({
@@ -63,7 +64,9 @@ export function AnimatorPresetRow({
           }
         >
           {ANIMATOR_PRESETS.map((name) => (
-            <option key={name}>{name}</option>
+            <option key={name} value={name}>
+              {ANIMATOR_PRESET_LABELS[name]}
+            </option>
           ))}
         </select>
         {preset === "Custom" && (

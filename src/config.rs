@@ -106,7 +106,7 @@ pub struct SavedAnimatorPreset {
 impl Default for LyricsAnimator {
     fn default() -> Self {
         Self {
-            preset: "Default".into(),
+            preset: "Lyssna".into(),
             detail: "Basic".into(),
             custom: Default::default(),
             saved: Vec::new(),
@@ -134,8 +134,10 @@ fn clean_animator_values(values: &mut std::collections::BTreeMap<String, f64>) {
 
 impl LyricsAnimator {
     pub fn clean(&mut self) {
-        if !["Default", "Custom"].contains(&self.preset.as_str()) {
-            self.preset = "Default".into();
+        // "Default" was the only built-in preset before Lyssna (Default)
+        // replaced it, so it moves to the new default.
+        if !["Lyssna", "Legacy", "Custom"].contains(&self.preset.as_str()) {
+            self.preset = "Lyssna".into();
         }
         if !["Basic", "Advanced", "Full", "Full + Extras"].contains(&self.detail.as_str()) {
             self.detail = "Basic".into();
@@ -715,12 +717,24 @@ mod tests {
         .unwrap();
         settings.lyrics_animator.clean();
         let animator = &settings.lyrics_animator;
-        assert_eq!(animator.preset, "Default");
+        assert_eq!(animator.preset, "Lyssna");
         assert_eq!(animator.detail, "Full + Extras");
         assert_eq!(animator.custom.len(), 1);
         assert_eq!(animator.saved.len(), 1);
         assert_eq!(animator.selected, None);
-        assert_eq!(Settings::default().lyrics_animator.preset, "Default");
+        assert_eq!(Settings::default().lyrics_animator.preset, "Lyssna");
+        for (stored, kept) in [
+            ("Default", "Lyssna"),
+            ("Legacy", "Legacy"),
+            ("Custom", "Custom"),
+        ] {
+            let mut animator = LyricsAnimator {
+                preset: stored.into(),
+                ..LyricsAnimator::default()
+            };
+            animator.clean();
+            assert_eq!(animator.preset, kept);
+        }
         let mut chosen = LyricsAnimator {
             selected: Some("default".into()),
             ..LyricsAnimator::default()

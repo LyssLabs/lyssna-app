@@ -3680,20 +3680,17 @@ small {
 .lyric-syllable.joined-end {
   transform-origin: left 75%;
 }
-/* Under Default every piece of a split word moves, as the fork's: it
-   rests small, pops while sung and settles full size, so none grows once
-   the line ends. Other presets hold split pieces still (below). */
-/* Custom animator preset: split syllables keep full size while more of the
-   line follows, so no gaps open; the line's final syllable and Space Gravity
-   keep their scale. Default scales every piece. */
-:root:not([data-animator="Default"])
+/* Lyssna and Custom presets: split syllables keep full size while more of
+   the line follows, so no gaps open; the line's final syllable and Space
+   Gravity keep their scale. Lyssna (legacy) scales every piece. */
+:root:not([data-animator="Legacy"])
   .lyric-word
   > .lyric-syllable:not(
     :only-child,
     .lyric-main > .lyric-word-group:last-child .lyric-syllable:last-child,
     .space-gravity *
   ),
-:root:not([data-animator="Default"])
+:root:not([data-animator="Legacy"])
   .lyric-word
   > .lyric-syllable:not(
     :only-child,

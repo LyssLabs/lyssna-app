@@ -359,11 +359,11 @@ export const MOTION = {
   blurPerLine: 1.25,
   maxBlur: 1.25 * 5.465,
 };
-/** Applies an animator preset as the fork's rebuildAnimatorTuning: Default
+/** Applies an animator preset as the fork's rebuildAnimatorTuning: Legacy
  * keeps upstream's literal curves; other presets put their idle and peak
  * scales into the curves and multiply lift, glow and blur. */
 export function tuneMotion(settings: AnimatorSettings = {}) {
-  const upstream = presetOf(settings) === "Default",
+  const upstream = presetOf(settings) === "Legacy",
     tuning = animatorValues(settings),
     idle = idleScale(settings);
   MOTION.idleScale = idle;

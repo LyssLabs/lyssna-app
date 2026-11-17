@@ -11325,11 +11325,18 @@ test("animator presets import Spicy Lyrics share codes into Custom tuning", asyn
   await startClient(page);
   await expect(page.locator("html")).toHaveAttribute(
     "data-animator",
-    "Default",
+    "Lyssna",
   );
   await openSettings(page, "Effects");
   const preset = page.getByRole("combobox", { name: "Animator preset" });
-  await expect(preset.locator("option")).toHaveText(["Default", "Custom"]);
+  await expect(preset).toHaveValue("Lyssna");
+  await expect(preset.locator("option")).toHaveText([
+    "Lyssna (Default)",
+    "Lyssna (legacy)",
+    "Custom",
+  ]);
+  await preset.selectOption("Legacy");
+  await expect(page.locator("html")).toHaveAttribute("data-animator", "Legacy");
   await preset.selectOption("Custom");
   await expect(page.locator("html")).toHaveAttribute("data-animator", "Custom");
   await showLyrics(page);
@@ -11356,7 +11363,7 @@ test("animator presets import Spicy Lyrics share codes into Custom tuning", asyn
   await expect(saved).toHaveValue("default");
   await expect(
     page.getByLabel("Word peak scale value", { exact: true }),
-  ).toHaveValue("1.075");
+  ).toHaveValue("1.0505");
   await expect(
     page.getByRole("button", { name: "Delete Current", exact: true }),
   ).toBeDisabled();
