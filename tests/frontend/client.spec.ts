@@ -8761,6 +8761,102 @@ test("song rows link only the album name and underline artist and album, not the
   expect(await underline(album)).toBe("underline");
 });
 
+test("Bulk Load saves named songs and matches the rest by search", async ({
+  page,
+}) => {
+  await startClient(page);
+  const found = { ...track, name: "Sugar", uri: "spotify:track:5ogX0dWpsMy0zYuCuAo6qc" };
+  const live = {
+    ...track,
+    name: "Sugar (Live)",
+    uri: "spotify:track:1111111111111111111111",
+  };
+  await page.evaluate(
+    ({ track, found, live }) => {
+      const test = (window as any).__clientTest;
+      test.answers = {
+        ...test.answers,
+        bulk_lyrics: [
+          { filename: "named.ttml", song: track, query: "", error: null },
+          {
+            filename: "Sugar - System Of A Down.ttml",
+            song: null,
+            query: "Sugar System Of A Down",
+            error: null,
+          },
+        ],
+        search_page: { results: { tracks: [found, live] }, more: false },
+        attach_lyrics: null,
+      };
+    },
+    { track, found, live },
+  );
+  await page.getByTitle("Lyrics", { exact: true }).click();
+  await page.getByTitle("Load TTML", { exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Load TTML" });
+  await expect(dialog.getByRole("button", { name: "Bulk Load" })).toBeVisible();
+  const ttml = '<tt xmlns="http://www.w3.org/ns/ttml"><body/></tt>';
+  await dialog.getByLabel("Lyric files").setInputFiles([
+    { name: "named.ttml", mimeType: "application/ttml+xml", buffer: Buffer.from(ttml) },
+    {
+      name: "Sugar - System Of A Down.ttml",
+      mimeType: "application/ttml+xml",
+      buffer: Buffer.from(ttml),
+    },
+  ]);
+  const bulk = page.getByRole("dialog", { name: "Bulk Load" });
+  await expect(bulk).toContainText("Song 1 of 1 to match · 1 saved");
+  const sent = await page.evaluate(
+    () =>
+      (window as any).__clientTest.commands.find(
+        (entry: any) => entry.command === "bulk_lyrics",
+      )?.args,
+  );
+  expect(sent.files.map((file: any) => file.filename)).toEqual([
+    "named.ttml",
+    "Sugar - System Of A Down.ttml",
+  ]);
+  expect(sent.files[0].contents).toBe(ttml);
+  // One file at a time, searched straight away with the words it gave.
+  await expect(
+    bulk.getByLabel("Song for Sugar - System Of A Down.ttml"),
+  ).toHaveValue("Sugar System Of A Down");
+  const searched = await page.evaluate(
+    () =>
+      (window as any).__clientTest.commands.find(
+        (entry: any) => entry.command === "search_page",
+      )?.args,
+  );
+  expect(searched.query).toBe("Sugar System Of A Down");
+  // Several releases of one song can share the file.
+  const sugar = bulk.getByRole("checkbox", { name: /^Use Sugar by/ });
+  const sugarLive = bulk.getByRole("checkbox", { name: /^Use Sugar \(Live\)/ });
+  await sugar.click();
+  await sugarLive.click();
+  await sugarLive.click();
+  await expect(sugarLive).toHaveAttribute("aria-checked", "false");
+  await expect(bulk.getByRole("button", { name: "Save for 1 song" })).toBeVisible();
+  await sugarLive.click();
+  await bulk.getByRole("button", { name: "Save for 2 songs" }).click();
+  await expect(bulk).toContainText("2 of 2 saved");
+  await expect(bulk).toContainText("Saved for Timing test");
+  await expect(bulk).toContainText("Saved for Sugar · Test artist and 1 more");
+  const uris = await page.evaluate(() =>
+    (window as any).__clientTest.commands
+      .filter((entry: any) => entry.command === "attach_lyrics")
+      .map((entry: any) => entry.args.track.uri),
+  );
+  expect(uris).toEqual([found.uri, live.uri]);
+  const attached = await page.evaluate(
+    () =>
+      (window as any).__clientTest.commands.find(
+        (entry: any) => entry.command === "attach_lyrics",
+      )?.args,
+  );
+  expect(attached.filename).toBe("Sugar - System Of A Down.ttml");
+  expect(attached.track.uri).toBe(found.uri);
+});
+
 test("Load TTML offers Spicy Lyrics' load modes, reset and saved lyrics", async ({
   page,
 }) => {

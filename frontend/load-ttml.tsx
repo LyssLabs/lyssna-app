@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BulkTtml, type BulkFile, type BulkLyric } from "./bulk-ttml";
+import type { Track } from "./types";
 import {
   BookOpen,
+  Files,
   ChevronLeft,
   Database,
   Download,
@@ -24,6 +27,12 @@ export interface SavedLyrics {
   saved_at: number;
   image?: string;
 }
+
+const TITLES = {
+  load: "Load TTML",
+  database: "TTML Database",
+  bulk: "Bulk Load",
+} as const;
 
 const MODES: { mode: LoadMode; title: string; detail: string }[] = [
   {
@@ -58,8 +67,14 @@ export function LoadTtml({
   onPlay,
   onDownload,
   onClose,
+  onBulk,
+  searchSongs,
+  attachSong,
   initialView = "load",
 }: {
+  onBulk: (files: BulkFile[]) => Promise<BulkLyric[]>;
+  searchSongs: (query: string) => Promise<Track[]>;
+  attachSong: (file: BulkFile, song: Track) => Promise<void>;
   initialView?: "load" | "database";
   song: string;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
@@ -71,7 +86,10 @@ export function LoadTtml({
   onDownload: (item: SavedLyrics) => void;
   onClose: () => void;
 }) {
-  const [view, setView] = useState<"load" | "database">(initialView);
+  const [view, setView] = useState<"load" | "database" | "bulk">(initialView);
+  const [bulkFiles, setBulkFiles] = useState<BulkFile[]>([]);
+  const [bulkResults, setBulkResults] = useState<BulkLyric[] | null>(null);
+  const many = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<SavedLyrics[] | null>(null);
   const [filter, setFilter] = useState("");
@@ -106,11 +124,11 @@ export function LoadTtml({
       <section
         className="dialog load-ttml"
         role="dialog"
-        aria-label={view === "load" ? "Load TTML" : "TTML Database"}
+        aria-label={TITLES[view]}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="load-ttml-head">
-          <h2>{view === "load" ? "Load TTML" : "TTML Database"}</h2>
+          <h2>{TITLES[view]}</h2>
           <button className="icon-button" aria-label="Close" onClick={onClose}>
             <X size={20} />
           </button>
@@ -128,6 +146,18 @@ export function LoadTtml({
                   <RotateCcw size={14} />
                   Reset TTML
                 </button>
+                <button
+                  title="Load many lyric files at once, each saved for its own song"
+                  onClick={() => {
+                    if (busy || !many.current) return;
+                    many.current.value = "";
+                    many.current.click();
+                  }}
+                  disabled={busy}
+                >
+                  <Files size={14} />
+                  Bulk Load
+                </button>
                 <button onClick={() => setView("database")} disabled={busy}>
                   <Database size={14} />
                   TTML Database
@@ -144,7 +174,9 @@ export function LoadTtml({
                 const file = event.target.files?.[0];
                 if (!file) return;
                 setBusy(true);
-                void onLoad(file, pending.current).finally(() => setBusy(false));
+                void onLoad(file, pending.current).finally(() =>
+                  setBusy(false),
+                );
               }}
             />
             <div className="load-ttml-modes">
@@ -165,6 +197,48 @@ export function LoadTtml({
                 </button>
               ))}
             </div>
+            <input
+              ref={many}
+              type="file"
+              accept=".ttml,.xml,.lrc"
+              multiple
+              hidden
+              aria-label="Lyric files"
+              onChange={(event) => {
+                const picked = Array.from(event.target.files ?? []);
+                if (!picked.length) return;
+                setView("bulk");
+                setBulkResults(null);
+                void Promise.all(
+                  picked.map(async (file) => ({
+                    filename: file.name,
+                    contents: await file.text(),
+                  })),
+                ).then(async (files) => {
+                  setBulkFiles(files);
+                  setBulkResults(await onBulk(files));
+                });
+              }}
+            />
+          </div>
+        ) : view === "bulk" ? (
+          <div className="load-ttml-body">
+            <div className="load-ttml-tools">
+              <button
+                className="load-ttml-back"
+                aria-label="Back to Load TTML"
+                onClick={() => setView("load")}
+              >
+                <ChevronLeft size={16} />
+                Back
+              </button>
+            </div>
+            <BulkTtml
+              files={bulkFiles}
+              results={bulkResults}
+              search={searchSongs}
+              attach={attachSong}
+            />
           </div>
         ) : (
           <div className="load-ttml-body">

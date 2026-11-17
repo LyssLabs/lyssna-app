@@ -230,6 +230,7 @@ import {
 import { DEFAULT_ZOOM, useAppZoom } from "./app-zoom";
 import { PlaylistFlyout } from "./playlist-flyout";
 import { LoadTtml, type LoadMode, type SavedLyrics } from "./load-ttml";
+import type { BulkLyric } from "./bulk-ttml";
 import { TtmlCreator } from "./ttml-creator";
 import { dismissDraft, draftPreview } from "./ttml-working";
 import { libraryTree, type LibraryEntry } from "./library-tree";
@@ -6199,6 +6200,31 @@ function App() {
             )
           }
           onClose={() => setTtmlOpen(false)}
+          onBulk={(files) =>
+            rpc<BulkLyric[]>("bulk_lyrics", { files }).catch((why) => {
+              notify(String(why), true);
+              return files.map((file) => ({
+                filename: file.filename,
+                song: null,
+                query: "",
+                error: String(why),
+              }));
+            })
+          }
+          searchSongs={(query) =>
+            rpc<{ results: { tracks: Track[] } }>("search_page", {
+              query,
+              kind: "tracks",
+              offset: 0,
+            }).then((page) => page.results.tracks.slice(0, 6))
+          }
+          attachSong={(file, track) =>
+            rpc("attach_lyrics", {
+              filename: file.filename,
+              contents: file.contents,
+              track,
+            }).then(() => undefined)
+          }
         />
       )}
       {editDialog && (

@@ -3519,6 +3519,133 @@ fn import_lyrics(
         })
         .map_err(error)
 }
+#[derive(Deserialize)]
+struct LyricFile {
+    filename: String,
+    contents: String,
+}
+#[derive(Serialize)]
+struct BulkLyric {
+    filename: String,
+    /// The song it was saved for; none when it names no song to look up.
+    song: Option<Track>,
+    /// Words to search for its song by.
+    query: String,
+    error: Option<String>,
+}
+/// Saves a lyric file persistently for `track`, recording the song's
+/// Spotify ID in a TTML file so it matches itself if loaded again.
+fn save_lyrics_for(inner: &Inner, filename: &str, contents: &str, track: &Track) -> Result<()> {
+    let id = track
+        .uri
+        .strip_prefix("spotify:track:")
+        .context("Choose a Spotify song")?;
+    crate::lyrics::import_text(
+        filename,
+        &crate::lyric_bulk::with_spotify_id(contents, id),
+        track,
+    )?;
+    if lock(&inner.snapshot)?
+        .playback
+        .item
+        .as_ref()
+        .is_some_and(|playing| playing.uri == track.uri)
+    {
+        let _ = inner.commands.send(Command::FetchLyrics(track.clone()));
+    }
+    Ok(())
+}
+/// Looks a song up through the Web API worker, by URI or by search.
+fn look_up_song(inner: &Inner, uri: Option<String>, search: Option<String>) -> Option<Track> {
+    let (reply, response) = std::sync::mpsc::channel();
+    let command = match (uri, search) {
+        (Some(uri), _) => Command::LocalTrack { uri, reply },
+        (None, Some(query)) => Command::LocalSearch {
+            query,
+            limit: 1,
+            reply,
+        },
+        (None, None) => return None,
+    };
+    inner.commands.send(command).ok()?;
+    response
+        .recv_timeout(Duration::from_secs(15))
+        .ok()?
+        .ok()?
+        .into_iter()
+        .next()
+}
+/// Saves each lyric file for the song its Spotify ID or ISRC names. Files
+/// naming none come back with words to search for their song by.
+#[tauri::command]
+async fn bulk_lyrics(
+    files: Vec<LyricFile>,
+    state: State<'_, Desktop>,
+) -> std::result::Result<Vec<BulkLyric>, String> {
+    if files.len() > 500 {
+        return Err("Load up to 500 lyric files at once".into());
+    }
+    let inner = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        files
+            .into_iter()
+            .map(|file| {
+                let hint = crate::lyric_bulk::hint(&file.filename, &file.contents);
+                let names_song = hint.spotify_id.is_some() || hint.isrc.is_some();
+                let mut item = BulkLyric {
+                    filename: file.filename.clone(),
+                    song: None,
+                    query: hint.query.clone(),
+                    error: None,
+                };
+                if file.contents.len() > 2_000_000 {
+                    item.error = Some("Lyric file exceeds 2 MB".into());
+                    return item;
+                }
+                let song = look_up_song(
+                    &inner,
+                    hint.spotify_id.map(|id| format!("spotify:track:{id}")),
+                    hint.isrc
+                        .filter(|isrc| isrc.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+                        .map(|isrc| format!("isrc:{isrc}")),
+                );
+                match song {
+                    Some(song) => {
+                        match save_lyrics_for(&inner, &file.filename, &file.contents, &song) {
+                            Ok(()) => item.song = Some(song),
+                            Err(why) => item.error = Some(why.to_string()),
+                        }
+                    }
+                    None if names_song => {
+                        item.error = Some("Spotify didn't find the song this file names".into())
+                    }
+                    None => {}
+                }
+                item
+            })
+            .collect()
+    })
+    .await
+    .map_err(error)
+}
+/// Saves a lyric file for the song picked for it.
+#[tauri::command]
+async fn attach_lyrics(
+    filename: String,
+    contents: String,
+    track: Track,
+    state: State<'_, Desktop>,
+) -> std::result::Result<(), String> {
+    if contents.len() > 2_000_000 {
+        return Err("Lyric file exceeds 2 MB".into());
+    }
+    let inner = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        save_lyrics_for(&inner, &filename, &contents, &track).map_err(error)
+    })
+    .await
+    .map_err(error)?
+}
 #[tauri::command]
 fn parse_lyric_file(
     filename: String,
@@ -6084,6 +6211,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             track_waveform,
             audio_levels,
             audio_spectrum,
+            bulk_lyrics,
+            attach_lyrics,
             discord_username,
             track_spectrogram,
             play_clip,
