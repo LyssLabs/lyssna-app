@@ -96,7 +96,7 @@ export function Credits({ onOpen }: { onOpen: (url: string) => void }) {
         with Spotify.{" "}
         <button
           className="text-link"
-          onClick={() => onOpen("https://github.com/Stormanzanii/Lyssna")}
+          onClick={() => onOpen("https://github.com/LyssLabs/Lyssna")}
         >
           Source code and licence
         </button>

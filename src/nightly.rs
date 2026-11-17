@@ -35,7 +35,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const REPOSITORY: &str = "Stormanzanii/Lyssna";
+const REPOSITORY: &str = "LyssLabs/Lyssna";
 const NODE_RELEASES: &str = "https://nodejs.org/dist/latest-v24.x";
 const LIBCLANG_VERSION: &str = "18.1.1";
 const CMAKE_VERSION: &str = "3.31.6";

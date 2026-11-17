@@ -54,7 +54,7 @@ export default defineConfig({
               new URL("./THIRD_PARTY_NOTICES.md", import.meta.url),
               "utf8",
             ) +
-            "\n\n## Lyssna\n\nSource: https://github.com/Stormanzanii/Lyssna\n\n" +
+            "\n\n## Lyssna\n\nSource: https://github.com/LyssLabs/Lyssna\n\n" +
             readFileSync(new URL("./LICENSE", import.meta.url), "utf8"),
         });
       },

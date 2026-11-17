@@ -71,7 +71,7 @@ fn github_secrets() -> Result<()> {
     ] {
         let value = secret(key)?;
         let mut child = Command::new("gh")
-            .args(["secret", "set", name, "--repo", "Stormanzanii/Lyssna"])
+            .args(["secret", "set", name, "--repo", "LyssLabs/Lyssna"])
             .stdin(Stdio::piped())
             .spawn()?;
         child
