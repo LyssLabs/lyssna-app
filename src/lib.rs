@@ -18,6 +18,7 @@ pub mod catalogue;
 pub mod chrome_release;
 pub mod collection;
 pub mod config;
+mod creator_stream;
 pub mod credential;
 #[cfg(feature = "desktop")]
 pub mod desktop;

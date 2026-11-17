@@ -268,7 +268,7 @@ export function TtmlBar({
             onChange={(event) => onSpeed(Number(event.target.value))}
           />
           {!speedEnabled && (
-            <small>Speed works when playing on this computer.</small>
+            <small>Speed works when Lyssna plays the song.</small>
           )}
           <div className="ttml-bar-panel-row">
             <strong>Volume</strong>

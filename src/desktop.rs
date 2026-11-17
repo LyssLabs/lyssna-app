@@ -3174,8 +3174,45 @@ async fn play_clip(
     .map_err(|_| "Clip worker unavailable".to_owned())?
     .map_err(error)
 }
+/// Plays the song from `from_ms` through Lyssna's own output at `speed`
+/// percent, pitch kept, for the TTML Creator while Spotify Soloist plays the
+/// music: Soloist has no speed control.
+#[tauri::command]
+async fn creator_play(
+    uri: String,
+    from_ms: f64,
+    to_ms: Option<f64>,
+    speed: u32,
+    volume: u8,
+    state: State<'_, Desktop>,
+) -> std::result::Result<(), String> {
+    let controls = state.0.controls.clone();
+    let epoch = crate::creator_stream::supersede();
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = controls.session()?;
+        let pcm = crate::waveform::track_pcm(&session, &uri)?;
+        if !crate::creator_stream::current(epoch) {
+            return Ok(());
+        }
+        crate::creator_stream::set_volume(volume);
+        let speed = f64::from(speed.clamp(25, 200)) / 100.0;
+        let stream = crate::creator_stream::CreatorStream::new(pcm, from_ms, to_ms, speed);
+        controls
+            .audio_buffer()?
+            .play_source(Box::new(stream))
+            .map_err(|error| anyhow::anyhow!("{error}"))
+    })
+    .await
+    .map_err(|_| "Creator player unavailable".to_owned())?
+    .map_err(error)
+}
+#[tauri::command]
+fn creator_volume(volume: u8) {
+    crate::creator_stream::set_volume(volume);
+}
 #[tauri::command]
 fn stop_clip(state: State<'_, Desktop>) -> std::result::Result<(), String> {
+    crate::creator_stream::supersede();
     if let Ok(buffer) = state.0.controls.audio_buffer() {
         buffer.stop_clip();
     }
@@ -6299,6 +6336,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             track_spectrogram,
             play_clip,
             stop_clip,
+            creator_play,
+            creator_volume,
             test_audio_output,
             refresh,
             save_item,

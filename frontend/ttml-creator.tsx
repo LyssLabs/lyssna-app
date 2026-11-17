@@ -107,6 +107,8 @@ import { TtmlBar } from "./ttml-bar";
 import { TtmlSpectrogram } from "./ttml-spectrogram";
 import { createPortal } from "react-dom";
 import { rpc } from "./bridge";
+import { creatorTransport, direct, useCreatorPlayer } from "./creator-player";
+import { SOLOIST_DEVICE } from "./soloist-settings";
 import {
   type ExportFormat,
   type WordFormat,
@@ -266,7 +268,7 @@ export function TtmlCreator({
     durationMs: number,
   ) => Promise<Lyrics>;
   notify: (message: string, error?: boolean) => void;
-  renderPreview?: (lyrics: Lyrics) => ReactNode;
+  renderPreview?: (lyrics: Lyrics, live?: Partial<AppState>) => ReactNode;
   /** Where the creator's own bar replaces the player bar. */
   barSlot?: HTMLElement | null;
   onShowPlayer?: () => void;
@@ -292,15 +294,37 @@ export function TtmlCreator({
   // The Lyrics page shifts by the listener's timing offset to match what
   // they hear; the creator follows suit so taps and its preview agree.
   const heard = state.settings.lyric_offset_ms ?? 0;
-  const position = clock.position + heard;
-  const readClock = clock.read;
+  const native = state.playback.device.name === state.local_device_name;
+  const here = !!track && playing?.uri === track.uri;
+  const soloist =
+    !!state.settings.soloist && state.playback.device.name === SOLOIST_DEVICE;
+  const [ownFailed, setOwnFailed] = useState(false);
+  const ownFailedRef = useRef(false);
+  const own = useCreatorPlayer({
+    active: soloist && here && !ownFailed,
+    uri: track?.uri,
+    durationMs: track?.duration_ms ?? 0,
+    volume: state.settings.volume_percent ?? 100,
+    onFailed: (error) => {
+      ownFailedRef.current = true;
+      setOwnFailed(true);
+      notify(
+        `Lyssna couldn't play this song itself, so Spotify Soloist plays it at 1×: ${error}`,
+        true,
+      );
+    },
+  });
+  // Spotify Soloist cannot change speed and reports its position late, so
+  // the creator plays the song itself while it is open over Soloist.
+  const local = own.active;
+  const position = (local ? own.position : clock.position) + heard;
+  const readClock = local ? own.read : clock.read;
   const read = useCallback(
     (at?: number) => readClock(at) + heard,
     [readClock, heard],
   );
-  const native = state.playback.device.name === state.local_device_name;
-  const here = !!track && playing?.uri === track.uri;
-  const rate = state.playback_rate ?? 1;
+  const rate = local ? own.rate : (state.playback_rate ?? 1);
+  const isPlaying = local ? own.playing : state.playback.is_playing;
 
   const [savedAt, setSavedAt] = useState<number | undefined>();
   // The content last written for `uri`, so loading or seeding a song is not
@@ -421,6 +445,132 @@ export function TtmlCreator({
 
   useEffect(() => () => void onSpeed(1), [onSpeed]);
 
+  const ownRef = useRef(own);
+  ownRef.current = own;
+  const soloistRef = useRef({
+    read: clock.read,
+    playing: state.playback.is_playing,
+    uri: playing?.uri,
+  });
+  soloistRef.current = {
+    read: clock.read,
+    playing: state.playback.is_playing,
+    uri: playing?.uri,
+  };
+  const onPlayerRef = useRef(onPlayer);
+  onPlayerRef.current = onPlayer;
+  const handBack = useRef(0);
+  const tookPlaying = useRef(false);
+  useEffect(() => {
+    if (!local) return;
+    // A remount at once (React's development double run) keeps the song
+    // where it is instead of handing it back and taking it again.
+    if (handBack.current) {
+      clearTimeout(handBack.current);
+      handBack.current = 0;
+    } else {
+      const taken = soloistRef.current;
+      const from = taken.read();
+      tookPlaying.current = taken.playing;
+      if (taken.playing) {
+        direct(onPlayerRef.current, { command: "pause" });
+        ownRef.current.play(from);
+      } else ownRef.current.seek(from);
+    }
+    const uri = track?.uri;
+    creatorTransport.current = {
+      handle: (request) => {
+        if (creatorTransport.passing) return false;
+        const mine = ownRef.current;
+        switch (request.command) {
+          case "pause":
+            mine.pause();
+            return true;
+          case "play":
+            if (
+              request.uris ||
+              request.context ||
+              (request.uri && request.uri !== uri)
+            ) {
+              mine.pause();
+              return false;
+            }
+            mine.play(request.uri ? 0 : undefined);
+            return true;
+          case "next":
+            mine.pause();
+            return false;
+          case "seek":
+            mine.seek(request.positionMs ?? 0);
+            return true;
+          case "previous":
+            // As Spotify does: early on it goes to the previous song.
+            if (mine.read() < 3000) {
+              mine.pause();
+              return false;
+            }
+            mine.seek(0);
+            return true;
+          case "volume":
+            if (request.volume !== undefined) mine.setVolume(request.volume);
+            return false;
+          default:
+            return false;
+        }
+      },
+      toggle: () => ownRef.current.toggle(),
+    };
+    return () => {
+      creatorTransport.current = null;
+      // Soloist carries on from where the creator left the song, playing
+      // if the creator was, or if the creator never managed to start.
+      const mine = ownRef.current;
+      const sounding =
+        mine.playing || (ownFailedRef.current && tookPlaying.current);
+      const at = mine.read();
+      handBack.current = window.setTimeout(() => {
+        handBack.current = 0;
+        if (soloistRef.current.uri !== uri) return;
+        const finished = at >= (track?.duration_ms ?? 0) - 1000;
+        direct(onPlayerRef.current, {
+          command: "seek",
+          positionMs: finished ? 0 : Math.round(at),
+        });
+        if (sounding && !finished)
+          direct(onPlayerRef.current, { command: "play" });
+      });
+    };
+    // Taking over happens once per song and Soloist session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local]);
+  // The Preview tab's lyrics follow the creator's own playback.
+  const anchors = useRef(0);
+  const previewLive = useMemo((): Partial<AppState> | undefined => {
+    if (!local) return undefined;
+    const { anchor } = own;
+    anchors.current += 1;
+    return {
+      playback: {
+        ...state.playback,
+        is_playing: anchor.playing,
+        progress_ms: Math.round(anchor.position),
+        device: { ...state.playback.device, name: state.local_device_name },
+      },
+      observed_at: Date.now() - (performance.now() - anchor.at),
+      clock_revision: state.clock_revision + anchors.current,
+      playback_rate: anchor.rate,
+    };
+    // Rebuilt only when the creator's clock re-anchors.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local, own.anchor]);
+  // Soloist resumed elsewhere would play over the creator's own playback.
+  const soloistPlayed = useRef(state.playback.is_playing);
+  useEffect(() => {
+    const resumed = state.playback.is_playing && !soloistPlayed.current;
+    soloistPlayed.current = state.playback.is_playing;
+    if (local && resumed) direct(onPlayerRef.current, { command: "pause" });
+  }, [local, state.playback.is_playing]);
+
   const repeatRef = useRef(state.playback.repeat_state);
   repeatRef.current = state.playback.repeat_state;
   const playerRef = useRef(onPlayer);
@@ -444,7 +594,7 @@ export function TtmlCreator({
     const duration = track?.duration_ms ?? 0;
     const wrapped =
       here &&
-      state.playback.is_playing &&
+      isPlaying &&
       duration > 5000 &&
       lastPosition.current > duration - 2500 &&
       position < 2000;
@@ -452,7 +602,7 @@ export function TtmlCreator({
     if (!wrapped) return;
     onPlayer({ command: "pause" });
     onPlayer({ command: "seek", positionMs: 0 });
-  }, [position, here, state.playback.is_playing, track, onPlayer]);
+  }, [position, here, isPlaying, track, onPlayer]);
 
   const setLines = useCallback(
     (next: CreatorLine[] | ((previous: CreatorLine[]) => CreatorLine[])) =>
@@ -1142,6 +1292,10 @@ export function TtmlCreator({
           : lines[at.line] && lineSpan(lines[at.line]);
       if (!track || !range || range.end <= range.start) return;
       setCursor(at);
+      if (local) {
+        own.play(range.start, range.end);
+        return;
+      }
       setClipping(null);
       if (state.playback.is_playing) onPlayer({ command: "pause" });
       seek(range.start);
@@ -1159,20 +1313,37 @@ export function TtmlCreator({
         })
         .catch((error) => notify(`Couldn't play the word: ${error}`, true));
     },
-    [lines, seek, track, state.playback.is_playing, onPlayer, notify],
+    [
+      lines,
+      seek,
+      track,
+      state.playback.is_playing,
+      onPlayer,
+      notify,
+      local,
+      own,
+    ],
   );
   useEffect(() => {
-    if (!state.playback.is_playing) return;
+    if (!state.playback.is_playing || local) return;
     clipAsked.current++;
     setClipping(null);
     void rpc("stop_clip").catch(() => undefined);
-  }, [state.playback.is_playing]);
-  useEffect(() => () => void rpc("stop_clip").catch(() => undefined), []);
+  }, [state.playback.is_playing, local]);
+  // The creator's own player stops itself, after React's development remount.
+  useEffect(
+    () => () => {
+      if (!ownRef.current.active) void rpc("stop_clip").catch(() => undefined);
+    },
+    [],
+  );
   const changeSpeed = useCallback(
     (next: number) => {
-      void onSpeed(next).catch((error) => notify(String(error), true));
+      if (local) own.setRate(next);
+      else if (native)
+        void onSpeed(next).catch((error) => notify(String(error), true));
     },
-    [onSpeed, notify],
+    [onSpeed, notify, local, native, own],
   );
   const [speedDraft, setSpeedDraft] = useState<number | null>(null);
   const speedTimer = useRef(0);
@@ -1552,7 +1723,7 @@ export function TtmlCreator({
     if (
       playingLine < 0 ||
       touringRef.current ||
-      !state.playback.is_playing ||
+      !isPlaying ||
       Date.now() - scrolledAt.current < 3000
     )
       return;
@@ -1561,7 +1732,7 @@ export function TtmlCreator({
       holdLine.current = null;
     }
     centre(playingLine);
-  }, [playingLine, state.playback.is_playing, centre]);
+  }, [playingLine, isPlaying, centre]);
   const toured = useRef(false);
   useEffect(() => {
     if (touring) {
@@ -1570,9 +1741,7 @@ export function TtmlCreator({
     }
     if (!toured.current) return;
     toured.current = false;
-    centre(
-      state.playback.is_playing && playingLine >= 0 ? playingLine : cursor.line,
-    );
+    centre(isPlaying && playingLine >= 0 ? playingLine : cursor.line);
     // Only the walkthrough closing moves the list here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [touring]);
@@ -2016,7 +2185,7 @@ export function TtmlCreator({
       {previewing && !textMode && (
         <div className="ttml-preview">
           {preview?.lines.length && renderPreview ? (
-            renderPreview(preview)
+            renderPreview(preview, previewLive)
           ) : (
             <p className="ttml-hint">Time some words to see them here.</p>
           )}
@@ -2029,9 +2198,9 @@ export function TtmlCreator({
               <button
                 className="ttml-play"
                 onClick={onToggle}
-                aria-label={state.playback.is_playing ? "Pause" : "Play"}
+                aria-label={isPlaying ? "Pause" : "Play"}
               >
-                {state.playback.is_playing ? (
+                {isPlaying ? (
                   <Pause size={16} fill="currentColor" />
                 ) : (
                   <Play size={16} fill="currentColor" />
@@ -2389,7 +2558,7 @@ export function TtmlCreator({
                           setCursor(at);
                         }}
                         onDoubleClick={() => {
-                          if (!state.playback.is_playing) {
+                          if (!isPlaying) {
                             setCursor(at);
                             setInline(at);
                             return;
@@ -2586,14 +2755,14 @@ export function TtmlCreator({
           <TtmlBar
             position={shownPosition}
             duration={track.duration_ms}
-            playing={state.playback.is_playing}
+            playing={isPlaying}
             peaks={peaks?.uri === track.uri ? peaks.values : null}
             spectrum={
               <TtmlSpectrogram
                 uri={track.uri}
                 duration={track.duration_ms}
                 position={shownPosition}
-                playing={state.playback.is_playing || !!clipping}
+                playing={isPlaying || !!clipping}
                 lines={lines}
                 cursor={cursor}
                 picked={picked}
@@ -2613,7 +2782,7 @@ export function TtmlCreator({
             speed={shownSpeed}
             minSpeed={MIN_SPEED}
             maxSpeed={MAX_SPEED}
-            speedEnabled={native}
+            speedEnabled={native || local}
             onSpeed={(value) => slideSpeed(clampSpeed(value))}
             volume={barVolume}
             onVolume={changeVolume}

@@ -51,7 +51,7 @@ pub struct AudioBuffer {
     clip: Arc<Mutex<Option<mpsc::Sender<ClipCommand>>>>,
 }
 enum ClipCommand {
-    Play(QueuedPacket, mpsc::Sender<SinkResult<()>>),
+    Play(Box<dyn Source + Send>, mpsc::Sender<SinkResult<()>>),
     Stop,
 }
 /// Plays short excerpts beside the song, on the song's own output and at its
@@ -95,10 +95,15 @@ impl AudioBuffer {
     /// Plays interleaved stereo at `SAMPLE_RATE` once, replacing any clip
     /// still sounding, at the player's volume.
     pub(crate) fn play_clip(&self, stereo: Vec<f32>) -> SinkResult<()> {
+        self.play_source(Box::new(self.clip_packet(stereo)))
+    }
+    /// Plays any source beside the song on the clip output, replacing any
+    /// clip still sounding.
+    pub(crate) fn play_source(&self, source: Box<dyn Source + Send>) -> SinkResult<()> {
         let unavailable = || SinkError::OnWrite("Clip output unavailable".into());
         let mut clip = self.clip.lock().map_err(|_| unavailable())?;
         let (reply, result) = mpsc::channel();
-        let mut command = ClipCommand::Play(self.clip_packet(stereo), reply);
+        let mut command = ClipCommand::Play(source, reply);
         // A thread that ended (its output panicked) is started afresh.
         for _ in 0..2 {
             let sender = clip.get_or_insert_with(|| {

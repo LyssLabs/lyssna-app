@@ -249,6 +249,7 @@ import {
   type RecentSearch,
 } from "./recent-searches";
 import { SOLOIST_DEVICE } from "./soloist-settings";
+import { creatorTransport } from "./creator-player";
 import type { SearchEntry } from "./search-results";
 
 const SOLOIST_BOOT_LIMIT = 90_000;
@@ -1217,6 +1218,7 @@ function App() {
   }, [state.profile?.id, state.native_ready, metadataSignature]);
   const play = useCallback(
     (request: PlayerRequest) => {
+      if (creatorTransport.current?.handle(request)) return;
       // The native side takes whole milliseconds; seek bars and the
       // interpolated song clock report fractions.
       if (request.positionMs !== undefined)
@@ -1326,6 +1328,10 @@ function App() {
   );
   const startDJ = useCallback(() => play({ command: "dj" }), [play]);
   const toggle = useCallback(() => {
+    if (creatorTransport.current) {
+      creatorTransport.current.toggle();
+      return;
+    }
     const intent = nextToggle(
       stateRef.current.playback.is_playing,
       toggleIntent.current,
@@ -3861,9 +3867,9 @@ function App() {
               barSlot={ttmlBar ? ttmlBarSlot : null}
               onShowPlayer={() => setTtmlPlayerBar(true)}
               onClose={() => setCenter("lyrics")}
-              renderPreview={(lyrics) => (
+              renderPreview={(lyrics, live) => (
                 <LyricsPage
-                  state={{ ...state, lyrics, lyric_error: "" }}
+                  state={{ ...state, ...live, lyrics, lyric_error: "" }}
                   onCanvasActive={setCanvasInLyrics}
                   immersive={immersive}
                   onPlayer={play}

@@ -70,7 +70,7 @@ type Pcm = (String, Arc<Vec<i16>>);
 // Held while decoding so tiles asked for together share one decode.
 static PCM: Mutex<VecDeque<Pcm>> = Mutex::new(VecDeque::new());
 
-fn track_pcm(session: &Session, uri: &str) -> Result<Arc<Vec<i16>>> {
+pub(crate) fn track_pcm(session: &Session, uri: &str) -> Result<Arc<Vec<i16>>> {
     let mut kept = PCM
         .lock()
         .map_err(|_| anyhow::anyhow!("Spectrogram cache unavailable"))?;
