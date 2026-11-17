@@ -1,10 +1,10 @@
 use librespot_playback::audio_backend::{SinkError, SinkResult};
 use rodio::{
-    OutputStreamBuilder,
     cpal::{
         self,
-        traits::{DeviceTrait, HostTrait},
+        traits::{DeviceTrait, HostTrait, StreamTrait},
     },
+    mixer::{Mixer, MixerSource, mixer},
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -12,19 +12,104 @@ use std::time::{Duration, Instant};
 const DEFAULT_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 
 pub(crate) enum OutputStream {
-    Rodio(rodio::OutputStream),
+    Cpal(CpalStream),
     #[cfg(target_os = "macos")]
     Native(crate::macos_audio::OutputStream),
 }
 
 impl OutputStream {
-    pub(crate) fn mixer(&self) -> &rodio::mixer::Mixer {
+    pub(crate) fn mixer(&self) -> &Mixer {
         match self {
-            Self::Rodio(stream) => stream.mixer(),
+            Self::Cpal(stream) => &stream.mixer,
             #[cfg(target_os = "macos")]
             Self::Native(stream) => stream.mixer(),
         }
     }
+    /// Stops the device pulling samples. Audio it already holds stays queued
+    /// and sounds as soon as it is thawed, instead of the device filling with
+    /// silence that a resume would have to play out first.
+    pub(crate) fn freeze(&self) -> bool {
+        match self {
+            Self::Cpal(stream) => stream.stream.pause().is_ok(),
+            #[cfg(target_os = "macos")]
+            Self::Native(_) => false,
+        }
+    }
+    pub(crate) fn thaw(&self) {
+        match self {
+            Self::Cpal(stream) => {
+                let _ = stream.stream.play();
+            }
+            #[cfg(target_os = "macos")]
+            Self::Native(_) => {}
+        }
+    }
+}
+
+/// A cpal output fed by a rodio mixer. rodio's own stream offers no pause.
+pub(crate) struct CpalStream {
+    mixer: Mixer,
+    stream: cpal::Stream,
+}
+
+fn feed<T: cpal::SizedSample + cpal::FromSample<f32>>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    mut source: MixerSource,
+    on_error: impl FnMut(cpal::StreamError) + Send + 'static,
+) -> Result<cpal::Stream, cpal::BuildStreamError> {
+    device.build_output_stream::<T, _, _>(
+        config,
+        move |data: &mut [T], _| {
+            for sample in data.iter_mut() {
+                *sample = T::from_sample(source.next().unwrap_or(0.0));
+            }
+        },
+        on_error,
+        None,
+    )
+}
+
+fn build_stream(
+    device: &cpal::Device,
+    supported: &cpal::SupportedStreamConfig,
+    on_error: impl FnMut(cpal::StreamError) + Send + 'static,
+) -> Option<CpalStream> {
+    let (mixer, source) = mixer(supported.channels(), supported.sample_rate().0);
+    let config = supported.config();
+    use cpal::SampleFormat as Format;
+    let stream = match supported.sample_format() {
+        Format::F32 => feed::<f32>(device, &config, source, on_error),
+        Format::F64 => feed::<f64>(device, &config, source, on_error),
+        Format::I8 => feed::<i8>(device, &config, source, on_error),
+        Format::I16 => feed::<i16>(device, &config, source, on_error),
+        Format::I32 => feed::<i32>(device, &config, source, on_error),
+        Format::I64 => feed::<i64>(device, &config, source, on_error),
+        Format::U8 => feed::<u8>(device, &config, source, on_error),
+        Format::U16 => feed::<u16>(device, &config, source, on_error),
+        Format::U32 => feed::<u32>(device, &config, source, on_error),
+        Format::U64 => feed::<u64>(device, &config, source, on_error),
+        _ => return None,
+    }
+    .ok()?;
+    stream.play().ok()?;
+    Some(CpalStream { mixer, stream })
+}
+
+/// The device's default format first, then each format it supports, as
+/// rodio's open_stream_or_fallback.
+fn open_cpal(
+    device: &cpal::Device,
+    on_error: impl FnMut(cpal::StreamError) + Send + Clone + 'static,
+) -> SinkResult<CpalStream> {
+    let mut configs: Vec<_> = device.default_output_config().into_iter().collect();
+    if let Ok(supported) = device.supported_output_configs() {
+        configs.extend(supported.map(|range| range.with_max_sample_rate()));
+    }
+    configs
+        .iter()
+        .find_map(|config| build_stream(device, config, on_error.clone()))
+        .ok_or_else(|| SinkError::ConnectionRefused("Cannot open audio output".into()))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -140,28 +225,23 @@ impl OutputChoice {
                 }
             }
         }
-        let builder = if let Some(name) = name {
-            let device = cpal::default_host()
-                .output_devices()
+        let host = cpal::default_host();
+        let device = if let Some(name) = name {
+            host.output_devices()
                 .ok()
                 .and_then(|mut devices| {
                     devices.find(|device| device.name().ok().as_deref() == Some(name))
                 })
                 .ok_or_else(|| {
                     SinkError::ConnectionRefused("Selected audio output unavailable".into())
-                })?;
-            OutputStreamBuilder::from_device(device)
+                })?
         } else {
-            OutputStreamBuilder::from_default_device()
-        }
-        .map_err(|_| SinkError::ConnectionRefused("Cannot configure audio output".into()))?;
+            host.default_output_device()
+                .ok_or_else(|| SinkError::ConnectionRefused("No audio output".into()))?
+        };
         let choice = self.clone();
-        let mut stream = builder
-            .with_error_callback(move |_| choice.retry_stream(revision))
-            .open_stream_or_fallback()
-            .map_err(|_| SinkError::ConnectionRefused("Cannot open audio output".into()))?;
-        stream.log_on_drop(false);
-        Ok(OutputStream::Rodio(stream))
+        let stream = open_cpal(&device, move |_| choice.retry_stream(revision))?;
+        Ok(OutputStream::Cpal(stream))
     }
     pub fn open(&self, applied: Option<u64>) -> SinkResult<Option<(OutputStream, u64)>> {
         self.open_with(

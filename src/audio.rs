@@ -22,7 +22,7 @@ const SAMPLE_RATE: u32 = 44_100;
 const MAX_SAMPLES: usize = SAMPLE_RATE as usize * CHANNELS as usize * 250 / 1000;
 /// How long a playing output may take no samples before it counts as stuck.
 const OUTPUT_STALL: Duration = Duration::from_secs(2);
-const REOPEN_AFTER_PAUSE: Duration = Duration::from_secs(3);
+const REOPEN_AFTER_PAUSE: Duration = Duration::from_secs(30);
 pub(crate) fn set_playback_speed(percent: u32) -> u32 {
     let percent = percent.clamp(25, 200);
     librespot_playback::player::PLAYBACK_RATE_PERCENT.store(percent, Ordering::Relaxed);
@@ -217,6 +217,14 @@ impl AudioBuffer {
 /// would otherwise play silently until the next pick.
 const SUBSTITUTE_AFTER: Duration = Duration::from_millis(1500);
 
+/// Some USB DACs wake after Windows boots under the same endpoint id: the
+/// old stream keeps taking samples but plays nothing, while a new stream
+/// plays. Resuming after a long pause reopens it. A seek or new song while
+/// frozen reopens too, so the old song's queued moments never play.
+fn reopen_on_resume(paused_for: Option<Duration>, frozen: bool, flushing: bool) -> bool {
+    paused_for.is_some_and(|paused| paused >= REOPEN_AFTER_PAUSE) || (frozen && flushing)
+}
+
 pub struct AudioSink {
     buffer: AudioBuffer,
     mixer: Option<Arc<dyn Mixer>>,
@@ -224,6 +232,8 @@ pub struct AudioSink {
     applied_output: Option<u64>,
     sink: Option<rodio::Sink>,
     paused_at: Option<Instant>,
+    /// The output is frozen with the paused song's next moments still in it.
+    frozen: bool,
     queued: Arc<AtomicUsize>,
     flush: Arc<AtomicBool>,
     seek_ready: tokio::sync::mpsc::UnboundedSender<()>,
@@ -316,6 +326,7 @@ impl AudioSink {
             applied_output: None,
             sink: None,
             paused_at: None,
+            frozen: false,
             queued: buffer.queued,
             flush,
             seek_ready,
@@ -332,6 +343,7 @@ impl AudioSink {
             crate::native::diagnostic(&format!("audio output opened, revision {revision}"));
             self.install_sink(rodio::Sink::connect_new(stream.mixer()), revision);
             self.stream = Some(stream);
+            self.frozen = false;
             #[cfg(windows)]
             let _ = configure_session_identity();
         }
@@ -454,15 +466,9 @@ impl Sink for AudioSink {
         self.queued.load(Ordering::Acquire) == 0 || !self.crossfade.tail.is_empty()
     }
     fn start(&mut self) -> SinkResult<()> {
-        // Some USB DACs wake after Windows boots under the same endpoint id:
-        // the old stream keeps taking samples but plays nothing, while a new
-        // stream plays. Resuming after a real pause reopens it.
-        if self
-            .paused_at
-            .take()
-            .is_some_and(|paused| paused.elapsed() >= REOPEN_AFTER_PAUSE)
-            && self.stream.is_some()
-        {
+        let paused_for = self.paused_at.take().map(|paused| paused.elapsed());
+        let flushing = self.flush.load(Ordering::Acquire);
+        if self.stream.is_some() && reopen_on_resume(paused_for, self.frozen, flushing) {
             #[cfg(not(test))]
             crate::native::diagnostic("audio output reopened on resume");
             self.buffer.output.retire_stream();
@@ -470,9 +476,18 @@ impl Sink for AudioSink {
         self.discard_old_audio();
         self.prepare_output()?;
         self.sink.as_ref().unwrap().play();
+        if std::mem::take(&mut self.frozen)
+            && let Some(stream) = &self.stream
+        {
+            stream.thaw();
+        }
         Ok(())
     }
     fn stop(&mut self) -> SinkResult<()> {
+        // A frozen output still holds the stopped song's last moments.
+        if std::mem::take(&mut self.frozen) {
+            self.buffer.output.retire_stream();
+        }
         if let Some(sink) = &self.sink {
             sink.stop();
         }
@@ -482,6 +497,11 @@ impl Sink for AudioSink {
         Ok(())
     }
     fn pause(&mut self) -> SinkResult<()> {
+        // Frozen before the sink pauses, so no silence is queued behind the
+        // song.
+        if !self.frozen {
+            self.frozen = self.stream.as_ref().is_some_and(OutputStream::freeze);
+        }
         if let Some(sink) = &self.sink {
             sink.pause();
         }
@@ -1212,6 +1232,15 @@ mod tests {
             .write(AudioPacket::Samples(vec![0.75; 1000]), &mut converter)
             .unwrap();
         assert!((0..2000).any(|_| output.next() == Some(0.75)));
+    }
+
+    #[test]
+    fn resume_keeps_the_frozen_output_unless_it_is_stale() {
+        let short = Some(Duration::from_secs(5));
+        assert!(!reopen_on_resume(short, true, false));
+        assert!(!reopen_on_resume(None, false, true));
+        assert!(reopen_on_resume(short, true, true));
+        assert!(reopen_on_resume(Some(REOPEN_AFTER_PAUSE), false, false));
     }
 
     #[test]
