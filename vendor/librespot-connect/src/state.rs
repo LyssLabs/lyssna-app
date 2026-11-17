@@ -605,6 +605,53 @@ mod dj_tests {
     }
 
     #[tokio::test]
+    async fn a_listed_context_takes_spotifys_uids_for_its_songs() {
+        const LIST: &str = "spotify:playlist:0000000000000000000000";
+        let song = |n: u8| format!("spotify:track:{n:022}");
+        let listed = |n: u8| ContextTrack {
+            uri: Some(song(n)),
+            ..Default::default()
+        };
+        let real = |n: u8, uid: &str| ContextTrack {
+            uri: Some(song(n)),
+            uid: Some(uid.into()),
+            ..Default::default()
+        };
+        let mut state = state();
+        let listed = Context {
+            uri: Some(LIST.into()),
+            pages: vec![ContextPage {
+                tracks: vec![listed(1), listed(2), listed(1), listed(3)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        state.update_context(listed, ContextType::Default).unwrap();
+        state.set_current_track(2).unwrap();
+        state.reset_playback_to_position(Some(2)).unwrap();
+        let fetched = || vec![real(3, "d"), real(1, "a"), real(2, "b"), real(1, "c")];
+
+        assert!(!state.adopt_real_uids("spotify:album:0000000000000000000000", fetched()));
+        assert!(state.adopt_real_uids(LIST, fetched()));
+
+        let ctx = state.get_context(ContextType::Default).unwrap();
+        let uids: Vec<_> = ctx.tracks.iter().map(|t| t.uid.as_str()).collect();
+        assert_eq!(uids, ["a", "b", "c", "d"]);
+        assert_eq!(state.player().track.uid, "c");
+        assert_eq!(state.player().next_tracks[0].uid, "d");
+        assert_eq!(
+            state
+                .player()
+                .prev_tracks
+                .iter()
+                .map(|t| t.uid.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        assert!(!state.adopt_real_uids(LIST, fetched()));
+    }
+
+    #[tokio::test]
     async fn a_dj_set_served_again_is_not_played_again() {
         let mut state = state();
         let first = Context {

@@ -20,6 +20,7 @@ use crate::{
     protocol::{
         connect::{Cluster, ClusterUpdate, LogoutCommand, SetVolumeCommand},
         context::Context,
+        context_track::ContextTrack,
         explicit_content_pubsub::UserAttributesUpdate,
         player::{PlayOrigin, ProvidedTrack},
         playlist4_external::PlaylistModificationInfo,
@@ -70,6 +71,25 @@ impl From<SpircError> for Error {
     }
 }
 
+type RealUids = (String, Vec<ContextTrack>);
+
+async fn real_context_tracks(session: &Session, uri: &str) -> Result<Vec<ContextTrack>, Error> {
+    let context = session.spclient().get_context(uri).await?;
+    let mut tracks = Vec::new();
+    for page in context.pages {
+        if !page.tracks.is_empty() {
+            tracks.extend(page.tracks);
+        } else if let Some(url) = page.page_url.as_deref().filter(|url| !url.is_empty()) {
+            let more = session
+                .spclient()
+                .get_context(&crate::state::context::page_url_to_uri(url))
+                .await?;
+            tracks.extend(more.pages.into_iter().flat_map(|page| page.tracks));
+        }
+    }
+    Ok(tracks)
+}
+
 struct SpircTask {
     devices: ConnectedDevices,
     narrated: crate::narrated::Narrated,
@@ -96,6 +116,11 @@ struct SpircTask {
     user_attributes_mutation: BoxedStreamResult<UserAttributesMutation>,
 
     commands: Option<mpsc::UnboundedReceiver<SpircCommand>>,
+    /// The real uids of a list that started from songs Lyssna already had.
+    real_uids: (
+        mpsc::UnboundedSender<RealUids>,
+        mpsc::UnboundedReceiver<RealUids>,
+    ),
     player_events: Option<PlayerEventChannel>,
 
     context_resolver: ContextResolver,
@@ -880,6 +905,7 @@ impl Spirc {
             user_attributes_update,
             user_attributes_mutation,
             commands: Some(cmd_rx),
+            real_uids: mpsc::unbounded_channel(),
             player_events: Some(player_events),
 
             context_resolver: ContextResolver::new(session.clone()),
@@ -1146,6 +1172,7 @@ impl SpircTask {
         while !self.session.is_invalid() && !self.shutdown {
             let commands = self.commands.as_mut();
             let player_events = self.player_events.as_mut();
+            let real_uids = &mut self.real_uids.1;
 
             // when state and volume update have a higher priority than context resolving
             // because of that the context resolving has to wait, so that the other tasks can finish
@@ -1229,6 +1256,11 @@ impl SpircTask {
                     if let Err(e) = self.handle_player_event(event) {
                         error!("could not dispatch player event: {e}");
                     }
+                },
+                fetched = real_uids.recv() => if let Some((uri, tracks)) = fetched
+                    && self.connect_state.adopt_real_uids(&uri, tracks)
+                {
+                    self.update_state = true;
                 },
                 _ = async { sleep(UPDATE_STATE_DELAY).await }, if self.update_state => {
                     self.update_state = false;
@@ -2482,6 +2514,12 @@ impl SpircTask {
         page: Option<ContextPage>,
         fallback_index: Option<usize>,
     ) -> Result<(), Error> {
+        let prepared_uri = cmd
+            .options
+            .prepared_context
+            .as_ref()
+            .and_then(|context| context.uri.clone())
+            .filter(|uri| uri.starts_with("spotify:"));
         self.connect_state
             .reset_context(if cmd.prepared_context.is_some() {
                 ResetContext::Completely
@@ -2644,7 +2682,27 @@ impl SpircTask {
             self.handle_stop()
         }
 
+        if let Some(uri) = prepared_uri {
+            self.fetch_real_uids(uri);
+        }
         Ok(())
+    }
+
+    /// A list Lyssna already had plays straight away, but with made-up uids:
+    /// the Web API has none. Spotify's apps find the playing song by its uid
+    /// when playback moves to them, and fell back to the first song, so the
+    /// real ones are fetched in the background and swapped in.
+    fn fetch_real_uids(&self, uri: String) {
+        let session = self.session.clone();
+        let sender = self.real_uids.0.clone();
+        tokio::spawn(async move {
+            match real_context_tracks(&session, &uri).await {
+                Ok(tracks) => {
+                    let _ = sender.send((uri, tracks));
+                }
+                Err(why) => warn!("couldn't fetch the uids of <{uri}>: {why}"),
+            }
+        });
     }
 
     async fn load_context_from_uri(
@@ -3410,6 +3468,7 @@ mod shuffle_tests {
             user_attributes_update: Box::pin(futures_util::stream::pending()),
             user_attributes_mutation: Box::pin(futures_util::stream::pending()),
             commands: None,
+            real_uids: mpsc::unbounded_channel(),
             player_events,
             context_resolver: ContextResolver::new(session.clone()),
             emit_set_queue_events: true,

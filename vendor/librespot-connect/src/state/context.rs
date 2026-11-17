@@ -15,7 +15,7 @@ use crate::{
     },
 };
 use protobuf::MessageField;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
 
 const LOCAL_FILES_IDENTIFIER: &str = "spotify:local-files";
@@ -57,7 +57,7 @@ pub enum ResetContext<'s> {
 ///
 /// Expected `page_url` should look something like the following:
 /// `hm://artistplaycontext/v1/page/spotify/album/5LFzwirfFwBKXJQGfwmiMY/km_artist`
-fn page_url_to_uri(page_url: &str) -> String {
+pub(crate) fn page_url_to_uri(page_url: &str) -> String {
     let split = if let Some(rest) = page_url.strip_prefix("hm://") {
         rest.split('/')
     } else {
@@ -415,6 +415,51 @@ impl ConnectState {
         }
 
         iteration.is_none_or(|i| i == 0)
+    }
+
+    /// Gives the playing list the uids Spotify's own apps know its songs by,
+    /// matching each song's repeats in order, and renames them in the
+    /// playing song and the list around it. Returns whether any changed.
+    pub fn adopt_real_uids(&mut self, context_uri: &str, real: Vec<ContextTrack>) -> bool {
+        if self.context_uri() != context_uri {
+            return false;
+        }
+        let mut uids: HashMap<String, VecDeque<String>> = HashMap::new();
+        for track in real {
+            if let (Some(uri), Some(uid)) = (track.uri, track.uid)
+                && !uri.is_empty()
+                && !uid.is_empty()
+            {
+                uids.entry(uri).or_default().push_back(uid);
+            }
+        }
+        let Ok(context) = self.get_context_mut(ContextType::Default) else {
+            return false;
+        };
+        let mut renamed = HashMap::new();
+        for track in context.tracks.iter_mut() {
+            if let Some(uid) = uids.get_mut(&track.uri).and_then(VecDeque::pop_front)
+                && uid != track.uid
+            {
+                renamed.insert(std::mem::replace(&mut track.uid, uid.clone()), uid);
+            }
+        }
+        if renamed.is_empty() {
+            return false;
+        }
+        let player = self.player_mut();
+        for track in player
+            .track
+            .as_mut()
+            .into_iter()
+            .chain(player.next_tracks.iter_mut())
+            .chain(player.prev_tracks.iter_mut())
+        {
+            if let Some(uid) = renamed.get(&track.uid) {
+                track.uid = uid.clone();
+            }
+        }
+        true
     }
 
     pub fn merge_context(&mut self, new_page: Option<ContextPage>) -> Option<()> {
