@@ -70,6 +70,24 @@ export function useCreatorPlayer({
     (at?: number) => anchorRead(anchorRef.current, at ?? performance.now()),
     [],
   );
+  // Takes over only once the song is decoded, so Soloist never pauses into
+  // silence while Lyssna is still getting ready.
+  const [ready, setReady] = useState<string>();
+  useEffect(() => {
+    if (!active || !uri || ready === uri) return;
+    let current = true;
+    rpc("creator_prepare", { uri })
+      .then(() => {
+        if (current) setReady(uri);
+      })
+      .catch((error) => {
+        if (current) live.current.onFailed(error);
+      });
+    return () => {
+      current = false;
+    };
+  }, [active, uri, ready]);
+  const on = active && !!uri && ready === uri;
   const [now, setNow] = useState(() => performance.now());
   useEffect(() => {
     if (!anchor.playing) return;
@@ -195,13 +213,19 @@ export function useCreatorPlayer({
     return () => clearTimeout(timer);
   }, [anchor, setAnchor]);
 
+  const was = useRef(false);
   useEffect(() => {
-    if (active) return;
+    if (on) {
+      was.current = true;
+      return;
+    }
+    if (!was.current) return;
+    was.current = false;
     asked.current++;
     if (anchorRef.current.playing)
       setAnchor({ ...anchorRef.current, playing: false });
     void rpc("stop_clip").catch(() => undefined);
-  }, [active, setAnchor]);
+  }, [on, setAnchor]);
   // Deferred so React's development remount does not cut the audio.
   const stopping = useRef(0);
   useEffect(() => {
@@ -215,7 +239,7 @@ export function useCreatorPlayer({
 
   return useMemo(
     () => ({
-      active,
+      active: on,
       playing: anchor.playing,
       position: anchorRead(anchor, Math.max(now, anchor.at)),
       rate: anchor.rate,
@@ -228,7 +252,7 @@ export function useCreatorPlayer({
       setRate,
       setVolume,
     }),
-    [active, anchor, now, read, play, pause, toggle, seek, setRate, setVolume],
+    [on, anchor, now, read, play, pause, toggle, seek, setRate, setVolume],
   );
 }
 

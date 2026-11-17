@@ -3206,6 +3206,26 @@ async fn creator_play(
     .map_err(|_| "Creator player unavailable".to_owned())?
     .map_err(error)
 }
+/// Decodes the song and opens the output before the creator takes over from
+/// Soloist, so Soloist pauses only once Lyssna can start at once.
+#[tauri::command]
+async fn creator_prepare(
+    uri: String,
+    state: State<'_, Desktop>,
+) -> std::result::Result<(), String> {
+    let controls = state.0.controls.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let session = controls.session()?;
+        crate::waveform::track_pcm(&session, &uri)?;
+        controls
+            .audio_buffer()?
+            .play_source(Box::new(rodio::source::Empty::new()))
+            .map_err(|error| anyhow::anyhow!("{error}"))
+    })
+    .await
+    .map_err(|_| "Creator player unavailable".to_owned())?
+    .map_err(error)
+}
 #[tauri::command]
 fn creator_volume(volume: u8) {
     crate::creator_stream::set_volume(volume);
@@ -6337,6 +6357,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             play_clip,
             stop_clip,
             creator_play,
+            creator_prepare,
             creator_volume,
             test_audio_output,
             refresh,
