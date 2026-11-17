@@ -296,12 +296,20 @@ export function TtmlCreator({
   const heard = state.settings.lyric_offset_ms ?? 0;
   const native = state.playback.device.name === state.local_device_name;
   const here = !!track && playing?.uri === track.uri;
+  // Spotify lists a paused Soloist as no device at all, so once the creator
+  // holds the song it keeps it until another device or song takes over.
+  const holding = useRef(false);
+  const device = state.playback.device.name;
   const soloist =
-    !!state.settings.soloist && state.playback.device.name === SOLOIST_DEVICE;
+    !!state.settings.soloist &&
+    (device === SOLOIST_DEVICE || (holding.current && !device));
+  const keeps =
+    !!track && (playing ? playing.uri === track.uri : holding.current);
   const [ownFailed, setOwnFailed] = useState(false);
   const ownFailedRef = useRef(false);
+  holding.current = soloist && keeps && !ownFailed;
   const own = useCreatorPlayer({
-    active: soloist && here && !ownFailed,
+    active: holding.current,
     uri: track?.uri,
     durationMs: track?.duration_ms ?? 0,
     volume: state.settings.volume_percent ?? 100,

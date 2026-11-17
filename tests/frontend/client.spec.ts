@@ -17559,6 +17559,29 @@ test("TTML Creator plays the song itself, slowed, while Spotify Soloist plays", 
   await expect(
     bar.getByRole("button", { name: "Pause", exact: true }),
   ).toBeVisible();
+  // Paused, Soloist drops out of Spotify's device list; Lyssna plays on.
+  const steady = (await requests()).length;
+  await page.evaluate((song) => {
+    (window as any).__clientTest.emit({
+      type: "playback",
+      changed: false,
+      observed_at: Date.now(),
+      playback: {
+        is_playing: false,
+        progress_ms: 3000,
+        shuffle_state: false,
+        repeat_state: "track",
+        device: { name: "", id: "", is_active: false },
+        item: song,
+      },
+    });
+  }, song);
+  await page.waitForTimeout(300);
+  await expect(
+    bar.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  expect(await transport(steady)).toEqual([]);
+  expect(await calls("creator_play")).toHaveLength(1);
 
   // Speed works: the slider is on and restarts Lyssna's playback slower.
   await page.getByRole("button", { name: "Playback controls" }).click();
