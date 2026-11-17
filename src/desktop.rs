@@ -3227,6 +3227,16 @@ async fn creator_prepare(
     .map_err(error)
 }
 #[tauri::command]
+async fn mixer_level() -> Option<f32> {
+    #[cfg(windows)]
+    return tauri::async_runtime::spawn_blocking(crate::audio::mixer_level)
+        .await
+        .ok()
+        .flatten();
+    #[cfg(not(windows))]
+    None
+}
+#[tauri::command]
 fn creator_volume(volume: u8) {
     crate::creator_stream::set_volume(volume);
 }
@@ -6361,6 +6371,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             creator_play,
             creator_prepare,
             creator_volume,
+            mixer_level,
             test_audio_output,
             refresh,
             save_item,

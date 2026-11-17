@@ -296,8 +296,8 @@ export function TtmlCreator({
   const heard = state.settings.lyric_offset_ms ?? 0;
   const native = state.playback.device.name === state.local_device_name;
   const here = !!track && playing?.uri === track.uri;
-  // Spotify lists a paused Soloist as no device at all, so once the creator
-  // holds the song it keeps it until another device or song takes over.
+  // Soloist can briefly show no device, so once the creator holds the song
+  // it keeps it until another device or song takes over.
   const holding = useRef(false);
   const device = state.playback.device.name;
   const soloist =
@@ -467,6 +467,24 @@ export function TtmlCreator({
   };
   const onPlayerRef = useRef(onPlayer);
   onPlayerRef.current = onPlayer;
+  // Soloist plays as its own app, so a low Volume Mixer level for Lyssna
+  // makes only the creator's playback quiet.
+  useEffect(() => {
+    if (!local) return;
+    let current = true;
+    rpc<number | null>("mixer_level")
+      .then((level) => {
+        if (current && level !== null && level < 0.9)
+          notify(
+            `Windows Volume Mixer has Lyssna at ${Math.round(level * 100)}%, so the TTML Creator plays quieter than Spotify Soloist. Raise Lyssna there to match.`,
+            true,
+          );
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [local, notify]);
   const handBack = useRef(0);
   const tookPlaying = useRef(false);
   useEffect(() => {
