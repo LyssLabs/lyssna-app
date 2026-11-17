@@ -164,7 +164,7 @@ At the time of writing, 234 Rust tests, 185 frontend unit tests and 183 browser 
     <td align="center" valign="top" width="200">
       <a href="https://github.com/iPixelGalaxy"><img src="https://images.weserv.nl/?url=github.com/iPixelGalaxy.png&w=200&h=200&fit=cover&mask=circle&output=png" width="96" alt="iPixelGalaxy"></a><br>
       <b>iPixelGalaxy</b><br>
-      <sub>Lyssna Lyrics fork</sub>
+      <sub>Lyssna Lyrics</sub>
     </td>
   </tr>
 </table>

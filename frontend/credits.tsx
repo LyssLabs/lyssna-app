@@ -7,7 +7,7 @@ export const PEOPLE = [
   {
     login: "iPixelGalaxy",
     name: "iPixelGalaxy",
-    role: "Lyssna Lyrics fork",
+    role: "Lyssna Lyrics",
   },
 ] as const;
 
