@@ -3748,6 +3748,7 @@ version = "0.8.0"
 dependencies = [
  "futures-util",
  "librespot-core",
+ "librespot-metadata",
  "librespot-playback",
  "librespot-protocol",
  "log",

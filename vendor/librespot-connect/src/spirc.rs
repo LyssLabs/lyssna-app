@@ -1524,12 +1524,19 @@ impl SpircTask {
 
     fn handle_player_event(&mut self, event: PlayerEvent) -> Result<(), Error> {
         let playing_event = matches!(&event, PlayerEvent::Playing { .. });
-        if let PlayerEvent::TrackChanged { audio_item, .. } = event {
+        if let PlayerEvent::TrackChanged {
+            track_id,
+            audio_item,
+        } = event
+        {
             self.connect_state.update_duration(audio_item.duration_ms);
             self.update_state = true;
+            // A relinked song's audio item names the playable alternative,
+            // not the queued track, so match on the requested id or the next
+            // song is never preloaded and the following skip loads cold.
             if self
                 .connect_state
-                .current_track(|track| track.uri == audio_item.track_id.to_uri())
+                .current_track(|track| track.uri == track_id.to_uri())
             {
                 self.handle_preload_next_track();
             }
@@ -3487,6 +3494,51 @@ mod shuffle_tests {
             update_state: false,
             spirc_id: 0,
         }
+    }
+
+    #[tokio::test]
+    async fn a_relinked_song_still_preloads_the_next_one() {
+        use librespot_metadata::audio::{AudioItem, UniqueFields};
+        let mut spirc = task();
+        spirc.play_status = SpircPlayStatus::Playing {
+            nominal_start_time: 0,
+            preloading_of_next_track_triggered: false,
+        };
+        let requested = SpotifyUri::from_uri(&tracks()[0]).unwrap();
+        let alternative = SpotifyUri::from_uri("spotify:track:4uLU6hMCjMI75M1A2tKUQC").unwrap();
+        let audio_item = Box::new(AudioItem {
+            duration_ms: 1000,
+            uri: alternative.to_uri(),
+            track_id: alternative,
+            files: Default::default(),
+            name: String::new(),
+            covers: Vec::new(),
+            language: Vec::new(),
+            is_explicit: false,
+            availability: Ok(()),
+            alternatives: None,
+            unique_fields: UniqueFields::Track {
+                artists: Default::default(),
+                album: String::new(),
+                album_artists: Vec::new(),
+                popularity: 0,
+                number: 0,
+                disc_number: 0,
+            },
+        });
+        spirc
+            .handle_player_event(PlayerEvent::TrackChanged {
+                track_id: requested,
+                audio_item,
+            })
+            .unwrap();
+        assert!(matches!(
+            spirc.play_status,
+            SpircPlayStatus::Playing {
+                preloading_of_next_track_triggered: true,
+                ..
+            }
+        ));
     }
 
     #[tokio::test]

@@ -34,3 +34,6 @@ uuid = { version = "1.18", default-features = false, features = ["v4"] }
 
 [lints.clippy]
 redundant_closure_for_method_calls = "warn"
+
+[dev-dependencies]
+librespot-metadata = { version = "0.8.0", default-features = false }
