@@ -933,64 +933,6 @@ fn configure_session_identity() -> windows::core::Result<()> {
     Ok(())
 }
 
-/// Lyssna's lowest level in the Windows Volume Mixer, muted counting as 0.
-#[cfg(windows)]
-pub(crate) fn mixer_level() -> Option<f32> {
-    use windows::{
-        Win32::{
-            Foundation::RPC_E_CHANGED_MODE,
-            Media::Audio::{
-                DEVICE_STATE_ACTIVE, IAudioSessionControl2, IAudioSessionManager2,
-                IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator, eRender,
-            },
-            System::Com::{
-                CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
-            },
-        },
-        core::Interface,
-    };
-    let initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
-    if initialized != RPC_E_CHANGED_MODE && initialized.is_err() {
-        return None;
-    }
-    let level = (|| -> windows::core::Result<Option<f32>> {
-        let mut lowest: Option<f32> = None;
-        unsafe {
-            let devices: IMMDeviceEnumerator =
-                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-            let endpoints = devices.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)?;
-            for index in 0..endpoints.GetCount()? {
-                let endpoint = endpoints.Item(index)?;
-                let Ok(manager) = endpoint.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None)
-                else {
-                    continue;
-                };
-                let sessions = manager.GetSessionEnumerator()?;
-                for index in 0..sessions.GetCount()? {
-                    let session: IAudioSessionControl2 = sessions.GetSession(index)?.cast()?;
-                    if session.GetProcessId()? != std::process::id() {
-                        continue;
-                    }
-                    let volume: ISimpleAudioVolume = session.cast()?;
-                    let level = if volume.GetMute()?.as_bool() {
-                        0.0
-                    } else {
-                        volume.GetMasterVolume()?
-                    };
-                    lowest = Some(lowest.map_or(level, |lowest: f32| lowest.min(level)));
-                }
-            }
-        }
-        Ok(lowest)
-    })()
-    .ok()
-    .flatten();
-    if initialized.is_ok() {
-        unsafe { CoUninitialize() };
-    }
-    level
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
