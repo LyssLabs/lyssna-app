@@ -705,6 +705,17 @@ impl NativeControls {
             Ok(())
         })
     }
+    /// The song another of this account's devices holds the session on.
+    pub fn playing_elsewhere(&self) -> Option<String> {
+        let own = self.session().ok()?.device_id().to_owned();
+        let connection = self.0.lock().ok()?;
+        let cluster = connection.as_ref()?.devices.lock().ok()?.cluster()?;
+        let track = cluster.player_state.track.uri.clone();
+        (!cluster.active_device_id.is_empty()
+            && cluster.active_device_id != own
+            && !track.is_empty())
+        .then_some(track)
+    }
     /// The device list once Spotify reports `requested` active, or the
     /// latest list after `timeout`. Spotify accepts a transfer a few seconds
     /// before its cluster names the new device, and the picker follows the

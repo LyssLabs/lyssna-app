@@ -2760,6 +2760,27 @@ fn player(
             });
             return Ok(());
         }
+        // After Spotify's app took playback from here, Play takes it back
+        // with Spotify's own queue and place, as its device picker would.
+        // Restoring Lyssna's saved list instead lost the queue and stopped
+        // at the end of the song.
+        if local
+            && matches!(action, PlayerAction::Play(None))
+            && !state.0.controls.has_track()
+            && let Some(item) = snapshot.playback.item.as_ref()
+            && state.0.controls.playing_elsewhere().as_deref() == Some(item.uri.as_str())
+        {
+            native::diagnostic("play takes the session back from Spotify's app");
+            state.0.commands.send(Command::Player {
+                action: PlayerAction::Transfer("native".into()),
+                device: None,
+            })?;
+            state.0.commands.send(Command::Player {
+                action: PlayerAction::Play(None),
+                device: Some("native".into()),
+            })?;
+            return Ok(());
+        }
         if local
             && matches!(action, PlayerAction::Play(None))
             && !state.0.controls.has_track()
