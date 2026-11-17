@@ -37,14 +37,6 @@
     {
       "custom_domain": true,
       "pattern": "updates.lyssna.org"
-    },
-    {
-      "custom_domain": true,
-      "pattern": "lyssna.org"
-    },
-    {
-      "custom_domain": true,
-      "pattern": "www.lyssna.org"
     }
   ],
   "secrets": {
