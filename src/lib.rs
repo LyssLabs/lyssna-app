@@ -65,6 +65,8 @@ pub mod track_facts;
 pub mod ui;
 pub mod updater;
 pub mod user_profile;
+#[cfg(windows)]
+mod wasapi_output;
 #[cfg(feature = "desktop")]
 mod waveform;
 pub mod whats_new;
