@@ -1,21 +1,25 @@
 // @ts-check
 
-const artifact = /^releases\/\d+\.\d+\.\d+\/windows-x86_64\/(lyssna\.exe|spotiflex\.exe|source\.zip)$/;
+const artifact = /^releases\/\d+\.\d+\.\d+\/(windows-x86_64\/(lyssna\.exe|spotiflex\.exe|source\.zip)|macos-universal\/Lyssna\.app\.zip)$/;
 // Copies from before the rename read the old channel and only accept spotiflex.exe.
 const channels = new Map([
-  ["channels/stable/lyssna-windows-x86_64.json", "lyssna.exe"],
-  ["channels/stable/windows-x86_64.json", "spotiflex.exe"],
+  ["channels/stable/lyssna-windows-x86_64.json", { target: "windows-x86_64", file: "lyssna.exe" }],
+  ["channels/stable/windows-x86_64.json", { target: "windows-x86_64", file: "spotiflex.exe" }],
+  ["channels/stable/lyssna-macos-universal.json", { target: "macos-universal", file: "Lyssna.app.zip" }],
 ]);
 
-// Fixed links that always download the current stable release, saved as
-// lyssna_setup.exe. The lyssna.exe paths stay for links already shared.
+const windows = { channel: "channels/stable/lyssna-windows-x86_64.json", filename: "lyssna_setup.exe", type: "application/octet-stream" };
+const macos = { channel: "channels/stable/lyssna-macos-universal.json", filename: "Lyssna-macOS.zip", type: "application/zip" };
+// Fixed links that always download the current stable release. The
+// lyssna.exe paths stay for links already shared.
 const latest = new Map([
-  ["latest/lyssna_setup.exe", "lyssna_setup.exe"],
-  ["lyssna_setup.exe", "lyssna_setup.exe"],
-  ["latest/lyssna.exe", "lyssna_setup.exe"],
-  ["lyssna.exe", "lyssna_setup.exe"],
+  ["latest/lyssna_setup.exe", windows],
+  ["lyssna_setup.exe", windows],
+  ["latest/lyssna.exe", windows],
+  ["lyssna.exe", windows],
+  ["latest/Lyssna-macOS.zip", macos],
+  ["Lyssna-macOS.zip", macos],
 ]);
-const stable = "channels/stable/lyssna-windows-x86_64.json";
 
 /** @param {string} value */
 function decode(value) {
@@ -38,8 +42,8 @@ async function authorized(request, token) {
 async function publish(request, env, key) {
   if (!(await authorized(request, env.PUBLISH_TOKEN))) return new Response("Unauthorized", { status: 401 });
   const size = Number(request.headers.get("Content-Length"));
-  const executable = channels.get(key);
-  const manifest = executable !== undefined;
+  const channel = channels.get(key);
+  const manifest = channel !== undefined;
   if (!Number.isSafeInteger(size) || size <= 0 || size > (manifest ? 65536 : 512 * 1024 * 1024)) {
     return new Response("Invalid content length", { status: 413 });
   }
@@ -53,7 +57,7 @@ async function publish(request, env, key) {
       const verificationKey = await crypto.subtle.importKey("raw", decode(env.UPDATE_PUBLIC_KEY), "Ed25519", false, ["verify"]);
       if (!(await crypto.subtle.verify("Ed25519", verificationKey, decode(envelope.signature), payload))) return new Response("Invalid signature", { status: 400 });
       const release = JSON.parse(new TextDecoder().decode(payload));
-      if (!/^\d+\.\d+\.\d+$/.test(release.version) || release.target !== "windows-x86_64" || release.artifact !== `releases/${release.version}/windows-x86_64/${executable}` || !/^[a-fA-F0-9]{64}$/.test(release.sha256)) return new Response("Invalid release", { status: 400 });
+      if (!/^\d+\.\d+\.\d+$/.test(release.version) || release.target !== channel.target || release.artifact !== `releases/${release.version}/${channel.target}/${channel.file}` || !/^[a-fA-F0-9]{64}$/.test(release.sha256)) return new Response("Invalid release", { status: 400 });
       const object = await env.RELEASES.head(release.artifact);
       if (!object || object.size !== release.size) return new Response("Upload executable first", { status: 409 });
       await env.RELEASES.put(key, text, { httpMetadata: { contentType: "application/json", cacheControl: "public, max-age=60" } });
@@ -68,12 +72,13 @@ async function publish(request, env, key) {
   return new Response(null, { status: 201 });
 }
 
-/** The executable the stable channel names, checked against its signature
- * again so a bad manifest in the bucket never decides what is served.
- * @param {Request} request @param {Env} env @param {string} filename */
-async function latestRelease(request, env, filename) {
+/** The file a stable channel names, checked against its signature again so
+ * a bad manifest in the bucket never decides what is served.
+ * @param {Request} request @param {Env} env @param {{ channel: string, filename: string, type: string }} link */
+async function latestRelease(request, env, link) {
   const missing = () => new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
-  const channel = await env.RELEASES.get(stable);
+  const expected = channels.get(link.channel);
+  const channel = await env.RELEASES.get(link.channel);
   if (!channel) return missing();
   let artifactKey;
   try {
@@ -85,14 +90,14 @@ async function latestRelease(request, env, filename) {
   } catch {
     return missing();
   }
-  if (typeof artifactKey !== "string" || !artifact.test(artifactKey) || !artifactKey.endsWith("/lyssna.exe")) return missing();
+  if (typeof artifactKey !== "string" || !artifact.test(artifactKey) || !expected || !artifactKey.endsWith(`/${expected.target}/${expected.file}`)) return missing();
   const object = request.method === "HEAD" ? await env.RELEASES.head(artifactKey) : await env.RELEASES.get(artifactKey);
   if (!object) return missing();
   const headers = new Headers({
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'none'",
-    "Content-Type": "application/octet-stream",
-    "Content-Disposition": `attachment; filename="${filename}"`,
+    "Content-Type": link.type,
+    "Content-Disposition": `attachment; filename="${link.filename}"`,
     "Content-Length": String(object.size),
     ETag: object.httpEtag,
     // Short, so a new release reaches the fixed link within a minute.

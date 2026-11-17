@@ -108,6 +108,30 @@ test("fixed links always download the current stable release", async () => {
   assert.equal((await request("latest/other.exe")).status, 404);
 });
 
+test("macOS releases use their own channel and fixed link", async () => {
+  const { put, request, envelope } = setup();
+  const channel = "channels/stable/lyssna-macos-universal.json";
+  const zip = "releases/0.6.0/macos-universal/Lyssna.app.zip";
+  const release = (artifact, target = "macos-universal") => envelope({ version: "0.6.0", target, artifact, size: 3, sha256: "a".repeat(64), notes: "" });
+  assert.equal((await request("latest/Lyssna-macOS.zip")).status, 404);
+  assert.equal((await put(zip, "mac")).status, 201);
+  assert.equal((await put("releases/0.6.0/macos-universal/other.zip", "mac")).status, 404);
+  assert.equal((await put(channel, release(zip, "windows-x86_64"))).status, 400);
+  assert.equal((await put(channel, release("releases/0.6.0/windows-x86_64/lyssna.exe"))).status, 400);
+  assert.equal((await put("channels/stable/lyssna-windows-x86_64.json", release(zip))).status, 400);
+  assert.equal((await put(channel, release(zip))).status, 201);
+  for (const path of ["latest/Lyssna-macOS.zip", "Lyssna-macOS.zip"]) {
+    const response = await request(path);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "mac");
+    assert.equal(response.headers.get("Content-Type"), "application/zip");
+    assert.equal(response.headers.get("Content-Disposition"), 'attachment; filename="Lyssna-macOS.zip"');
+    assert.equal(response.headers.get("X-Lyssna-Version"), "0.6.0");
+  }
+  // Windows downloads stay on the Windows channel.
+  assert.equal((await request("latest/lyssna_setup.exe")).status, 404);
+});
+
 test("a fixed link serves nothing when the channel's signature fails", async () => {
   const { objects, put, request, envelope } = setup();
   await put("releases/0.4.0/windows-x86_64/lyssna.exe", "first");

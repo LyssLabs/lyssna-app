@@ -204,6 +204,67 @@ fn publish(arguments: &[String], upload_files: bool) -> Result<()> {
     Ok(())
 }
 
+const MACOS_TARGET: &str = "macos-universal";
+const MACOS_CHANNEL: &str = "channels/stable/lyssna-macos-universal.json";
+
+/// The universal Mac app zip, on a channel of its own so Windows installs
+/// never see it.
+fn publish_macos(arguments: &[String], upload_files: bool) -> Result<()> {
+    ensure!(
+        arguments.len() == 3,
+        "Usage: lyssna-release prepare-macos|publish-macos VERSION APP_ZIP NOTES_FILE"
+    );
+    let version = semver::Version::parse(&arguments[0])?;
+    ensure!(
+        version.pre.is_empty() && version.build.is_empty(),
+        "Stable versions must use MAJOR.MINOR.PATCH"
+    );
+    ensure!(
+        arguments[0] == env!("CARGO_PKG_VERSION"),
+        "Release version must match Cargo.toml"
+    );
+    let archive = Path::new(&arguments[1]);
+    ensure!(
+        fs::read(archive)?.starts_with(b"PK\x03\x04"),
+        "The Mac app must be a zip archive"
+    );
+    let notes = fs::read_to_string(&arguments[2])?;
+    ensure!(notes.len() <= 16_384, "Release notes exceed limit");
+    let manifest = Manifest {
+        version: version.to_string(),
+        target: MACOS_TARGET.into(),
+        artifact: format!("releases/{version}/{MACOS_TARGET}/Lyssna.app.zip"),
+        sha256: file_hash(archive)?,
+        size: fs::metadata(archive)?.len(),
+        notes,
+    };
+    let key = signing_key()?;
+    ensure!(
+        STANDARD.encode(key.verifying_key().to_bytes()) == lyssna::updater::PUBLIC_KEY.trim(),
+        "Release signing key does not match the compiled public key; rebuild first"
+    );
+    let directory = Path::new("dist").join(format!("{version}"));
+    fs::create_dir_all(&directory)?;
+    let channel = directory.join("lyssna-macos-universal.json");
+    signed_channel(&key, &manifest, &channel)?;
+    if upload_files {
+        let token = secret("publish-token")?;
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(600))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        upload(&client, &manifest.artifact, archive, &token)?;
+        upload(&client, MACOS_CHANNEL, &channel, &token)?;
+        println!("Published signed macOS version {version} to R2.");
+    } else {
+        println!(
+            "Prepared signed macOS version {version} in {}.",
+            directory.display()
+        );
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     match arguments.first().map(String::as_str) {
@@ -216,6 +277,10 @@ fn main() -> Result<()> {
         }
         Some("prepare") => publish(&arguments[1..], false),
         Some("publish") => publish(&arguments[1..], true),
-        _ => bail!("Commands: setup-keys, sync-github, prepare, publish"),
+        Some("prepare-macos") => publish_macos(&arguments[1..], false),
+        Some("publish-macos") => publish_macos(&arguments[1..], true),
+        _ => bail!(
+            "Commands: setup-keys, sync-github, prepare, publish, prepare-macos, publish-macos"
+        ),
     }
 }
