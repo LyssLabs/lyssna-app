@@ -5545,7 +5545,7 @@ fn allowed_link(url: &url::Url) -> bool {
         "/iPixelGalaxy/spicy-lyrics",
         "/librespot-org/librespot",
         "/Fraktality/spr",
-        "/LyssLabs/Lyssna",
+        "/LyssLabs/lyssna-app",
     ];
     url.scheme() == "https"
         && url.username().is_empty()
@@ -6662,7 +6662,7 @@ mod tests {
         let allowed = |url: &str| allowed_link(&url::Url::parse(url).unwrap());
         assert!(allowed("https://open.spotify.com/track/abc"));
         assert!(allowed("https://github.com/iPixelGalaxy/spotify-plus"));
-        assert!(allowed("https://github.com/LyssLabs/Lyssna"));
+        assert!(allowed("https://github.com/LyssLabs/lyssna-app"));
         assert!(allowed("https://github.com/Spikerko"));
         assert!(allowed("https://lrc.red/"));
         assert!(!allowed("https://github.com/someone/else"));

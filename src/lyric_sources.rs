@@ -882,7 +882,7 @@ fn netease_credit(text: &str) -> bool {
 const LRC_RED_AGENT: &str = concat!(
     "Lyssna/",
     env!("CARGO_PKG_VERSION"),
-    " (+https://github.com/LyssLabs/Lyssna; 145221345+Stormanzanii@users.noreply.github.com)"
+    " (+https://github.com/LyssLabs/lyssna-app; 145221345+Stormanzanii@users.noreply.github.com)"
 );
 
 /// Looks the song up on lrc.red by its ISRC; its TTML carries word timing,
