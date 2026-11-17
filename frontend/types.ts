@@ -187,6 +187,8 @@ export interface Settings {
   lyrics_credits_follow?: boolean;
   lyrics_simple?: boolean;
   lyrics_minimal?: boolean;
+  lyrics_visualiser?: boolean;
+  lyrics_visualiser_opacity?: number;
   lyrics_keep_overlaps?: boolean;
   lyrics_word_filter?: import("./word-filter").WordFilter;
   lyrics_line_hover?: boolean;

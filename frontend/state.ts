@@ -186,6 +186,8 @@ export const emptyState: AppState = {
     lyrics_credits_follow: false,
     lyrics_simple: false,
     lyrics_minimal: false,
+    lyrics_visualiser: false,
+    lyrics_visualiser_opacity: 40,
     lyrics_keep_overlaps: true,
     lyrics_word_filter: "off",
     lyrics_line_hover: false,

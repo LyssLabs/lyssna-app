@@ -6633,6 +6633,15 @@ input[type="range"]:hover {
   background: light-dark(#00000017, #ffffff17);
   overflow: hidden;
 }
+/* Translucent placeholders let the visualiser's bars show through, so they
+   looked drawn under them; solid ones sit visibly on top. */
+.lyrics-page:has(> .lyrics-visualiser) .lyrics-skeleton-lines span {
+  background: color-mix(
+    in srgb,
+    var(--lyrics-cover-color, #808080) 14%,
+    light-dark(#e2e2e2, #262626)
+  );
+}
 .lyrics-skeleton-lines span::after {
   content: "";
   position: absolute;
@@ -6782,12 +6791,24 @@ input[type="range"]:hover {
 .lyrics-image-background {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
   background-position: center;
   background-size: cover;
   filter: blur(var(--background-blur, 0px)) brightness(0.45);
   transform: scale(1.08);
+}
+
+/* Visualiser bars: drawn after the ambience, picture and Canvas backdrop,
+   so over them but under the lyrics and artwork; tinted by the cover. */
+.lyrics-visualiser {
+  position: absolute;
+  inset: auto 0 0;
+  width: 100%;
+  height: 42%;
+  z-index: -1;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--lyrics-cover-color, #fff) 55%, #fff);
 }
 
 /* Highlighter lyrics player (highlighter.tsx lays out the strokes): one

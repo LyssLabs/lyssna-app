@@ -242,6 +242,7 @@ export function Cover({
   );
 }
 import { Ambience } from "./ambience";
+import { LyricsVisualiser } from "./lyrics-visualiser";
 export { Ambience };
 
 // Plays only while on screen and the window is visible, and stays hidden
@@ -2167,6 +2168,12 @@ function SongLyricsPage({
           width={128}
           height={128}
           aria-hidden="true"
+        />
+      )}
+      {state.settings.lyrics_visualiser && (
+        <LyricsVisualiser
+          playing={state.playback.is_playing}
+          opacity={state.settings.lyrics_visualiser_opacity ?? 40}
         />
       )}
       {track ? (

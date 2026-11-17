@@ -281,12 +281,12 @@ fn spectrogram_tile(slice: &[f32], columns: usize, rows: usize) -> Vec<u8> {
     tile
 }
 
-struct Fft {
+pub(crate) struct Fft {
     twiddles: Vec<(f64, f64)>,
 }
 
 impl Fft {
-    fn new(size: usize) -> Self {
+    pub(crate) fn new(size: usize) -> Self {
         Self {
             twiddles: (0..size / 2)
                 .map(|index| {
@@ -297,7 +297,7 @@ impl Fft {
         }
     }
 
-    fn power(&self, samples: &[f64]) -> Vec<f64> {
+    pub(crate) fn power(&self, samples: &[f64]) -> Vec<f64> {
         let size = self.twiddles.len() * 2;
         let mut re = samples.to_vec();
         re.resize(size, 0.0);

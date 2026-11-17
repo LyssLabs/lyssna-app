@@ -3130,6 +3130,10 @@ fn audio_levels() -> [u8; 3] {
     crate::audio::levels()
 }
 #[tauri::command]
+fn audio_spectrum() -> Vec<u8> {
+    crate::audio::spectrum().to_vec()
+}
+#[tauri::command]
 async fn track_spectrogram(
     uri: String,
     from_ms: f64,
@@ -6079,6 +6083,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             playback_speed,
             track_waveform,
             audio_levels,
+            audio_spectrum,
             discord_username,
             track_spectrogram,
             play_clip,

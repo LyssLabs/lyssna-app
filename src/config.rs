@@ -249,6 +249,10 @@ pub struct Settings {
     /// In full screen, sung lines fade away and the rest dim, as in Spicy
     /// Lyrics' Minimal Lyrics Mode.
     pub lyrics_minimal: bool,
+    /// Frequency bars behind the lyrics, tinted by the cover.
+    pub lyrics_visualiser: bool,
+    /// The visualiser's opacity, in percent.
+    pub lyrics_visualiser_opacity: u8,
     /// In Minimal lyrics mode, lines sung over an earlier line stay dimmed.
     pub lyrics_keep_overlaps: bool,
     /// Unique Word Filters: "off", "gibberish", or "lower" or "upper" case.
@@ -415,6 +419,8 @@ impl Default for Settings {
             lyrics_credits_follow: false,
             lyrics_simple: false,
             lyrics_minimal: false,
+            lyrics_visualiser: false,
+            lyrics_visualiser_opacity: 40,
             lyrics_keep_overlaps: true,
             lyrics_word_filter: "off".into(),
             lyrics_line_hover: false,
@@ -538,6 +544,7 @@ impl Settings {
     /// Keeps Spicy Lyrics display options inside the ranges Settings offers.
     pub fn clean_lyrics_options(&mut self) {
         self.lyrics_early_scroll_ms = self.lyrics_early_scroll_ms.min(800);
+        self.lyrics_visualiser_opacity = self.lyrics_visualiser_opacity.clamp(5, 100);
         self.lyrics_background_blur = self.lyrics_background_blur.min(48);
         self.animation_fps_cap = self.animation_fps_cap.clamp(15, 240);
         self.gravity_link_width = self.gravity_link_width.clamp(10, 100);

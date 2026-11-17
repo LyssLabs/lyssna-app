@@ -10,7 +10,7 @@ use rodio::Source;
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
         mpsc,
     },
     thread,
@@ -603,6 +603,71 @@ impl AudioSink {
     }
 }
 
+/// Bars in the lyrics visualiser, low to high.
+pub const SPECTRUM_BARS: usize = 48;
+const SPECTRUM_FRAMES: usize = 2048;
+static SPECTRUM: Mutex<[u8; SPECTRUM_BARS]> = Mutex::new([0; SPECTRUM_BARS]);
+/// When the visualiser last asked, in ms since `SPECTRUM_EPOCH`. Packets
+/// are only analysed while it is showing.
+static SPECTRUM_ASKED: AtomicU64 = AtomicU64::new(0);
+static SPECTRUM_EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+
+/// The visualiser's bars for the chunk now leaving the speakers.
+pub fn spectrum() -> [u8; SPECTRUM_BARS] {
+    SPECTRUM_ASKED.store(
+        SPECTRUM_EPOCH.elapsed().as_millis() as u64 + 1,
+        Ordering::Relaxed,
+    );
+    SPECTRUM
+        .lock()
+        .map(|bars| *bars)
+        .unwrap_or([0; SPECTRUM_BARS])
+}
+
+fn spectrum_wanted() -> bool {
+    let asked = SPECTRUM_ASKED.load(Ordering::Relaxed);
+    asked != 0 && (SPECTRUM_EPOCH.elapsed().as_millis() as u64 + 1).saturating_sub(asked) < 1_000
+}
+
+fn spectrum_bars(samples: &[f32]) -> [u8; SPECTRUM_BARS] {
+    static FFT: std::sync::LazyLock<crate::waveform::Fft> =
+        std::sync::LazyLock::new(|| crate::waveform::Fft::new(SPECTRUM_FRAMES));
+    let frames = (samples.len() / usize::from(CHANNELS)).min(SPECTRUM_FRAMES);
+    let mut bars = [0u8; SPECTRUM_BARS];
+    if frames < 64 {
+        return bars;
+    }
+    let window: Vec<f64> = samples
+        .chunks_exact(usize::from(CHANNELS))
+        .take(frames)
+        .enumerate()
+        .map(|(index, frame)| {
+            let hann = 0.5 - 0.5 * (std::f64::consts::TAU * index as f64 / frames as f64).cos();
+            f64::from(frame.iter().sum::<f32>() / f32::from(CHANNELS)) * hann
+        })
+        .collect();
+    let power = FFT.power(&window);
+    // A full-scale sine through a Hann window peaks at frames / 4.
+    let full = (frames as f64 / 4.0).powi(2);
+    let hz_per_bin = f64::from(SAMPLE_RATE) / SPECTRUM_FRAMES as f64;
+    let (low, high) = (40f64, 16_000f64);
+    for (index, bar) in bars.iter_mut().enumerate() {
+        let edge = |at: usize| low * (high / low).powf(at as f64 / SPECTRUM_BARS as f64);
+        let from = ((edge(index) / hz_per_bin) as usize).max(1);
+        let to = ((edge(index + 1) / hz_per_bin).ceil() as usize).clamp(from + 1, power.len());
+        let peak = power[from.min(power.len() - 1)..to]
+            .iter()
+            .copied()
+            .fold(0f64, f64::max);
+        // Music has far less energy up high; tilting by 3 dB an octave lets
+        // the treble bars move about as much as the bass.
+        let octaves = (edge(index) / low).log2();
+        let db = 10.0 * (peak / full).max(1e-12).log10() + 3.0 * octaves;
+        *bar = (((db + 66.0) / 60.0).clamp(0.0, 1.0) * 255.0) as u8;
+    }
+    bars
+}
+
 /// Bass, mid and treble loudness of the chunk now leaving the speakers,
 /// one byte each.
 static LEVELS: AtomicU32 = AtomicU32::new(0);
@@ -651,6 +716,7 @@ fn band_levels(samples: &[f32]) -> u32 {
 
 struct QueuedPacket {
     levels: u32,
+    spectrum: Option<[u8; SPECTRUM_BARS]>,
     #[cfg(test)]
     output_started: Option<Arc<Mutex<Option<std::time::Instant>>>>,
     generation: usize,
@@ -672,8 +738,10 @@ impl QueuedPacket {
         volume: Box<dyn VolumeGetter + Send>,
     ) -> Self {
         let levels = if narration { 0 } else { band_levels(&samples) };
+        let spectrum = (!narration && spectrum_wanted()).then(|| spectrum_bars(&samples));
         let mut packet = Self::new(samples, buffer.queued);
         packet.levels = levels;
+        packet.spectrum = spectrum;
         packet.generation = buffer.generation.load(Ordering::Acquire);
         packet.active_generation = Some(buffer.generation);
         packet.fading_generation = Some(buffer.fading_generation);
@@ -693,6 +761,7 @@ impl QueuedPacket {
         queued.fetch_add(samples.len(), Ordering::Relaxed);
         Self {
             levels: 0,
+            spectrum: None,
             #[cfg(test)]
             output_started: None,
             generation: 0,
@@ -731,6 +800,11 @@ impl Iterator for QueuedPacket {
                     marker.store(*narration, Ordering::Release);
                 }
                 LEVELS.store(self.levels, Ordering::Relaxed);
+                if let Some(bars) = self.spectrum.take()
+                    && let Ok(mut shown) = SPECTRUM.lock()
+                {
+                    *shown = bars;
+                }
                 self.marker_applied = true;
             }
             self.queued.fetch_sub(1, Ordering::Relaxed);
@@ -1453,6 +1527,31 @@ mod tests {
         let [low, _, high, _] = band_levels(&tone(8_000.0)).to_le_bytes();
         assert!(high > 200 && low < 60, "{low} {high}");
         assert_eq!(band_levels(&[0.0; 512]), 0);
+    }
+
+    #[test]
+    fn spectrum_bars_rise_where_the_tone_is() {
+        let tone = |hz: f32| -> Vec<f32> {
+            (0..4096)
+                .flat_map(|i| {
+                    let value =
+                        0.5 * (std::f32::consts::TAU * hz * i as f32 / SAMPLE_RATE as f32).sin();
+                    [value, value]
+                })
+                .collect()
+        };
+        let loudest = |bars: [u8; SPECTRUM_BARS]| {
+            (0..SPECTRUM_BARS).max_by_key(|&index| bars[index]).unwrap()
+        };
+        let bass = spectrum_bars(&tone(80.0));
+        let treble = spectrum_bars(&tone(8_000.0));
+        assert!(loudest(bass) < SPECTRUM_BARS / 4, "{bass:?}");
+        assert!(loudest(treble) > SPECTRUM_BARS * 3 / 4, "{treble:?}");
+        assert!(
+            bass[loudest(bass)] > 180 && bass[SPECTRUM_BARS - 1] < 60,
+            "{bass:?}"
+        );
+        assert_eq!(spectrum_bars(&[0.0; 4096]), [0; SPECTRUM_BARS]);
     }
 
     #[test]

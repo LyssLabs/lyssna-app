@@ -488,6 +488,87 @@ test("a computer without a battery shows a monitor", async ({ page }) => {
   ).toHaveCount(1);
 });
 
+test("the lyrics visualiser is off by default and draws tinted bars when on", async ({
+  page,
+}) => {
+  await startClient(page);
+  await page.evaluate(() => {
+    const test = (window as any).__clientTest;
+    test.answers = {
+      ...test.answers,
+      audio_spectrum: Array.from({ length: 48 }, (_, index) => 120 + index * 2),
+    };
+  });
+  await page.evaluate(
+    ({ base, track }) =>
+      (window as any).__clientTest.emit({
+        type: "playback",
+        playback: { ...base, item: track, is_playing: true },
+        observed_at: Date.now(),
+        changed: false,
+      }),
+    { base: emptyState.playback, track },
+  );
+  await showLyrics(page);
+  await expect(page.locator(".lyrics-page")).toBeVisible();
+  await expect(page.locator(".lyrics-visualiser")).toHaveCount(0);
+  await openSettings(page, "Lyrics");
+  const dialog = page.getByRole("dialog", { name: "Lyssna settings" });
+  await expect(
+    dialog.getByRole("slider", { name: "Visualiser opacity" }),
+  ).toBeVisible();
+  await page.evaluate(
+    (settings) =>
+      (window as any).__clientTest.emit({
+        type: "settings",
+        settings: {
+          ...settings,
+          lyrics_visualiser: true,
+          lyrics_visualiser_opacity: 55,
+        },
+      }),
+    emptyState.settings,
+  );
+  await showLyrics(page);
+  const bars = page.locator(".lyrics-page > .lyrics-visualiser");
+  await expect(bars).toHaveCount(1);
+  expect(await bars.evaluate((canvas) => getComputedStyle(canvas).opacity)).toBe(
+    "0.55",
+  );
+  await expect
+    .poll(() =>
+      bars.evaluate((canvas) => {
+        const element = canvas as HTMLCanvasElement;
+        const data = element
+          .getContext("2d")!
+          .getImageData(0, 0, element.width, element.height).data;
+        let painted = 0;
+        for (let at = 3; at < data.length; at += 4) if (data[at]) painted++;
+        return painted;
+      }),
+    )
+    .toBeGreaterThan(1000);
+  // Under the lyrics and artwork: behind every element in the page's flow,
+  // over the ambience drawn before it.
+  const layer = await bars.evaluate((canvas) => {
+    const page = canvas.parentElement!;
+    const ambience = page.querySelector(":scope > .ambience");
+    return {
+      z: getComputedStyle(canvas).zIndex,
+      afterAmbience:
+        !ambience ||
+        !!(ambience.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  });
+  expect(layer).toEqual({ z: "-1", afterAmbience: true });
+  // The loading placeholders cover the bars rather than letting them through.
+  const placeholder = page.locator(".lyrics-skeleton-lines span").first();
+  await expect(placeholder).toBeVisible();
+  expect(
+    await placeholder.evaluate((span) => getComputedStyle(span).backgroundColor),
+  ).not.toMatch(/rgba|\//);
+});
+
 test("playing bars follow this computer's audio levels", async ({ page }) => {
   await startClient(page);
   await page.evaluate(() => {

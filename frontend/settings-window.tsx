@@ -1200,6 +1200,22 @@ export function SettingsWindow({
           "minimal fullscreen full screen hide sung",
         ),
         flag(
+          "lyrics_visualiser",
+          "Visualiser",
+          "Show bars that move with the music behind the lyrics, coloured by the album cover.",
+          "visualiser visualizer bars spectrum equalizer audio",
+        ),
+        range(
+          "lyrics_visualiser_opacity",
+          "Visualiser opacity",
+          "How strongly the visualiser bars show behind the lyrics.",
+          "visualiser visualizer opacity transparency bars",
+          [5, 100, 5],
+          40,
+          "%",
+          !settings.lyrics_visualiser,
+        ),
+        flag(
           "lyrics_keep_overlaps",
           "Keep overlapping lines",
           "In Minimal lyrics mode, a line sung over an earlier one stays dimmed instead of fading away.",
