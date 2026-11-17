@@ -17481,6 +17481,78 @@ test("layout the TTML Creator borrowed comes back after a restart", async ({
   ).toEqual({ now_playing_open: true, compact_library: false });
 });
 
+test("TTML Creator plays a paused song itself when Soloist would play it", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const clone = window.structuredClone;
+    window.structuredClone = ((value: any, options?: any) => {
+      const copy = clone(value, options);
+      if (copy && typeof copy === "object" && "local_device_name" in copy) {
+        copy.settings = { ...copy.settings, soloist: true };
+        copy.soloist = { state: "ready" };
+      }
+      return copy;
+    }) as typeof structuredClone;
+  });
+  await startClient(page);
+  const song = {
+    id: "0123456789abcdefghijkl",
+    uri: "spotify:track:0123456789abcdefghijkl",
+    name: "Come & Go (with Marshmello)",
+    artists: [{ id: "a", name: "Juice WRLD" }],
+    album: { id: "0123456789abcdefghijkl", name: "Album", images: [] },
+    duration_ms: 180000,
+  };
+  await page.evaluate((song) => {
+    (window as any).__clientTest.emit({
+      type: "playback",
+      changed: true,
+      observed_at: Date.now(),
+      playback: {
+        is_playing: false,
+        progress_ms: 3000,
+        shuffle_state: false,
+        repeat_state: "off",
+        device: { name: "Lyssna (test)", id: "native", is_active: false },
+        item: song,
+      },
+    });
+  }, song);
+  await openSettings(page, "Lyrics");
+  await page.getByRole("switch", { name: "TTML Creator", exact: true }).check();
+  await page
+    .getByRole("dialog", { name: "Lyssna settings" })
+    .getByRole("button", { name: "Close settings" })
+    .click();
+  const calls = (command: string) =>
+    page.evaluate(
+      (command) =>
+        (window as any).__clientTest.commands
+          .filter((entry: any) => entry.command === command)
+          .map((entry: any) => entry.args),
+      command,
+    );
+  const transport = async () =>
+    (await calls("player"))
+      .map((args: any) => args.request)
+      .filter((request: any) => request.command !== "repeat");
+  const before = (await transport()).length;
+  await page
+    .locator(".player-extras")
+    .getByTitle("TTML Creator", { exact: true })
+    .click();
+  await expect.poll(() => calls("creator_prepare")).not.toHaveLength(0);
+  const bar = page.locator(".ttml-bar");
+  await bar.getByRole("button", { name: "Play", exact: true }).click();
+  await expect(
+    bar.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  const [first] = await calls("creator_play");
+  expect(first.fromMs).toBe(3000);
+  expect((await transport()).slice(before)).toEqual([]);
+});
+
 test("TTML Creator plays the song itself, slowed, while Spotify Soloist plays", async ({
   page,
 }) => {

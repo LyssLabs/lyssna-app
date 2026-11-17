@@ -300,9 +300,13 @@ export function TtmlCreator({
   // it keeps it until another device or song takes over.
   const holding = useRef(false);
   const device = state.playback.device.name;
+  // After a restart a paused song shows on this computer until played, and
+  // Play then goes to Soloist.
   const soloist =
     !!state.settings.soloist &&
-    (device === SOLOIST_DEVICE || (holding.current && !device));
+    (device === SOLOIST_DEVICE ||
+      (holding.current && !device) ||
+      (device === state.local_device_name && !state.playback.is_playing));
   const keeps =
     !!track && (playing ? playing.uri === track.uri : holding.current);
   const [ownFailed, setOwnFailed] = useState(false);
