@@ -927,13 +927,18 @@ impl Backend {
             PlayerAction::Transfer(id) => Some(id.clone()),
             _ => device,
         };
-        if let PlayerAction::Transfer(id) = &action
-            && matches!(
-                self.native_controls
-                    .connection_event(Some(&self.profile.id)),
-                Some(crate::native::NativeEvent::Ready(_))
-            )
+        if let PlayerAction::Transfer(requested) = &action
+            && let Some(crate::native::NativeEvent::Ready(own)) = self
+                .native_controls
+                .connection_event(Some(&self.profile.id))
         {
+            // "native" names this computer; the device list knows it only
+            // by its id, so checking for "native" there always failed.
+            let id = if requested == "native" {
+                &own
+            } else {
+                requested
+            };
             let mut transferred = self.native_controls.transfer(id);
             // The device picker follows the active device: after a failure
             // it must return to the current one, and after a success it must
