@@ -53,6 +53,14 @@ Sign-in uses OAuth with PKCE through a state-checked loopback callback. No Spoti
 
 On macOS, Lyssna sends stereo playback through AVFoundation with stereo spatialization enabled. On an Apple silicon Mac with compatible AirPods, play a song, open the AirPods menu in the menu bar, and choose **Fixed** or **Head Tracked** under **Spatialize Stereo**. macOS controls the effect; the decoded music remains stereo. Availability depends on your Mac, headphones, and system settings. See [Apple's Spatial Audio guide](https://support.apple.com/guide/airpods/control-spatial-audio-and-head-tracking-dev00eb7e0a3/web).
 
+## Transfer settings between Lyssna apps
+
+Open **Settings → Advanced → Import and export settings** to export a `.lyssna.json` file or import one from Lyssna Lyrics or another standalone installation. Review the settings and lyric counts, then choose **Apply import**.
+
+The file includes preferences, animator presets, per-song timing offsets, window and editor preferences, and saved local lyrics with their track associations. Compatible settings apply immediately. App-specific settings are kept in subsequent exports so they can be restored when moving back. Matching songs are replaced; other saved lyrics remain. Each import saves a backup, available through **Download previous backup**.
+
+Lyssna Lyrics applies TTML files and preserves standalone LRC and older JSON lyric entries for future exports. Window and editor preferences take effect when reopened. Spotify sign-in sessions and standalone provider credentials stay local; custom font files must also be available on the destination. Files exported by the plugin can contain saved provider tokens, so keep transfer files private.
+
 ## Privacy
 
 Spotify credentials stay on your computer: Windows Credential Manager on Windows, AES-256-GCM encrypted files on macOS. Lyrics requests carry the Spotify track ID, and Spotify tokens are never sent to Spicy Lyrics.

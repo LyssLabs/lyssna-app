@@ -1,4 +1,27 @@
 /* Settings rows and controls, shared by the Lyssna settings window. */
+.settings-transfer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.settings-transfer p {
+  margin: 0 0 8px;
+  color: light-dark(#222, #e6e6e6);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.settings-transfer button {
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+}
+.settings-transfer button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .setting-row {
   display: flex;
   align-items: center;

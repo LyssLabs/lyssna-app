@@ -42,6 +42,7 @@ import { LyricsProvider } from "./lyrics-provider";
 import { MusixmatchToken } from "./musixmatch-token";
 import { AnimatorPresetRow } from "./animator-settings";
 import { SOLOIST_PLAYS, SoloistRows } from "./soloist-settings";
+import { SettingsTransferControls } from "./settings-transfer-controls";
 
 /** Default source order; LRCLIB and Netease start off. */
 const DEFAULT_SOURCES = [
@@ -1792,6 +1793,15 @@ export function SettingsWindow({
       "Advanced",
       "Settings window",
       [
+        <SettingRow
+          key="settings-transfer"
+          label="Import and export settings"
+          help="Transfer preferences, animator presets, per-song offsets and saved lyrics between Lyssna Standalone and Lyssna Lyrics."
+          keywords="backup restore migrate transfer import export spotify plugin ttml"
+          stacked
+        >
+          <SettingsTransferControls settings={settings} />
+        </SettingRow>,
         flag(
           "settings_remember_place",
           "Remember settings location",

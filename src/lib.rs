@@ -55,6 +55,7 @@ mod reconnect;
 pub mod rename;
 pub mod resume;
 pub mod search;
+pub mod settings_transfer;
 pub mod soloist;
 pub mod soloist_link;
 pub mod spotify;

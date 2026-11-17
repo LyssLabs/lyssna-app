@@ -3274,6 +3274,10 @@ fn save_settings(
     state: State<'_, Desktop>,
     app: tauri::AppHandle,
 ) -> std::result::Result<(), String> {
+    apply_settings(settings, &state, &app)
+}
+
+fn apply_settings(settings: Settings, state: &Desktop, app: &tauri::AppHandle) -> std::result::Result<(), String> {
     let result = || -> Result<()> {
         let mut snapshot = lock(&state.0.snapshot)?;
         let mut settings = settings;
@@ -3368,6 +3372,55 @@ fn save_settings(
         Ok(())
     };
     result().map_err(error)
+}
+#[tauri::command]
+async fn export_settings_transfer(state: State<'_, Desktop>) -> std::result::Result<crate::settings_transfer::NativeExport, String> {
+    let inner = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = crate::settings_transfer::TRANSFER_LOCK.lock().map_err(|_| "Settings transfer is unavailable".to_owned())?;
+        let settings = lock(&inner.snapshot).map_err(error)?.settings.clone();
+        crate::settings_transfer::export(settings).map_err(error)
+    }).await.map_err(|_| "Settings export worker failed".to_owned())?
+}
+
+#[tauri::command]
+async fn previous_settings_backup() -> std::result::Result<Option<crate::settings_transfer::NativeExport>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let _guard = crate::settings_transfer::TRANSFER_LOCK.lock().map_err(|_| "Settings transfer is unavailable".to_owned())?;
+        crate::settings_transfer::backup().map_err(error)
+    }).await.map_err(|_| "Settings backup worker failed".to_owned())?
+}
+
+#[tauri::command]
+fn has_settings_backup() -> bool {
+    crate::config::data_dir().is_ok_and(|directory| directory.join("transfer-backup.json").is_file())
+}
+
+#[tauri::command]
+async fn import_settings_transfer(
+    settings: Settings,
+    lyrics: Vec<crate::settings_transfer::TransferLyrics>,
+    preserved: serde_json::Value,
+    window_preferences: std::collections::BTreeMap<String, String>,
+    state: State<'_, Desktop>,
+    app: tauri::AppHandle,
+) -> std::result::Result<usize, String> {
+    let inner = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = crate::settings_transfer::TRANSFER_LOCK.lock().map_err(|_| "Settings transfer is unavailable".to_owned())?;
+        let before = lock(&inner.snapshot).map_err(error)?.settings.clone();
+        let count = lyrics.len();
+        let mut transaction = crate::settings_transfer::ImportTransaction::begin(before, lyrics, preserved, window_preferences).map_err(error)?;
+        if let Err(message) = apply_settings(settings, &Desktop(inner.clone()), &app) {
+            transaction.rollback().map_err(|failure| format!("{message}. Recovery failed: {failure}. Download the previous backup."))?;
+            return Err(message);
+        }
+        transaction.commit();
+        if let Ok(snapshot) = lock(&inner.snapshot) && let Some(track) = snapshot.playback.item.clone() {
+            let _ = inner.commands.send(Command::FetchLyrics(track));
+        }
+        Ok(count)
+    }).await.map_err(|_| "Settings import worker failed".to_owned())?
 }
 #[tauri::command]
 fn soloist_key(key: String) -> std::result::Result<bool, String> {
@@ -6221,6 +6274,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             refresh,
             save_item,
             save_settings,
+            export_settings_transfer,
+            import_settings_transfer,
+            previous_settings_backup,
+            has_settings_backup,
             audio_outputs,
             configure_provider,
             configure_spicy_lyrics,
