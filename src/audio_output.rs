@@ -617,4 +617,58 @@ mod tests {
         assert_eq!(choice.take_issue(), Some(OutputIssue::UsingDefault));
         drop(stream);
     }
+
+    #[test]
+    #[ignore = "loads every core and opens the default output"]
+    fn output_keeps_time_while_the_computer_is_busy() {
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+        let device = cpal::default_host().default_output_device().unwrap();
+        let supported = device.default_output_config().unwrap();
+        let (late, worst) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
+        let (late_cb, worst_cb) = (late.clone(), worst.clone());
+        let mut last: Option<Instant> = None;
+        let stream = device
+            .build_output_stream::<f32, _, _>(
+                &supported.config(),
+                move |data: &mut [f32], _| {
+                    data.fill(0.0);
+                    let now = Instant::now();
+                    if let Some(previous) = last.replace(now) {
+                        let gap = now.duration_since(previous).as_micros() as u64;
+                        worst_cb.fetch_max(gap, Ordering::Relaxed);
+                        if gap > 25_000 {
+                            late_cb.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                },
+                |_| {},
+                None,
+            )
+            .unwrap();
+        stream.play().unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let cores = std::thread::available_parallelism().map_or(8, |n| n.get());
+        let load: Vec<_> = (0..cores * 2)
+            .map(|_| {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let mut x = 0u64;
+                    while !stop.load(Ordering::Relaxed) {
+                        x = std::hint::black_box(
+                            x.wrapping_mul(6364136223846793005).wrapping_add(1),
+                        );
+                    }
+                })
+            })
+            .collect();
+        std::thread::sleep(Duration::from_secs(5));
+        stop.store(true, Ordering::Relaxed);
+        load.into_iter().for_each(|thread| thread.join().unwrap());
+        let (late, worst) = (late.load(Ordering::Relaxed), worst.load(Ordering::Relaxed));
+        eprintln!(
+            "late callbacks {late}, worst gap {} ms",
+            worst as f64 / 1000.0
+        );
+        assert_eq!(late, 0);
+    }
 }

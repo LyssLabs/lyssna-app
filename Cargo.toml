@@ -84,7 +84,7 @@ ring = "0.17"
 zeroize = "1"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
-cpal = "0.16"
+cpal = { version = "0.16", features = ["audio_thread_priority"] }
 webrtc-vad = "0.4"
 whisper-rs = "0.16"
 souvlaki = { version = "0.8", default-features = false }
