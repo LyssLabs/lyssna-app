@@ -56,3 +56,51 @@ jobs:
           if-no-files-found: error
           path: |
             target/release/bundle/Lyssna-*.app.zip
+
+  universal:
+    name: macOS (universal)
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: Entitlements.macos.plist
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Lyssna-macos-*
+          merge-multiple: true
+          path: built
+      - name: Merge both architectures into one app
+        run: |
+          set -eu
+          ditto -x -k built/Lyssna-arm64.app.zip arm64
+          ditto -x -k built/Lyssna-x86_64.app.zip x86_64
+          ditto arm64/Lyssna.app Lyssna.app
+          find arm64/Lyssna.app -type f | while read -r path; do
+            relative="${path#arm64/}"
+            file -b "$path" | grep -q '^Mach-O' || continue
+            lipo -create "$path" "x86_64/$relative" -output "$relative"
+            lipo "$relative" -verify_arch arm64 x86_64
+          done
+      # lipo invalidates the per-architecture signatures; helpers are signed
+      # before the bundle, which seals them.
+      - name: Sign
+        run: |
+          set -eu
+          main="Lyssna.app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' Lyssna.app/Contents/Info.plist)"
+          find Lyssna.app/Contents/MacOS -type f ! -path "$main" | while read -r helper; do
+            codesign --force --sign - "$helper"
+          done
+          codesign --force --sign - --entitlements Entitlements.macos.plist Lyssna.app
+          codesign --verify --deep --strict Lyssna.app
+          lipo -archs "$main"
+      - name: Archive app with permissions and symlinks
+        run: ditto -c -k --sequesterRsrc --keepParent Lyssna.app Lyssna-universal.app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lyssna-macos-universal
+          if-no-files-found: error
+          path: Lyssna-universal.app.zip
