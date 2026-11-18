@@ -33,8 +33,9 @@ export const Ambience = memo(function Ambience({
    * `saturate(2.5)` filter on top of 1.5 without a full-panel filter pass. */
   saturation?: number;
   /** Warp the panel's playing Canvas video instead of the artwork, as Spicy
-   * Lyrics' Now Playing background does. */
-  followCanvas?: boolean;
+   * Lyrics' Now Playing background does; "window" follows whichever Canvas
+   * the window shows, the lyrics page's first. */
+  followCanvas?: boolean | "window";
 }) {
   const source = image ?? track?.album.images?.[0]?.url ?? "",
     surface = useRef<HTMLCanvasElement>(null),
@@ -186,9 +187,15 @@ export const Ambience = memo(function Ambience({
     // tints Now Playing.
     const panel = surface.current?.parentElement?.parentElement;
     const look = () => {
-      const video = panel?.querySelector<HTMLVideoElement>(
-        "video[data-canvas-video]",
-      );
+      const video =
+        followCanvas === "window"
+          ? (document.querySelector<HTMLVideoElement>(
+              ".lyrics-page video[data-canvas-video]",
+            ) ??
+            document.querySelector<HTMLVideoElement>(
+              ".now-playing video[data-canvas-video]",
+            ))
+          : panel?.querySelector<HTMLVideoElement>("video[data-canvas-video]");
       if (!video || video === failed) return stopFollowing();
       if (video === following.current) return;
       try {

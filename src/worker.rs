@@ -2201,12 +2201,22 @@ fn canvas_url(native: &NativeControls, uri: &str) -> Option<String> {
     if let Some(url) = crate::canvas::cached(uri) {
         return url;
     }
-    let bytes = native
-        .metadata(
+    // A failed lookup is asked again only on the next song change, so a busy
+    // startup could leave the song without its Canvas.
+    let mut tries = 0;
+    let bytes = loop {
+        match native.metadata(
             uri,
             librespot_protocol::extension_kind::ExtensionKind::CANVAS_V1,
-        )
-        .ok()?;
+        ) {
+            Ok(bytes) => break bytes,
+            Err(_) if tries < 3 => {
+                tries += 1;
+                thread::sleep(std::time::Duration::from_secs(2 * tries));
+            }
+            Err(_) => return None,
+        }
+    };
     let url = crate::canvas::video_url(&bytes, uri).ok().flatten();
     crate::canvas::remember(uri, url.clone());
     url

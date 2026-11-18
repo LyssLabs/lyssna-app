@@ -27,6 +27,7 @@ export const GlassBackdrop = memo(function GlassBackdrop({
         speed={2.4}
         saturation={1.5}
         shade={false}
+        followCanvas="window"
       />
       <div className="glass-backdrop-shade" />
     </div>

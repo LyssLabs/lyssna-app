@@ -2504,6 +2504,8 @@ export function preloadCanvas(url: string) {
     warmCanvases.delete(oldest);
   }
   const video = document.createElement("video");
+  // Must match the players' CORS mode, or the cached answer fails them.
+  video.crossOrigin = "anonymous";
   video.muted = true;
   video.preload = "auto";
   video.src = url;
