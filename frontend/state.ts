@@ -213,8 +213,8 @@ export const emptyState: AppState = {
     fullscreen_animate_close: false,
     lyrics_source_order: [
       "spicy",
-      "lrcred",
       "apple",
+      "lrcred",
       "musixmatch",
       "spotify",
       "lrclib",

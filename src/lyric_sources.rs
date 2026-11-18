@@ -34,13 +34,16 @@ use crate::model::Track;
 /// Every known source, in default order.
 pub const DEFAULT_ORDER: [&str; 7] = [
     "spicy",
-    "lrcred",
     "apple",
+    "lrcred",
     "musixmatch",
     "spotify",
     "lrclib",
     "netease",
 ];
+/// Raised when the default layout changes; saved sources older than this
+/// are reset to it once.
+pub const LAYOUT: u32 = 1;
 /// Sources the fork leaves off until chosen.
 pub const DEFAULT_DISABLED: [&str; 2] = ["lrclib", "netease"];
 

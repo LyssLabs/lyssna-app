@@ -3344,6 +3344,7 @@ fn apply_settings(
     let result = || -> Result<()> {
         let mut snapshot = lock(&state.0.snapshot)?;
         let mut settings = settings;
+        settings.lyrics_sources_layout = crate::lyric_sources::LAYOUT;
         let output_changed = settings.audio_output != snapshot.settings.audio_output;
         if !["stable", "nightly"].contains(&settings.update_channel.as_str()) {
             settings.update_channel = "stable".into();

@@ -302,6 +302,9 @@ pub struct Settings {
     /// Lyric sources in the order they are tried, and the ones turned off.
     pub lyrics_source_order: Vec<String>,
     pub lyrics_sources_disabled: Vec<String>,
+    // Absent from older files, so they read as layout 0 and get reset.
+    #[serde(default)]
+    pub lyrics_sources_layout: u32,
     /// Prioritize Apple Music Quality: Apple's answer wins higher scores and
     /// ties with gaps between lines.
     pub lyrics_prefer_apple: bool,
@@ -456,6 +459,7 @@ impl Default for Settings {
                 .iter()
                 .map(|id| (*id).into())
                 .collect(),
+            lyrics_sources_layout: crate::lyric_sources::LAYOUT,
             settings_remember_place: true,
             developer_mode: false,
             settings_allow_hiding: false,
@@ -623,6 +627,14 @@ impl Settings {
             self.lyrics_year_position = YearPosition::Off;
         }
     }
+    fn adopt_source_layout(&mut self) {
+        if self.lyrics_sources_layout < crate::lyric_sources::LAYOUT {
+            let fresh = Self::default();
+            self.lyrics_source_order = fresh.lyrics_source_order;
+            self.lyrics_sources_disabled = fresh.lyrics_sources_disabled;
+            self.lyrics_sources_layout = crate::lyric_sources::LAYOUT;
+        }
+    }
     pub fn load() -> Result<Self> {
         let path = data_dir()?.join("settings.json");
         let mut settings: Self = if path.exists() {
@@ -638,6 +650,7 @@ impl Settings {
         settings.ui_zoom_percent = settings.ui_zoom_percent.clamp(75, 200);
         settings.lyric_offset_ms = settings.lyric_offset_ms.clamp(-10_000, 10_000);
         settings.clean_lyrics_options();
+        settings.adopt_source_layout();
         settings.lyrics_source_order = crate::lyric_sources::migrate(
             &settings.lyrics_source_order,
             &mut settings.lyrics_sources_disabled,
@@ -684,6 +697,26 @@ mod tests {
         FullscreenAlwaysShow, FullscreenVolume, LyricsAnimator, PinnedLyricsFooter, Settings,
         YearPosition,
     };
+
+    #[test]
+    fn older_settings_take_the_new_source_layout_once() {
+        let mut old: Settings = serde_json::from_str(
+            r#"{"lyrics_source_order":["spotify","spicy"],"lyrics_sources_disabled":["spicy"]}"#,
+        )
+        .unwrap();
+        old.adopt_source_layout();
+        assert_eq!(
+            old.lyrics_source_order,
+            Settings::default().lyrics_source_order
+        );
+        assert_eq!(old.lyrics_source_order[..2], ["spicy", "apple"]);
+        assert_eq!(old.lyrics_sources_disabled, ["lrclib", "netease"]);
+        old.lyrics_source_order.reverse();
+        let mut saved: Settings =
+            serde_json::from_str(&serde_json::to_string(&old).unwrap()).unwrap();
+        saved.adopt_source_layout();
+        assert_eq!(saved.lyrics_source_order, old.lyrics_source_order);
+    }
 
     #[test]
     fn pinned_lyrics_footer_survives_settings_restore_and_unknown_modes() {

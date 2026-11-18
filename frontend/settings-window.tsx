@@ -47,8 +47,8 @@ import { SettingsTransferControls } from "./settings-transfer-controls";
 /** Default source order; LRCLIB and Netease start off. */
 const DEFAULT_SOURCES = [
   "spicy",
-  "lrcred",
   "apple",
+  "lrcred",
   "musixmatch",
   "spotify",
   "lrclib",
