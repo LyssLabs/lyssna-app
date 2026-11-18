@@ -410,6 +410,10 @@
     background: #1ed76066;
   }
 }
+.ttml-creator .ttml-unit.editing {
+  display: inline-flex;
+  align-items: center;
+}
 .ttml-inline-word {
   min-width: 2ch;
   padding: 0 2px;
@@ -422,6 +426,10 @@
   font-size: 17px;
   line-height: 1.2;
   text-align: center;
+}
+.ttml-inline-word:focus-visible {
+  outline: 1px solid #ffffff80;
+  outline-offset: 0;
 }
 .ttml-word {
   color: #ffffff8c;

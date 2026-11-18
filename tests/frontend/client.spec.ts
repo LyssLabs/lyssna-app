@@ -18381,6 +18381,15 @@ test("double-clicking a TTML Creator word edits it when paused and replays while
   await creator.locator(".ttml-unit").nth(1).dblclick();
   await expect(inline).toBeFocused();
   await expect(inline).toHaveValue("there");
+  // Start time above the word and end time below, as when not editing.
+  const editing = creator.locator(".ttml-unit.editing");
+  const [start, end] = await Promise.all([
+    editing.locator(".ttml-pill").first().boundingBox(),
+    editing.locator(".ttml-pill.end").boundingBox(),
+  ]);
+  const word = await inline.boundingBox();
+  expect(start!.y + start!.height).toBeLessThanOrEqual(word!.y + 1);
+  expect(end!.y).toBeGreaterThanOrEqual(word!.y + word!.height - 1);
   await expect(field).not.toBeFocused();
   expect(await seeks()).toBe(before);
   await page.keyboard.type("world");
