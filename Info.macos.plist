@@ -6,6 +6,10 @@
   <string>Lyssna</string>
   <key>CFBundleDisplayName</key>
   <string>Lyssna</string>
+  <key>CFBundleIconFile</key>
+  <string>lyssna.icns</string>
+  <key>CFBundleIconName</key>
+  <string>Lyssna</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Lyssna uses the microphone for local DJ voice recognition. Microphone audio is never uploaded.</string>
   <key>CFBundleURLTypes</key>

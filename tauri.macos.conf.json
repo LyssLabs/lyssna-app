@@ -25,6 +25,7 @@
   "bundle": {
     "targets": ["app"],
     "icon": [
+      "assets/macos/Assets.car",
       "assets/lyssna.icns",
       "assets/lyssna.png",
       "assets/lyssna.ico"

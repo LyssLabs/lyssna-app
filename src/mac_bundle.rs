@@ -2,21 +2,27 @@
 //! macOS. Nightly and in-app updates replace only `Contents/MacOS/lyssna`,
 //! so keys added to `Info.macos.plist` since the app was installed, such as
 //! the `lyssna://` link type, would never reach the bundle. Each copy
-//! carries the plist it was built with and merges it in at startup, then
-//! signs the app again as the build script did and tells Launch Services.
-use anyhow::{Context, Result, bail, ensure};
+//! carries its plist and icon resources, updates the bundle at startup,
+//! then signs it again and tells Launch Services.
+use anyhow::{Context, Result, ensure};
 use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::Mutex,
 };
 
 const INFO: &str = include_str!("../Info.macos.plist");
+const ICONS: [(&str, &[u8]); 2] = [
+    ("lyssna.icns", include_bytes!("../assets/lyssna.icns")),
+    ("Assets.car", include_bytes!("../assets/macos/Assets.car")),
+];
 const ENTITLEMENTS: &str = include_str!("../Entitlements.macos.plist");
 const PLUTIL: &str = "/usr/bin/plutil";
 const CODESIGN: &str = "/usr/bin/codesign";
 const SECURITY: &str = "/usr/bin/security";
 const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+static REFRESH_LOCK: Mutex<()> = Mutex::new(());
 
 /// The `.app` this executable runs from, if any.
 pub fn bundle() -> Option<PathBuf> {
@@ -41,9 +47,8 @@ pub fn identifier() -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
-/// Bring the bundle's Info.plist up to date with this executable's, then
-/// sign and register the app again if anything changed. Off the main
-/// thread: signing takes a moment.
+/// Bring the bundle's plist and icons up to date, then sign and register
+/// the app again if anything changed. Run signing off the main thread.
 pub fn refresh() {
     std::thread::spawn(|| {
         if let Some(bundle) = bundle()
@@ -110,16 +115,23 @@ pub fn relocate() -> bool {
     true
 }
 
-/// After an executable was swapped in: merge, sign and register even if the
-/// plist already matched, since the old signature no longer covers it.
+/// After an executable was swapped in, sign and register even if the plist
+/// and icons already matched, since the old signature no longer covers it.
 pub fn after_replace(bundle: &Path) -> Result<()> {
     refresh_bundle(bundle, true)
 }
 
 fn refresh_bundle(bundle: &Path, replaced: bool) -> Result<()> {
+    let _guard = REFRESH_LOCK.lock().expect("bundle refresh lock poisoned");
+    let work = tempfile_dir()?;
+    let result = refresh_bundle_files(bundle, &work, replaced);
+    let _ = fs::remove_dir_all(&work);
+    result
+}
+
+fn refresh_bundle_files(bundle: &Path, work: &Path, replaced: bool) -> Result<()> {
     let info = bundle.join("Contents/Info.plist");
     ensure!(info.is_file(), "the app has no Info.plist");
-    let work = tempfile_dir()?;
     let wanted = work.join("Info.macos.plist");
     fs::write(&wanted, INFO)?;
     let keys = top_level_keys(&wanted)?;
@@ -130,32 +142,65 @@ fn refresh_bundle(bundle: &Path, replaced: bool) -> Result<()> {
             changed.push((key.clone(), value));
         }
     }
-    if changed.is_empty() && !replaced {
-        let _ = fs::remove_dir_all(&work);
+
+    let resources = bundle.join("Contents/Resources");
+    let mut files = Vec::new();
+    for (name, bytes) in ICONS {
+        let path = resources.join(name);
+        let original = match fs::read(&path) {
+            Ok(original) if original == bytes => continue,
+            Ok(original) => Some(original),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error).with_context(|| format!("cannot read {name}")),
+        };
+        files.push((path, original, bytes));
+    }
+    if changed.is_empty() && files.is_empty() && !replaced {
         return Ok(());
     }
-    let original = fs::read(&info)?;
-    for (key, value) in &changed {
-        let status = Command::new(PLUTIL)
-            .args(["-replace", key, "-json", &value.to_string()])
-            .arg(&info)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
-        if !status.success() {
-            fs::write(&info, &original)?;
-            bail!("cannot set {key} in Info.plist");
+
+    let patched_info;
+    if !changed.is_empty() {
+        let original = fs::read(&info)?;
+        let staged = work.join("Info.plist");
+        fs::write(&staged, &original)?;
+        for (key, value) in &changed {
+            let status = Command::new(PLUTIL)
+                .args(["-replace", key, "-json", &value.to_string()])
+                .arg(&staged)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?;
+            ensure!(status.success(), "cannot set {key} in Info.plist");
         }
+        patched_info = fs::read(&staged)?;
+        files.push((info, Some(original), &patched_info));
     }
+
+    fs::create_dir_all(&resources)?;
     let entitlements = work.join("Entitlements.macos.plist");
     fs::write(&entitlements, ENTITLEMENTS)?;
-    let signed = sign(bundle, &entitlements);
-    let _ = fs::remove_dir_all(&work);
-    if let Err(error) = signed {
-        // An Info.plist the signature doesn't cover is worse than an old one.
-        if !changed.is_empty() {
-            fs::write(&info, &original)?;
-            let _ = sign(bundle, Path::new(""));
+
+    let mut written = 0;
+    let result = (|| {
+        for (path, _, bytes) in &files {
+            write_bundle_file(path, bytes)?;
+            written += 1;
+        }
+        sign(bundle, &entitlements)
+    })();
+    if let Err(error) = result {
+        for (path, original, _) in files[..written].iter().rev() {
+            let restored = match original {
+                Some(bytes) => write_bundle_file(path, bytes),
+                None => fs::remove_file(path),
+            };
+            if let Err(restore_error) = restored {
+                log::warn!("Cannot restore {}: {restore_error}", path.display());
+            }
+        }
+        if written != 0 {
+            let _ = sign(bundle, &entitlements);
         }
         return Err(error);
     }
@@ -176,6 +221,15 @@ fn refresh_bundle(bundle: &Path, replaced: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn write_bundle_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let staged = path.with_extension(format!("lyssna-{}.tmp", std::process::id()));
+    let result = fs::write(&staged, bytes).and_then(|()| fs::rename(&staged, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    result
 }
 
 /// Sign as `build.sh` does: with its local identity when this Mac has one,

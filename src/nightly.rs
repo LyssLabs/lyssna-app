@@ -2001,8 +2001,8 @@ fn replace_running(staged: &Path) -> Result<()> {
     self_replace::self_replace(staged)
         .context("Cannot install. Run Lyssna from a folder your account can write to.")?;
     let _ = fs::remove_file(staged);
-    // The app's signature covers the executable it replaced: bring its
-    // Info.plist up to date, sign it again as the build script did, and
+    // The app's signature covers the executable it replaced. Update its
+    // metadata and icons, sign it again as the build script did, and
     // register it so macOS opens it and its links.
     #[cfg(target_os = "macos")]
     if let Some(bundle) = executable
