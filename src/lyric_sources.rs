@@ -174,28 +174,14 @@ pub fn unreachable(error: &anyhow::Error) -> bool {
     })
 }
 
-/// Whether some lead line ends 0.3 to 5 seconds before the next starts:
-/// lyrics timed to the voice rather than run line into line.
-pub fn has_line_gaps(lyrics: &Lyrics) -> bool {
-    let leads: Vec<&Line> = lyrics
-        .lines
-        .iter()
-        .filter(|line| !line.background)
-        .collect();
-    leads
-        .windows(2)
-        .any(|pair| (300..5000).contains(&pair[1].start_ms.saturating_sub(pair[0].end_ms)))
-}
-
 /// Asks one lyrics source by name; shared by the threads asking each.
 pub type SourceFetch = Arc<dyn Fn(&str) -> Result<Lyrics> + Send + Sync>;
 
-/// Queries every enabled source at once, then picks in the chosen order like
-/// the fork: the first word-synced result wins; otherwise the best found.
-/// Once a preferred source (Spicy, Musixmatch, Apple) has lyrics, LRCLIB and
-/// Netease are not consulted. With `prefer_apple`, a word-synced pick waits
-/// for Apple Music's answer, which wins if it scores higher, or ties and has
-/// gaps between lines.
+/// Queries every enabled source at once, then picks in the chosen order: the
+/// first timed result wins, by line or by word; otherwise the first plain
+/// one. Once a preferred source (Spicy, Musixmatch, Apple) has lyrics,
+/// LRCLIB and Netease are not consulted. With `prefer_apple`, a pick waits
+/// for Apple Music's answer, which wins whenever it is as well timed.
 pub fn fetch_best(sources: &[String], prefer_apple: bool, fetch: SourceFetch) -> Result<Lyrics> {
     // Answers arrive as each source replies. A pick is made once every
     // source ahead of it has answered, so a slow source further down never
@@ -225,22 +211,22 @@ fn preferred_source(source: &str) -> bool {
     matches!(source, "spicy" | "musixmatch" | "apple")
 }
 
-/// Apple's answer replaces the pick when it scores higher, or ties with
-/// gaps between lines.
+/// Timed lyrics, by line or by word, rank alike, so the source order
+/// decides between them; plain lyrics rank below.
+fn rank(lyrics: &Lyrics) -> u8 {
+    quality(lyrics).min(2)
+}
+
+/// With Apple Music prioritized, its answer replaces any pick it ranks
+/// alongside.
 fn choose(pick: Lyrics, apple: Option<&Lyrics>, prefer_apple: bool) -> Lyrics {
     match apple {
-        Some(apple)
-            if prefer_apple
-                && (quality(apple) > quality(&pick)
-                    || (quality(apple) == quality(&pick) && has_line_gaps(apple))) =>
-        {
-            apple.clone()
-        }
+        Some(apple) if prefer_apple && rank(apple) >= rank(&pick) => apple.clone(),
         _ => pick,
     }
 }
 
-/// The word-synced pick, once every answer it depends on is in.
+/// The first timed pick in order, once every answer it depends on is in.
 fn early_pick(
     sources: &[String],
     prefer_apple: bool,
@@ -261,7 +247,7 @@ fn early_pick(
             apple_tried = true;
         }
         let Ok(lyrics) = result else { continue };
-        let score = quality(lyrics);
+        let score = rank(lyrics);
         if score == 0 {
             continue;
         }
@@ -271,10 +257,10 @@ fn early_pick(
         if preferred_source(source) {
             preferred = true;
         }
-        if best.is_none_or(|known| score > quality(known)) {
+        if best.is_none_or(|known| score > rank(known)) {
             best = Some(lyrics);
         }
-        if score == 3
+        if score == 2
             && (!apple_listed || apple_tried)
             && let Some(pick) = best
         {
@@ -309,7 +295,7 @@ fn pick_best(
                 continue;
             }
         };
-        let score = quality(&lyrics);
+        let score = rank(&lyrics);
         if score == 0 {
             continue;
         }
@@ -319,7 +305,7 @@ fn pick_best(
         if preferred_source(source) {
             preferred = true;
         }
-        if best.as_ref().is_none_or(|known| score > quality(known)) {
+        if best.as_ref().is_none_or(|known| score > rank(known)) {
             best = Some(lyrics);
         }
     }
@@ -1067,7 +1053,7 @@ mod tests {
     }
 
     #[test]
-    fn best_source_wins_by_quality_then_order() {
+    fn first_timed_source_in_order_wins() {
         let order: Vec<String> = ["spicy", "musixmatch", "lrclib"].map(String::from).to_vec();
         let pick = |spicy: Lyrics, musixmatch: Lyrics| {
             fetch_best(
@@ -1081,12 +1067,14 @@ mod tests {
             )
             .unwrap()
         };
-        // Line-synced Spicy loses to word-synced Musixmatch.
+        // Line-synced Spicy, listed first, beats word-synced Musixmatch.
         assert!(
-            !pick(timed(false, true), timed(true, true)).lines[0]
+            pick(timed(false, true), timed(true, true)).lines[0]
                 .words
                 .is_empty()
         );
+        // Timed Musixmatch beats plain Spicy.
+        assert!(pick(timed(false, false), timed(true, true)).synced);
         // A preferred source's answer stops LRCLIB being used.
         assert!(
             pick(timed(false, true), Lyrics::default()).lines[0]
@@ -1169,7 +1157,7 @@ mod tests {
     }
 
     #[test]
-    fn apple_quality_wins_ties_with_gaps_when_preferred() {
+    fn prioritized_apple_wins_whenever_timed() {
         let order: Vec<String> = ["spicy", "apple"].map(String::from).to_vec();
         let pick = |prefer: bool, apple: Lyrics| {
             fetch_best(
@@ -1183,18 +1171,14 @@ mod tests {
             .unwrap()
             .source
         };
-        assert!(has_line_gaps(&gapped("apple", 400)));
-        assert!(!has_line_gaps(&gapped("apple", 0)));
-        assert!(!has_line_gaps(&gapped("apple", 6000)));
-        // Word-synced Spicy waits for Apple, which wins a tie with gaps.
+        // Spicy, listed first, waits for Apple, which wins when prioritized.
         assert_eq!(pick(true, gapped("apple", 400)), "apple");
+        assert_eq!(pick(true, gapped("apple", 0)), "apple");
         assert_eq!(pick(false, gapped("apple", 400)), "spicy");
-        // Without gaps the earlier source keeps the tie.
-        assert_eq!(pick(true, gapped("apple", 0)), "spicy");
-        // Line-synced Apple never beats word-synced Spicy.
+        // Line-synced Apple still beats word-synced Spicy.
         let mut lines = gapped("apple", 400);
         lines.lines.iter_mut().for_each(|line| line.words.clear());
-        assert_eq!(pick(true, lines), "spicy");
+        assert_eq!(pick(true, lines), "apple");
     }
 
     #[test]

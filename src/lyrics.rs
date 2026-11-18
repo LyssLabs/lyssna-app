@@ -1054,17 +1054,26 @@ impl SourceCache {
             .ok()
             .and_then(|modified| modified.elapsed().ok())
             .is_some_and(|age| age < std::time::Duration::from_secs(3 * 86_400));
+        let saved = || {
+            fs::read(&file)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Lyrics>(&bytes).ok())
+        };
         // Offline, any saved answer will do until the sources reply.
         if (fresh || !self.network)
-            && let Ok(bytes) = fs::read(&file)
-            && let Ok(lyrics) = serde_json::from_slice::<Lyrics>(&bytes)
+            && let Some(lyrics) = saved()
         {
             return Ok(lyrics);
         }
         if !self.network {
             return Err(crate::lyric_sources::Unreachable("Offline and not saved".into()).into());
         }
-        let lyrics = fetch()?;
+        // A source that fails keeps its last answer, so the pick does not
+        // fall to a lower source until it answers again.
+        let lyrics = match fetch() {
+            Ok(lyrics) => lyrics,
+            Err(error) => return saved().ok_or(error),
+        };
         if fs::create_dir_all(&cache).is_ok() {
             let _ = fs::write(file, serde_json::to_vec(&lyrics)?);
         }
@@ -1318,6 +1327,38 @@ mod tests {
         assert!(import_with_mode("song.txt", "x", &track, ImportMode::Session).is_err());
         let _ = fs::remove_dir_all(directory);
     }
+    #[test]
+    fn a_failing_source_keeps_its_stale_answer() {
+        let root = std::env::temp_dir().join(format!("lyssna-stale-cache-{}", std::process::id()));
+        let cache = SourceCache {
+            root: root.clone(),
+            key: "song".into(),
+            network: true,
+        };
+        let failing = || Err(anyhow::anyhow!("denied"));
+        assert!(cache.get("provider", &failing).is_err());
+        let answer = || {
+            Ok(Lyrics {
+                source: "apple_music".into(),
+                ..Lyrics::default()
+            })
+        };
+        cache.get("provider", &answer).unwrap();
+        let file = root.join("cache").join("provider").join("song.json");
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(4 * 86_400);
+        fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert_eq!(
+            cache.get("provider", &failing).unwrap().source,
+            "apple_music"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn forgetting_cached_lyrics_clears_every_source_for_that_song_only() {
         let directory =

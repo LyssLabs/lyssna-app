@@ -1648,7 +1648,7 @@ export function SettingsWindow({
         flag(
           "lyrics_prefer_apple",
           "Prioritize Apple Music quality",
-          "Use Apple Music's lyrics when they are better timed than the chosen source, or as well timed with real pauses between lines.",
+          "Use Apple Music's timed lyrics whenever it has them, even over sources listed above it.",
           "apple music quality priority source",
         ),
         flag(
