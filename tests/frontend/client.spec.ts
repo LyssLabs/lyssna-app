@@ -17835,7 +17835,13 @@ test("TTML Creator can bring back separate Lyrics, Sync and Preview tabs", async
   await help.getByRole("button", { name: "Close controls" }).click();
   const tab = (name: string) => creator.getByRole("tab", { name });
   await expect(tab("Lyrics")).toHaveAttribute("aria-selected", "true");
-  await expect(creator.getByRole("toolbar", { name: "Edit lyrics" })).toBeVisible();
+  // The Lyrics tab edits words as chips, with no timing in sight.
+  await expect(
+    creator.getByRole("button", { name: "Continue to Sync" }),
+  ).toBeVisible();
+  await expect(creator.locator(".ttml-chip").first()).toBeVisible();
+  await expect(creator.locator(".ttml-lines .ttml-pill")).toHaveCount(0);
+  await expect(creator.getByRole("toolbar", { name: "Edit lyrics" })).toHaveCount(0);
   await expect(creator.locator(".ttml-transport")).toHaveCount(0);
   await tab("Sync").click();
   await expect(creator.locator(".ttml-transport")).toBeVisible();
@@ -17879,6 +17885,19 @@ test("TTML Creator can bring back separate Lyrics, Sync and Preview tabs", async
     mimeType: "application/ttml+xml",
     buffer: Buffer.from("<tt></tt>"),
   });
+  await creator.locator(".ttml-chip", { hasText: "second" }).click();
+  await page.keyboard.press("Enter");
+  const edit = creator.locator(".ttml-chip-edit");
+  await expect(edit).toBeFocused();
+  await page.keyboard.type("2nd");
+  await page.keyboard.press("Enter");
+  await expect(creator.locator(".ttml-chip", { hasText: "2nd" })).toHaveCount(1);
+  await creator.locator(".ttml-chip", { hasText: "2nd" }).click();
+  await page.keyboard.press("Backspace");
+  await expect(creator.locator(".ttml-chip", { hasText: "2nd" })).toHaveCount(0);
+  await page.keyboard.press("Control+z");
+  await expect(creator.locator(".ttml-chip", { hasText: "2nd" })).toHaveCount(1);
+  await creator.locator(".ttml-chip", { hasText: "first" }).click();
   await tab("Sync").click();
   await expect(creator.locator(".ttml-line.current")).toHaveAttribute(
     "data-line",
