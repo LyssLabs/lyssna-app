@@ -83,6 +83,7 @@ fn timestamp(value: &str) -> Option<u64> {
     } else {
         let parts: Vec<_> = value.split(':').collect();
         match parts.as_slice() {
+            [seconds] => seconds.parse::<f64>().ok()?,
             [minutes, seconds] => {
                 minutes.parse::<f64>().ok()? * 60.0 + seconds.parse::<f64>().ok()?
             }
@@ -117,7 +118,10 @@ pub fn parse_lrc(source: &str, duration_ms: u64) -> Result<Lyrics> {
             let Some(end) = start.find(']') else {
                 break;
             };
-            if let Some(time) = timestamp(&start[..end]) {
+            let tag = &start[..end];
+            if let Some(time) = timestamp(tag)
+                .filter(|_| !tag.trim().ends_with(char::is_numeric) || tag.contains(':'))
+            {
                 times.push(time.saturating_add_signed(offset));
             }
             remainder = &start[end + 1..];
@@ -185,15 +189,16 @@ fn node_text(node: roxmltree::Node<'_, '_>, skip_annotations: bool) -> String {
         .collect::<String>()
 }
 
-/// Common lyric TTML uses absolute clock times. Offset values like `500ms`
-/// within a paragraph are relative to that paragraph's begin time.
+/// Common lyric TTML uses absolute clock times, some (lrc.red) plain seconds
+/// like `5.050`. Offset values with a unit like `500ms` within a paragraph
+/// are relative to that paragraph's begin time.
 fn child_time(node: roxmltree::Node<'_, '_>, name: &str, parent_start: u64) -> Option<u64> {
     let value = attribute(node, name)?;
     timestamp(value).map(|time| {
-        if value.contains(':') {
-            time
-        } else {
+        if value.trim().ends_with('s') {
             parent_start.saturating_add(time)
+        } else {
+            time
         }
     })
 }
@@ -1026,7 +1031,8 @@ fn fetch_from(
                 crate::lyric_sources::spotify(&native, &track)
             }),
             "lrclib" => cache.get("lrclib", &|| crate::lyric_sources::lrclib(&client, &track)),
-            "lrcred" => cache.get("lrcred", &|| {
+            // Renamed when parsing changed: saved answers had dropped lines.
+            "lrcred" => cache.get("lrcred-2", &|| {
                 crate::lyric_sources::lrc_red(&client, &native, &track)
             }),
             "netease" => cache.get("netease", &|| {
@@ -1198,6 +1204,19 @@ mod tests {
         assert_eq!(lyrics.active_line(2500), Some(0));
         assert_eq!(lyrics.active_line(4000), Some(0));
         assert_eq!(lyrics.active_line(5000), None);
+    }
+
+    #[test]
+    fn ttml_takes_plain_seconds_as_absolute_times() {
+        let ttml = r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="5.050" end="5.717">POP IN</p><p begin="59.5" end="1:00.217"><span begin="59.5" end="59.9">Late</span> <span begin="59.9" end="1:00.217">line</span></p><p begin="1:00.227" end="1:01.453">After</p></div></body></tt>"#;
+        let lyrics = parse_ttml(ttml, 90_000).unwrap();
+        let times: Vec<_> = lyrics
+            .lines
+            .iter()
+            .map(|line| (line.start_ms, line.end_ms))
+            .collect();
+        assert_eq!(times, [(5050, 5717), (59_500, 60_217), (60_227, 61_453)]);
+        assert_eq!(lyrics.lines[1].words[0].start_ms, 59_500);
     }
 
     #[test]
