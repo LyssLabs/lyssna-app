@@ -606,6 +606,7 @@ export interface NightlyStep {
 
 export interface NightlyReport {
   steps: NightlyStep[];
+  mode: "install" | "stage";
   running: boolean;
   error: string | null;
   /** Why it ended without installing, as when already up to date. */

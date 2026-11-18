@@ -756,12 +756,12 @@ function App() {
     },
     [notify],
   );
-  // A Nightly copy gets a button that looks for newer Nightly code.
   const [nightlyCommit, setNightlyCommit] = useState<string | null>(null);
   const [linkSignal, setLinkSignal] = useState(0);
-  // The first Nightly build, started from Settings, shows on the top bar
-  // from the moment it is confirmed; clicking it shows its progress.
-  const switchingToNightly = !nightlyCommit && !!state.nightly?.running;
+  const followingNightly = state.settings.update_channel === "nightly";
+  // Builds started from Settings show their progress in the Nightly dialog.
+  const installingNightly =
+    state.nightly?.running && state.nightly.mode === "install";
   const [firstBuildOpen, setFirstBuildOpen] = useState(false);
   const [checkingNightly, setCheckingNightly] = useState(false);
   useEffect(() => {
@@ -3567,16 +3567,19 @@ function App() {
           </div>
         </div>
         <div className="top-actions">
-          {((nightlyCommit && state.settings.update_channel === "nightly") ||
-            switchingToNightly) && (
+          {(followingNightly || installingNightly) && (
             <NightlyButton
-              status={state.update_status}
+              status={
+                !installingNightly && state.update_version?.startsWith("Nightly ")
+                  ? state.update_status
+                  : ""
+              }
               report={state.nightly}
               checking={checkingNightly}
               automatic={state.settings.auto_download_updates}
               onCheck={() => void checkNightly()}
               onShow={() =>
-                switchingToNightly
+                installingNightly
                   ? setFirstBuildOpen(true)
                   : window.dispatchEvent(new Event("lyssna:show-update"))
               }
@@ -6522,7 +6525,7 @@ function App() {
         enabled={sessionScreen(state) !== "restoring"}
         current={nightlyCommit}
       />
-      {firstBuildOpen && switchingToNightly && (
+      {firstBuildOpen && installingNightly && (
         <NightlyDialog
           report={state.nightly ?? null}
           starting={false}

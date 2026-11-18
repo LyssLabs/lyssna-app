@@ -6128,6 +6128,17 @@ input[type="range"]:hover {
   z-index: -1;
   mask-image: none;
 }
+/* Filter the backdrop in CSS on macOS. Extend it beyond the clipped page
+   so the blur has pixels to sample along each visible edge. */
+.lyrics-canvas-backdrop[data-css-blur] {
+  --canvas-blur: clamp(16px, 5cqw, 80px);
+  --canvas-bleed: calc(3 * var(--canvas-blur));
+  right: calc(-1 * var(--canvas-bleed));
+  top: calc(-1 * var(--canvas-bleed));
+  width: calc(100% + 2 * var(--canvas-bleed));
+  height: calc(100% + 2 * var(--canvas-bleed));
+  filter: blur(var(--canvas-blur)) saturate(2.5) brightness(0.65);
+}
 .lyrics-canvas-cover::after {
   content: "";
   position: absolute;

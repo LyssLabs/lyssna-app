@@ -107,9 +107,10 @@ On macOS, install the Xcode Command Line Tools, Rustup, Node.js 24 and CMake (`b
 
 By default each script requires a clean worktree, switches to `main`, fast-forwards from `origin/main`, restores npm dependencies, and builds a release. It installs the Rust version that `Cargo.toml` requires unless `RUSTUP_TOOLCHAIN` is set, and restores your original branch afterwards, including on failure. Nothing is pushed, and credentials and app data are left alone.
 
-- **Windows** installs to `%LOCALAPPDATA%\Programs\Lyssna\lyssna.exe`, closes a running copy first, and starts the new one. `-NoLaunch` installs without starting it. Builds from this script turn automatic updates off; run it again to update. If PowerShell blocks the script, use `powershell -ExecutionPolicy Bypass -File .\build.ps1`. The script finds Visual Studio's bundled CMake and LLVM's default folder; otherwise put CMake on `PATH` and set `LIBCLANG_PATH` to the folder that contains `libclang.dll`.
+- **Windows** installs to `%LOCALAPPDATA%\Programs\Lyssna\lyssna.exe`, closes a running copy first, and starts the new one. `-NoLaunch` installs without starting it. Run the script again to update a local build on the Stable channel. If PowerShell blocks the script, use `powershell -ExecutionPolicy Bypass -File .\build.ps1`. The script finds Visual Studio's bundled CMake and LLVM's default folder; otherwise put CMake on `PATH` and set `LIBCLANG_PATH` to the folder that contains `libclang.dll`.
 - **macOS** signs the bundle with a reusable self-signed certificate (an explicit `APPLE_SIGNING_IDENTITY` or `APPLE_CERTIFICATE` takes precedence, and `LYSSNA_ADHOC_SIGNING=1` opts out), replaces `/Applications/Lyssna.app` (and removes an old `/Applications/Lyssna.app`) and opens it. Credentials live encrypted under `~/Library/Application Support/Lyssna/credentials/`; keep `device.key` with them when backing up.
 - `.\build.ps1 <branch>` or `./build.sh <branch>` builds another branch; a commit hash builds that commit.
+- Both scripts record the checkout's commit so Lyssna can compare it with the latest Nightly when Nightly is selected.
 
 To build by hand:
 

@@ -43,22 +43,22 @@ export function LyricsCanvas({
       });
     if (!element || !canvas || !context) return;
     const root = element.closest<HTMLElement>(".lyrics-page"),
-      cover = element.parentElement!;
+      cover = element.parentElement;
+    if (!root || !cover) return;
     const resize = () => {
       if (element.videoWidth)
         cover.style.aspectRatio = `${element.videoWidth}/${element.videoHeight}`;
-      const box = root?.getBoundingClientRect();
-      if (!box) return;
-      root!.style.setProperty(
+      root.style.setProperty(
         "--canvas-sharp-edge",
         `${cover.getBoundingClientRect().width}px`,
       );
-      // Spicy Lyrics' backdrop: an 80px frame, blurred there so the blur costs
-      // a few thousand pixels instead of a full-page filter. CSS stretches it.
+      // Keep frame copies small and match the backdrop's displayed aspect ratio.
       const width = AMBIENT_WIDTH;
       const height = Math.max(
         1,
-        Math.round((width * box.height) / Math.max(1, box.width)),
+        Math.round(
+          (width * canvas.clientHeight) / Math.max(1, canvas.clientWidth),
+        ),
       );
       if (canvas.width !== width || canvas.height !== height) {
         // Resizing clears the canvas and its filter. A paused video draws no
@@ -79,7 +79,7 @@ export function LyricsCanvas({
       primed = false;
     resize();
     const observer = new ResizeObserver(resize);
-    if (root) observer.observe(root);
+    observer.observe(root);
     observer.observe(cover);
     element.addEventListener("loadedmetadata", resize);
     const draw = (now: number) => {
@@ -104,7 +104,7 @@ export function LyricsCanvas({
           width = element.videoWidth * scale,
           height = element.videoHeight * scale;
         context.imageSmoothingEnabled = true;
-        context.filter = IS_MAC ? "none" : AMBIENT_FILTER;
+        if (!IS_MAC) context.filter = AMBIENT_FILTER;
         // Blending into the previous frame keeps the glow from flickering
         // with fast cuts.
         context.globalAlpha = primed ? 0.3 : 1;
@@ -117,11 +117,6 @@ export function LyricsCanvas({
         );
         context.globalAlpha = 1;
         primed = true;
-        // WebKit has no canvas filters, so the Mac backdrop is only darkened.
-        if (IS_MAC) {
-          context.fillStyle = "rgba(0, 0, 0, 0.35)";
-          context.fillRect(0, 0, canvas.width, canvas.height);
-        }
       }
       if (element.isConnected && !element.paused && !element.ended)
         frame = requestAnimationFrame(draw);

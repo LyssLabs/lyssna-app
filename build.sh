@@ -96,10 +96,11 @@ main() {
     rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
   fi
 
-  printf 'Building %s with Rust %s.\n' "$(git rev-parse --short HEAD)" "$RUSTUP_TOOLCHAIN"
+  source_commit="$(git rev-parse --verify HEAD)"
+  printf 'Building %.7s with Rust %s.\n' "$source_commit" "$RUSTUP_TOOLCHAIN"
   export npm_config_loglevel="${npm_config_loglevel:-${NPM_CONFIG_LOGLEVEL:-warn}}"
   npm ci --no-audit --no-fund
-  npm run desktop:build -- -- --locked
+  LYSSNA_SOURCE_COMMIT="$source_commit" npm run desktop:build -- -- --locked
 }
 
 # Parse the complete build routine before checkout/pull can replace this file.

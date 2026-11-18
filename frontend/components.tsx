@@ -1,5 +1,6 @@
 import { contextName } from "./playing-context";
 import { fillFromKnown, knownTracks } from "./queue-fill";
+import { IS_MAC } from "./platform";
 import {
   memo,
   Fragment,
@@ -2164,6 +2165,7 @@ function SongLyricsPage({
       {canvas && background !== "none" && (
         <canvas
           className="lyrics-canvas-backdrop"
+          data-css-blur={IS_MAC || undefined}
           ref={backdrop}
           width={128}
           height={128}

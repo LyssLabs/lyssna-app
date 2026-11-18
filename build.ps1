@@ -317,13 +317,15 @@ try {
         Invoke-Checked rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal --no-self-update
     }
 
-    $shortCommit = (Invoke-Git rev-parse --short HEAD | Select-Object -First 1).Trim()
+    $sourceCommit = (Invoke-Git rev-parse --verify HEAD | Select-Object -First 1).Trim()
+    $shortCommit = $sourceCommit.Substring(0, 7)
     Write-Host "Building $shortCommit with Rust $env:RUSTUP_TOOLCHAIN."
     Invoke-Checked npm ci --no-audit --no-fund
     Invoke-Checked npm run build
-    # Marks the executable as a local build, so the updater never replaces
-    # it with a release. Rebuild with this script to update.
+    # Keep Stable releases from replacing this build. Nightly checks use its commit.
     $env:LYSSNA_LOCAL_BUILD = '1'
+    $previousSourceCommit = $env:LYSSNA_SOURCE_COMMIT
+    $env:LYSSNA_SOURCE_COMMIT = $sourceCommit
     $builtExe = Join-Path $repoRoot 'target\release\lyssna.exe'
     $targetDirectory = Join-Path $repoRoot 'target'
     try {
@@ -349,6 +351,7 @@ try {
     }
     finally {
         Remove-Item Env:LYSSNA_LOCAL_BUILD -ErrorAction SilentlyContinue
+        $env:LYSSNA_SOURCE_COMMIT = $previousSourceCommit
     }
 
     if (-not (Test-Path -LiteralPath $builtExe)) {

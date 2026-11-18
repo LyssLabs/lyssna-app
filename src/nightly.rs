@@ -148,6 +148,11 @@ pub const COMMIT: Option<&str> = match option_env!("LYSSNA_NIGHTLY") {
     // Set by Nightly copies from before the rename that build this source.
     None => option_env!("SPOTIFLEX_NIGHTLY"),
 };
+/// The source commit used for Nightly update checks, including local builds.
+const SOURCE_COMMIT: Option<&str> = match COMMIT {
+    Some(commit) => Some(commit),
+    None => option_env!("LYSSNA_SOURCE_COMMIT"),
+};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -181,6 +186,7 @@ pub struct Step {
 #[derive(Clone, Serialize)]
 pub struct Report {
     pub steps: Vec<Step>,
+    pub mode: Mode,
     pub running: bool,
     pub error: Option<String>,
     /// Shown when the build ended without a new version to install.
@@ -201,7 +207,8 @@ pub enum Outcome {
 
 /// Whether a build replaces this copy at once, as when switching to
 /// Nightly, or waits until the user chooses to restart.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Mode {
     Install,
     Stage,
@@ -326,21 +333,18 @@ pub fn check(build: bool) -> Result<Status> {
     if !nightly {
         return Ok(Status::Message("Not following Nightly".into()));
     }
-    let Some(current) = COMMIT else {
-        let message = "Use Build latest in Settings to start Nightly";
-        status(Status::Message(message.into()));
-        return Ok(Status::Message(message.into()));
-    };
     if RUNNING.load(Ordering::SeqCst) {
         return Ok(Status::Building);
     }
     let client = client()?;
     let latest = latest_commit(&client)?;
-    if latest == current {
+    if SOURCE_COMMIT == Some(latest.as_str()) {
         status(Status::Current);
         return Ok(Status::Current);
     }
-    remember_changes(&client, current, &latest);
+    if let Some(current) = SOURCE_COMMIT {
+        remember_changes(&client, current, &latest);
+    }
     if ready().as_deref() == Some(latest.as_str()) {
         status(Status::Ready(latest.clone()));
         return Ok(Status::Ready(latest));
@@ -555,6 +559,7 @@ impl<F: Fn(&Report)> Run<F> {
         self.last_sent = Instant::now();
         let report = Report {
             steps: self.steps.clone(),
+            mode: self.mode,
             running: self.running,
             error: self.error.clone(),
             note: self.note.clone(),
