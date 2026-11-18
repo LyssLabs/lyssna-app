@@ -156,6 +156,27 @@
 .ttml-write textarea:focus {
   border-color: #ffffff40;
 }
+.ttml-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.ttml-creator .ttml-sources button {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  text-align: left;
+}
+.ttml-sources svg {
+  grid-row: span 2;
+}
+.ttml-sources small {
+  color: #ffffff99;
+  font-size: 12px;
+}
 .ttml-write-actions {
   display: flex;
   flex-wrap: wrap;

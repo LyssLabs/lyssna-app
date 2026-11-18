@@ -349,7 +349,12 @@ pub fn check(build: bool) -> Result<Status> {
     let checkout_matches = checkout == Some(current);
     if latest == current
         || (checkout_matches && history.any(|commit| commit == latest))
-        || !available_update(&client, current, &latest, checkout_matches && complete_history)?
+        || !available_update(
+            &client,
+            current,
+            &latest,
+            checkout_matches && complete_history,
+        )?
     {
         status(Status::Current);
         return Ok(Status::Current);

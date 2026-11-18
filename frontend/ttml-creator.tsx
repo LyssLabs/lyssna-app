@@ -31,6 +31,7 @@ import {
   Languages,
   Undo2,
   Wand2,
+  Globe,
   X,
 } from "lucide-react";
 import { Cover, usePlaybackClock } from "./components";
@@ -654,6 +655,36 @@ export function TtmlCreator({
   }, []);
 
   const [textMode, setTextMode] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const geniusFor = useRef(track?.uri);
+  geniusFor.current = track?.uri;
+  const fromGenius = () => {
+    if (!track || fetching) return;
+    const asked = track.uri;
+    setFetching(true);
+    rpc<string>("genius_lyrics", { track })
+      .then((found) => {
+        if (geniusFor.current !== asked) return;
+        // Lands in the text editor, so nothing is replaced until Done.
+        editedFor.current = asked;
+        setText(found);
+        setTextMode(true);
+      })
+      .catch((error) =>
+        notify(`Couldn't get lyrics from Genius: ${error}`, true),
+      )
+      .finally(() => setFetching(false));
+  };
+  const geniusButton = (
+    <button
+      onClick={fromGenius}
+      disabled={!track || fetching}
+      title="Plain lyrics from Genius, without timing. Sends the title and artist to Genius."
+    >
+      <Globe size={15} />
+      {fetching ? "Getting lyrics…" : "Lyrics from Genius"}
+    </button>
+  );
   const [previewOn, setPreviewOn] = useState(showsPreview);
   useEffect(() => {
     if (track) showLive(track.uri, lines);
@@ -2183,6 +2214,25 @@ export function TtmlCreator({
 
       {(textMode || !lines.length) && (
         <div className="ttml-write">
+          {!lines.length && !text.trim() && (
+            <div className="ttml-sources" role="group" aria-label="Start from">
+              <button
+                onClick={startFromLyrics}
+                disabled={!here || !state.lyrics?.lines.length}
+              >
+                <Wand2 size={20} />
+                <strong>Current lyrics</strong>
+                <small>The lyrics Lyssna found for this song</small>
+              </button>
+              <button onClick={fromGenius} disabled={!track || fetching}>
+                <Globe size={20} />
+                <strong>
+                  {fetching ? "Getting lyrics…" : "Lyrics from Genius"}
+                </strong>
+                <small>Plain lyrics without timing, by title and artist</small>
+              </button>
+            </div>
+          )}
           <p className="ttml-hint">
             One lyric line per line. Split a word into syllables with{" "}
             <kbd>|</kbd>, like <code>beau|ti|ful</code>. Wrap a background vocal
@@ -2203,14 +2253,19 @@ export function TtmlCreator({
           />
           <div className="ttml-write-actions">
             {previewToggle}
-            <button
-              onClick={startFromLyrics}
-              disabled={!here || !state.lyrics?.lines.length}
-              title="Use the lyrics Lyssna found for this song as a start"
-            >
-              <Wand2 size={15} />
-              Start from current lyrics
-            </button>
+            {(lines.length > 0 || !!text.trim()) && (
+              <>
+                <button
+                  onClick={startFromLyrics}
+                  disabled={!here || !state.lyrics?.lines.length}
+                  title="Use the lyrics Lyssna found for this song as a start"
+                >
+                  <Wand2 size={15} />
+                  Start from current lyrics
+                </button>
+                {geniusButton}
+              </>
+            )}
             <label
               className="ttml-import"
               title="TTML, LRC, QRC, YRC, Lyricify Syllable or ESLyric"
@@ -2336,6 +2391,7 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
+                {geniusButton}
                 <button onClick={openText}>
                   <Type size={15} />
                   Edit as text
@@ -2458,6 +2514,7 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
+                {geniusButton}
                 <button onClick={openText}>
                   <Type size={15} />
                   Edit as text

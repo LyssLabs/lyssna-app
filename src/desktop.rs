@@ -3229,6 +3229,15 @@ async fn creator_prepare(
     .map_err(error)
 }
 #[tauri::command]
+async fn genius_lyrics(track: Track) -> std::result::Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::genius::lyrics(&crate::auth::http_client()?, &track)
+    })
+    .await
+    .map_err(|_| "Genius lookup unavailable".to_owned())?
+    .map_err(error)
+}
+#[tauri::command]
 fn creator_volume(volume: u8) {
     crate::creator_stream::set_volume(volume);
 }
@@ -6401,6 +6410,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             stop_clip,
             creator_play,
             creator_prepare,
+            genius_lyrics,
             creator_volume,
             test_audio_output,
             refresh,

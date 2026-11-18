@@ -24,6 +24,7 @@ pub mod credential;
 pub mod desktop;
 pub mod discord;
 pub mod dj;
+pub mod genius;
 pub mod home;
 pub mod jam;
 pub mod library_cache;
