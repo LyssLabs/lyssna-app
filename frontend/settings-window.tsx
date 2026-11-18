@@ -362,7 +362,7 @@ export function SettingsWindow({
       />
     </SettingRow>
   );
-  /** A slider row; `off` dims it while the option it tunes is turned off. */
+  /** A slider row; `off` hides it while the option it tunes is turned off. */
   const range = (
     key: Amount,
     label: string,
@@ -373,10 +373,11 @@ export function SettingsWindow({
     unit = "",
     off = false,
   ) => {
+    if (off) return null;
     const value = settings[key] ?? fallback;
     return (
       <SettingRow key={key} label={label} help={help} keywords={keywords}>
-        <span className={`settings-range ${off ? "off" : ""}`}>
+        <span className="settings-range">
           <input
             type="range"
             aria-label={label}
@@ -384,7 +385,6 @@ export function SettingsWindow({
             max={max}
             step={step}
             value={value}
-            disabled={off}
             style={
               {
                 "--fill": `${Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100))}%`,
@@ -1238,17 +1238,19 @@ export function SettingsWindow({
           "Visualiser",
           "Show bars that move with the music behind the lyrics, coloured by the album cover.",
           "visualiser visualizer bars spectrum equalizer audio",
+          soloistPlays,
         ),
-        range(
-          "lyrics_visualiser_opacity",
-          "Visualiser opacity",
-          "How strongly the visualiser bars show behind the lyrics.",
-          "visualiser visualizer opacity transparency bars",
-          [5, 100, 5],
-          40,
-          "%",
-          !settings.lyrics_visualiser,
-        ),
+        settings.lyrics_visualiser && !soloistPlays
+          ? range(
+              "lyrics_visualiser_opacity",
+              "Visualiser opacity",
+              "How strongly the visualiser bars show behind the lyrics.",
+              "visualiser visualizer opacity transparency bars",
+              [5, 100, 5],
+              40,
+              "%",
+            )
+          : null,
         flag(
           "lyrics_keep_overlaps",
           "Keep overlapping lines",

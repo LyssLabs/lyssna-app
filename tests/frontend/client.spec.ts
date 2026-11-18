@@ -514,9 +514,45 @@ test("the lyrics visualiser is off by default and draws tinted bars when on", as
   await expect(page.locator(".lyrics-visualiser")).toHaveCount(0);
   await openSettings(page, "Lyrics");
   const dialog = page.getByRole("dialog", { name: "Lyssna settings" });
+  // Opacity shows only while the visualiser is on.
+  await expect(
+    dialog.getByRole("slider", { name: "Visualiser opacity" }),
+  ).toHaveCount(0);
+  await page.evaluate(
+    (settings) =>
+      (window as any).__clientTest.emit({
+        type: "settings",
+        settings: {
+          ...settings,
+          lyrics_visualiser: true,
+          lyrics_visualiser_opacity: 55,
+        },
+      }),
+    emptyState.settings,
+  );
   await expect(
     dialog.getByRole("slider", { name: "Visualiser opacity" }),
   ).toBeVisible();
+  // Spotify Soloist plays outside Lyssna, so there is nothing to draw.
+  await page.evaluate(
+    (settings) =>
+      (window as any).__clientTest.emit({
+        type: "settings",
+        settings: {
+          ...settings,
+          soloist: true,
+          lyrics_visualiser: true,
+          lyrics_visualiser_opacity: 55,
+        },
+      }),
+    emptyState.settings,
+  );
+  await expect(
+    dialog.locator(".setting-row.unavailable", { hasText: "Visualiser" }),
+  ).toHaveCount(1);
+  await expect(
+    dialog.getByRole("slider", { name: "Visualiser opacity" }),
+  ).toHaveCount(0);
   await page.evaluate(
     (settings) =>
       (window as any).__clientTest.emit({
@@ -12803,7 +12839,7 @@ test("What's New waits for the session when the app opens on it", async ({
   await expect(feed).toContainText("Late Release");
 });
 
-test("Early scroll is on at 200 ms; its time turns off with it and saves", async ({
+test("Early scroll is on at 200 ms; its time hides with it and saves", async ({
   page,
 }) => {
   await startClient(page);
@@ -12817,7 +12853,7 @@ test("Early scroll is on at 200 ms; its time turns off with it and saves", async
   await expect(slider).toBeEnabled();
   await expect(slider).toHaveValue("200");
   await toggle.click();
-  await expect(slider).toBeDisabled();
+  await expect(slider).toHaveCount(0);
   await toggle.click();
   await expect(slider).toBeEnabled();
   await slider.fill("500");
@@ -13800,7 +13836,7 @@ test("lyrics can sit over the cover, the artist's header or nothing", async ({
   await openSettings(page, "Lyrics");
   const select = page.getByLabel("Lyrics background", { exact: true });
   const blur = page.getByLabel("Background blur", { exact: true });
-  await expect(blur).toBeDisabled();
+  await expect(blur).toHaveCount(0);
   await select.selectOption("cover");
   await blur.fill("20");
   await page.getByRole("button", { name: "Close settings" }).click();
@@ -13839,7 +13875,7 @@ test("animation frame rate can be capped", async ({ page }) => {
   await startClient(page);
   await openSettings(page, "Appearance");
   const rate = page.getByLabel("Animation frame rate", { exact: true });
-  await expect(rate).toBeDisabled();
+  await expect(rate).toHaveCount(0);
   await page
     .getByRole("switch", { name: "Limit animation frame rate" })
     .click();
