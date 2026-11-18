@@ -18882,7 +18882,7 @@ test("TTML Creator imports and exports other lyric formats", async ({
   );
 });
 
-test("TTML Creator exports Spicy Lyrics only after 10 lines are edited", async ({
+test("TTML Creator never starts from Spicy Lyrics or Apple Music lyrics", async ({
   page,
 }) => {
   await startClient(page);
@@ -18927,23 +18927,15 @@ test("TTML Creator exports Spicy Lyrics only after 10 lines are edited", async (
     .getByTitle("TTML Creator", { exact: true })
     .click();
   const creator = page.getByRole("region", { name: "TTML Creator" });
-  const cards = creator.locator(".ttml-card");
-  await expect(cards).toHaveCount(30);
-  await creator.locator(".ttml-export > button").click();
-  await expect(page.getByText(/edit or retime 10 more lines/)).toBeVisible();
-  await expect(creator.getByRole("menu")).toHaveCount(0);
-  for (let index = 0; index < 10; index++) {
-    await cards
-      .nth(index)
-      .getByRole("button", { name: "lyric", exact: true })
-      .click();
-    await page.keyboard.press("F2");
-    const field = creator.getByLabel("Selected word", { exact: true });
-    await field.fill("song");
-    await field.press("Enter");
-  }
-  await creator.locator(".ttml-export > button").click();
-  await expect(creator.getByRole("menu")).toBeVisible();
+  await expect(creator).toBeVisible();
+  await expect(creator.locator(".ttml-card")).toHaveCount(0);
+  const current = creator
+    .getByRole("group", { name: "Start from" })
+    .getByRole("button", { name: /Current lyrics/ });
+  await expect(current).toBeDisabled();
+  await expect(current).toContainText(
+    "Spicy Lyrics and Apple Music lyrics can't be used as a starting point",
+  );
 });
 
 test("TTML Creator saves drafts with a time and keeps versions", async ({
