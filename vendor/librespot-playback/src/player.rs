@@ -58,6 +58,8 @@ pub type PlayerResult = Result<(), Error>;
 /// Output speed in percent, set by a sink that time-stretches; slowed audio is not lag.
 pub static PLAYBACK_RATE_PERCENT: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(100);
+/// Streaming quality in kbps, read at each song's load; 0 keeps the config's.
+pub static BITRATE_KBPS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 fn playback_rate() -> f64 {
     f64::from(
         PLAYBACK_RATE_PERCENT
@@ -1332,7 +1334,13 @@ impl PlayerTrackLoader {
         );
 
         // (Most) podcasts seem to support only 96 kbps Ogg Vorbis, so fall back to it
-        let formats = match self.config.bitrate {
+        let bitrate = match BITRATE_KBPS.load(std::sync::atomic::Ordering::Relaxed) {
+            96 => Bitrate::Bitrate96,
+            160 => Bitrate::Bitrate160,
+            320 => Bitrate::Bitrate320,
+            _ => self.config.bitrate,
+        };
+        let formats = match bitrate {
             Bitrate::Bitrate96 => [
                 AudioFileFormat::OGG_VORBIS_96,
                 AudioFileFormat::MP3_96,

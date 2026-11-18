@@ -238,6 +238,8 @@ export interface Settings {
   cinema_lyrics?: boolean;
   crossfade?: boolean;
   crossfade_seconds?: number;
+  audio_quality?: AudioQuality;
+  download_quality?: AudioQuality;
   crossfade_picked?: boolean;
   soloist?: boolean;
   lyrics_discord_usernames?: boolean;
@@ -618,3 +620,5 @@ export type SoloistStatus =
   | { state: "failed"; message: string };
 
 export type PlaylistPrivacy = { private: boolean; on_profile: boolean };
+
+export type AudioQuality = "normal" | "high" | "very_high";

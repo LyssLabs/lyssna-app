@@ -592,7 +592,19 @@ const CROSSFADE_MS: &str = "audio.crossfade.time_v2";
 // Spotify moved crossfade out of prefs and ignores the key once migrated;
 // clearing the flag makes it migrate the "off" value in again on start.
 const CROSSFADE_MIGRATED: &str = "audio.crossfade_migrated_to_ps";
+const PLAY_BITRATE: &str = "audio.play_bitrate_enumeration";
+const PLAY_BITRATE_UNMETERED: &str = "audio.play_bitrate_non_metered_enumeration";
 const SEEDED_MARKER: &str = ".soloist-prefs-seeded";
+
+static QUALITY: AtomicU8 = AtomicU8::new(4);
+
+/// Lyssna's streaming quality as Spotify's prefs level, applied when Soloist
+/// next starts.
+pub fn set_quality(level: u8) {
+    if QUALITY.swap(level, Ordering::AcqRel) != level {
+        PREFS_CHANGED.store(true, Ordering::Release);
+    }
+}
 
 static CROSSFADE_SECONDS: AtomicU8 = AtomicU8::new(0);
 
@@ -619,17 +631,24 @@ pub fn set_playing(playing: bool) {
 /// Updates `existing` prefs with volume normalization off and crossfade
 /// from Lyssna's setting (0 seconds is off), preserving every other key.
 pub fn merge_prefs(existing: &str) -> String {
-    merge_prefs_with(existing, CROSSFADE_SECONDS.load(Ordering::Acquire))
+    merge_prefs_with(
+        existing,
+        CROSSFADE_SECONDS.load(Ordering::Acquire),
+        QUALITY.load(Ordering::Acquire),
+    )
 }
 
-fn merge_prefs_with(existing: &str, crossfade: u8) -> String {
+fn merge_prefs_with(existing: &str, crossfade: u8, quality: u8) -> String {
     let on = if crossfade > 0 { "true" } else { "false" };
     let length = (u32::from(crossfade.max(1)) * 1000).to_string();
+    let quality = quality.to_string();
     let wanted = [
         (NORMALIZE, "false"),
         (CROSSFADE, on),
         (CROSSFADE_MS, length.as_str()),
         (CROSSFADE_MIGRATED, "false"),
+        (PLAY_BITRATE, quality.as_str()),
+        (PLAY_BITRATE_UNMETERED, quality.as_str()),
     ];
     let mut lines: Vec<String> = existing
         .split('\n')
@@ -986,13 +1005,22 @@ mod tests {
     #[test]
     fn merge_prefs_turns_crossfade_off() {
         let sample = "audio.crossfade_v2=true\naudio.crossfade_migrated_to_ps=true\n";
-        let merged = merge_prefs_with(sample, 0);
+        let merged = merge_prefs_with(sample, 0, 4);
         assert!(merged.contains("audio.crossfade_v2=false\n"));
         assert!(merged.contains("audio.crossfade_migrated_to_ps=false\n"));
         assert!(!merged.contains("=true"));
-        let on = merge_prefs_with(&merged, 6);
+        let on = merge_prefs_with(&merged, 6, 4);
         assert!(on.contains("audio.crossfade_v2=true\n"));
         assert!(on.contains("audio.crossfade.time_v2=6000\n"));
+    }
+
+    #[test]
+    fn merge_prefs_sets_streaming_quality() {
+        let sample = "audio.play_bitrate_enumeration=1\n";
+        let merged = merge_prefs_with(sample, 0, 3);
+        assert!(merged.contains("audio.play_bitrate_enumeration=3\n"));
+        assert!(merged.contains("audio.play_bitrate_non_metered_enumeration=3\n"));
+        assert_eq!(merged.matches("audio.play_bitrate_enumeration=").count(), 1);
     }
 
     #[test]

@@ -9921,6 +9921,9 @@ test("Lyssna settings combines app and lyrics options with ordered sources", asy
   await expect(picked).not.toBeChecked();
   await picked.check();
   await expect.poll(() => saved("crossfade_picked")).toBe(true);
+  await expect(dialog.getByLabel("Streaming quality")).toHaveValue("very_high");
+  await dialog.getByLabel("Streaming quality").selectOption("high");
+  await expect.poll(() => saved("audio_quality")).toBe("high");
   await openSettings(page, "Sources");
   const sources = page.locator(".lyric-sources li");
   await expect(sources).toHaveText([

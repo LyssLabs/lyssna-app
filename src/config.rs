@@ -57,6 +57,36 @@ pub enum FullscreenVolume {
     Off,
 }
 
+/// Spotify's Audio quality levels that Lyssna can play: Normal 96 kbps, High
+/// 160 kbps, Very high 320 kbps.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioQuality {
+    Normal,
+    High,
+    #[default]
+    #[serde(other)]
+    VeryHigh,
+}
+
+impl AudioQuality {
+    pub fn kbps(self) -> u32 {
+        match self {
+            Self::Normal => 96,
+            Self::High => 160,
+            Self::VeryHigh => 320,
+        }
+    }
+    /// The value Spotify's own prefs store for this level.
+    pub fn spotify_level(self) -> u8 {
+        match self {
+            Self::Normal => 2,
+            Self::High => 3,
+            Self::VeryHigh => 4,
+        }
+    }
+}
+
 /// Where the release year sits beside the artists on the lyrics page: the
 /// fork's Release Year Position.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,6 +370,8 @@ pub struct Settings {
     /// songs: off by default, 1 to 12 seconds, 5 unless chosen.
     pub crossfade: bool,
     pub crossfade_seconds: u8,
+    pub audio_quality: AudioQuality,
+    pub download_quality: AudioQuality,
     /// Folder holding downloads; local app data when unset, as Spotify.
     pub offline_location: Option<String>,
     /// Crossfade also into a song played by hand or skipped to while
@@ -476,6 +508,8 @@ impl Default for Settings {
             cinema_lyrics: false,
             crossfade: false,
             crossfade_seconds: 5,
+            audio_quality: AudioQuality::VeryHigh,
+            download_quality: AudioQuality::VeryHigh,
             offline_location: None,
             crossfade_picked: false,
             soloist: false,

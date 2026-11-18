@@ -26,6 +26,30 @@ static TRACKS: LazyLock<RwLock<HashMap<String, crate::model::Track>>> =
     LazyLock::new(Default::default);
 static DOWNLOADING: Mutex<()> = Mutex::new(());
 static STOPS: AtomicUsize = AtomicUsize::new(0);
+static QUALITY_KBPS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(320);
+
+/// Download quality for songs downloaded from now on; downloaded songs keep
+/// theirs.
+pub fn set_quality(kbps: u32) {
+    QUALITY_KBPS.store(kbps, Ordering::Relaxed);
+}
+
+fn kbps(format: AudioFileFormat) -> u32 {
+    match format {
+        AudioFileFormat::OGG_VORBIS_96 | AudioFileFormat::MP3_96 => 96,
+        AudioFileFormat::OGG_VORBIS_160 | AudioFileFormat::MP3_160 => 160,
+        AudioFileFormat::MP3_256 => 256,
+        AudioFileFormat::OGG_VORBIS_320 | AudioFileFormat::MP3_320 => 320,
+        _ => 0,
+    }
+}
+
+/// Formats nearest the wanted quality first, Ogg before MP3 at each.
+fn by_quality(wanted: u32) -> Vec<(AudioFileFormat, usize)> {
+    let mut formats = crate::waveform::FORMATS.to_vec();
+    formats.sort_by_key(|&(format, _)| kbps(format).abs_diff(wanted));
+    formats
+}
 static RUNNING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// Rounds in which Spotify refused each song's key. Some songs are always
 /// refused to this player; after two rounds they are set aside until the
@@ -492,7 +516,7 @@ fn fetch(
         .build()?;
     let (item, format, file_id, file, key) = runtime.block_on(async {
         let item = playable_item(session, track_uri).await?;
-        let (format, file_id, rate) = crate::waveform::FORMATS
+        let (format, file_id, rate) = by_quality(QUALITY_KBPS.load(Ordering::Relaxed))
             .iter()
             .find_map(|&(format, rate)| item.files.get(&format).map(|&id| (format, id, rate)))
             .context("No playable audio file")?;
@@ -548,6 +572,14 @@ mod tests {
         assert!(!set_aside(track));
         note_refusal(track);
         assert!(set_aside(track));
+    }
+
+    #[test]
+    fn downloads_prefer_the_chosen_quality() {
+        assert_eq!(by_quality(320)[0].0, AudioFileFormat::OGG_VORBIS_320);
+        assert_eq!(by_quality(160)[0].0, AudioFileFormat::OGG_VORBIS_160);
+        assert_eq!(by_quality(96)[0].0, AudioFileFormat::OGG_VORBIS_96);
+        assert_eq!(by_quality(96)[2].0, AudioFileFormat::OGG_VORBIS_160);
     }
 
     #[test]

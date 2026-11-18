@@ -24,7 +24,12 @@ import {
   Wrench,
 } from "lucide-react";
 import type { AppState } from "./state";
-import type { NightlyReport, Settings, SpotifyPlus } from "./types";
+import type {
+  AudioQuality,
+  NightlyReport,
+  Settings,
+  SpotifyPlus,
+} from "./types";
 import { NightlyDialog, nightlyProgress } from "./nightly-dialog";
 import {
   HiddenSettings,
@@ -505,6 +510,22 @@ export function SettingsWindow({
             ))}
           </select>
         </SettingRow>,
+        <SettingRow
+          key="audio-quality"
+          label="Streaming quality"
+          help={
+            soloistPlays
+              ? "Higher sounds better and uses more data. Spotify Soloist picks this up the next time playback is paused."
+              : "Higher sounds better and uses more data. Changes from the next song."
+          }
+          keywords="audio quality bitrate kbps streaming sound very high data"
+        >
+          <QualitySelect
+            label="Streaming quality"
+            value={settings.audio_quality ?? "very_high"}
+            onChange={(audio_quality) => onSettings({ audio_quality })}
+          />
+        </SettingRow>,
         flag(
           "crossfade",
           "Crossfade songs",
@@ -668,6 +689,18 @@ export function SettingsWindow({
           >
             Clear cache
           </button>
+        </SettingRow>,
+        <SettingRow
+          key="download-quality"
+          label="Download quality"
+          help="Higher sounds better and takes more space. Songs already downloaded keep theirs."
+          keywords="download quality bitrate kbps offline storage very high"
+        >
+          <QualitySelect
+            label="Download quality"
+            value={settings.download_quality ?? "very_high"}
+            onChange={(download_quality) => onSettings({ download_quality })}
+          />
         </SettingRow>,
         <SettingRow
           key="downloads"
@@ -2132,5 +2165,28 @@ function MarkerColourRow({
         />
       </span>
     </SettingRow>
+  );
+}
+
+function QualitySelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: AudioQuality;
+  onChange: (value: AudioQuality) => void;
+}) {
+  return (
+    <select
+      className="settings-select"
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value as AudioQuality)}
+    >
+      <option value="normal">Normal (96 kbps)</option>
+      <option value="high">High (160 kbps)</option>
+      <option value="very_high">Very high (320 kbps)</option>
+    </select>
   );
 }

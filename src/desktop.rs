@@ -181,6 +181,7 @@ fn set_soloist(inner: &Inner, wanted: bool) {
     if wanted && slot.is_none() {
         if let Ok(snapshot) = inner.snapshot.lock() {
             crate::soloist::set_crossfade(snapshot.settings.active_crossfade_seconds());
+            apply_quality(&snapshot.settings);
         }
         *slot = Some(crate::soloist::Supervisor::start());
         if let (Ok(data), Ok(mut link)) = (crate::soloist::data_dir(), inner.soloist_link.lock()) {
@@ -576,6 +577,7 @@ impl Desktop {
         crate::lyric_sources::set_prefer_apple(settings.lyrics_prefer_apple);
         crate::lyric_sources::set_musixmatch_words(!settings.lyrics_musixmatch_lines_only);
         crate::lyric_sources::load_musixmatch_token();
+        apply_quality(&settings);
         updater::set_channel(&settings.update_channel);
         let scanned = app.clone();
         crate::local_files::on_change(move |count| {
@@ -3238,6 +3240,12 @@ fn stop_clip(state: State<'_, Desktop>) -> std::result::Result<(), String> {
     }
     Ok(())
 }
+fn apply_quality(settings: &crate::config::Settings) {
+    librespot_playback::player::BITRATE_KBPS
+        .store(settings.audio_quality.kbps(), Ordering::Relaxed);
+    crate::soloist::set_quality(settings.audio_quality.spotify_level());
+    crate::offline_sync::set_quality(settings.download_quality.kbps());
+}
 /// TTML Creator repeats one song and stops at its end; a crossfade would
 /// fade out its last seconds into its own start.
 static CROSSFADE_HELD: AtomicBool = AtomicBool::new(false);
@@ -3405,6 +3413,7 @@ fn apply_settings(
         );
         crate::lyric_sources::set_prefer_apple(settings.lyrics_prefer_apple);
         crate::lyric_sources::set_musixmatch_words(!settings.lyrics_musixmatch_lines_only);
+        apply_quality(&settings);
         // Reload the playing song's lyrics so a source change shows at once;
         // each source keeps its own cache, so this is cheap.
         if sources_changed && let Some(track) = snapshot.playback.item.clone() {
