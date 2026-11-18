@@ -3436,7 +3436,11 @@ fn apply_settings(
         let _ = app.emit("lyssna", json!({"type":"settings","settings":&settings}));
         let soloist = settings.soloist;
         let takeover = soloist && !snapshot.settings.soloist && snapshot.keys_refused;
+        let leaving = !soloist && snapshot.settings.soloist;
         snapshot.settings = settings;
+        if leaving {
+            keep_soloist_song(&mut snapshot, app);
+        }
         drop(snapshot);
         set_soloist(&state.0, soloist);
         if takeover {
@@ -4186,6 +4190,32 @@ fn hand_over_playback(inner: &Inner) {
 }
 /// Playback with its position brought up to now: this computer's player
 /// reports its position on changes, not continuously.
+/// Stopping Soloist leaves no device playing, and the next poll would show
+/// nothing; the song stays, paused where it was, on this computer.
+fn keep_soloist_song(snapshot: &mut Snapshot, app: &tauri::AppHandle) {
+    let device = snapshot.playback.device.name.clone();
+    if snapshot.playback.item.is_none()
+        || (device != crate::soloist::DEVICE_NAME && device != native::device_name())
+    {
+        return;
+    }
+    let mut playback = playback_now(snapshot);
+    playback.is_playing = false;
+    playback.device = Device {
+        name: native::device_name(),
+        volume_percent: Some(snapshot.settings.volume_percent.min(100)),
+        ..Device::default()
+    };
+    snapshot.playback = playback;
+    snapshot.observed_at = now_ms();
+    if let Some(profile) = &snapshot.profile {
+        let _ = crate::resume::save(&profile.id, &snapshot.playback, snapshot.observed_at, true);
+    }
+    let _ = app.emit(
+        "lyssna",
+        json!({"type":"playback","playback":snapshot.playback,"observed_at":snapshot.observed_at,"changed":false}),
+    );
+}
 fn playback_now(snapshot: &Snapshot) -> crate::model::Playback {
     playback_at(&snapshot.playback, snapshot.observed_at, now_ms())
 }
