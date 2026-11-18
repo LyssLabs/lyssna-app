@@ -181,8 +181,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+.ttml-write-actions > .ttml-row:last-child,
+.ttml-write-actions > .primary:last-child {
+  margin-left: auto;
 }
 .ttml-transport {
   display: flex;
