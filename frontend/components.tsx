@@ -1259,14 +1259,14 @@ const LyricCredits = memo(function LyricCredits({
           return person?.username || person?.id ? [{ role, person }] : [];
         })
       : [];
-  // Community lyrics read like the Spicy Lyrics fork:
-  // "Community lyrics · Made by (avatar) @name".
+  // "Lyrics provided by: Spicy Lyrics · Made by (avatar) @name", as Spicy
+  // Lyrics asks to be credited.
   if (community.length)
     return (
       <div
         className={`lyric-source community-credits ${expanded ? "expanded" : ""}`}
       >
-        <span className="community-lead">Community lyrics</span>
+        <span className="community-lead">Lyrics provided by: Spicy Lyrics</span>
         {community.map(({ role, person }) => {
           const url = profileUrl(person.url);
           const label =

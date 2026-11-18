@@ -1000,7 +1000,7 @@ fn fetch_from(
                 let answer = provider.get_or_init(|| {
                     crate::provider::cache_namespace()
                         .and_then(|namespace| {
-                            cache.get(&namespace, &|| {
+                            cache.get_api(&namespace, &|| {
                                 crate::provider::fetch(&client, &track, &access_token)
                             })
                         })
@@ -1051,15 +1051,35 @@ struct SourceCache {
     network: bool,
 }
 
+const DAY: std::time::Duration = std::time::Duration::from_secs(86_400);
+
 impl SourceCache {
     fn get(&self, namespace: &str, fetch: &dyn Fn() -> Result<Lyrics>) -> Result<Lyrics> {
+        self.load(namespace, fetch, false)
+    }
+
+    /// The Spicy Lyrics API's terms: its answers are kept at most 30 days,
+    /// and a refresh that fails or is refused drops the saved one.
+    fn get_api(&self, namespace: &str, fetch: &dyn Fn() -> Result<Lyrics>) -> Result<Lyrics> {
+        self.load(namespace, fetch, true)
+    }
+
+    fn load(
+        &self,
+        namespace: &str,
+        fetch: &dyn Fn() -> Result<Lyrics>,
+        api: bool,
+    ) -> Result<Lyrics> {
         let cache = self.root.join("cache").join(namespace);
         let file = cache.join(format!("{}.json", self.key));
-        let fresh = fs::metadata(&file)
+        let age = fs::metadata(&file)
             .and_then(|metadata| metadata.modified())
             .ok()
-            .and_then(|modified| modified.elapsed().ok())
-            .is_some_and(|age| age < std::time::Duration::from_secs(3 * 86_400));
+            .and_then(|modified| modified.elapsed().ok());
+        if api && age.is_some_and(|age| age >= 30 * DAY) {
+            let _ = fs::remove_file(&file);
+        }
+        let fresh = age.is_some_and(|age| age < 3 * DAY);
         let saved = || {
             fs::read(&file)
                 .ok()
@@ -1078,6 +1098,10 @@ impl SourceCache {
         // fall to a lower source until it answers again.
         let lyrics = match fetch() {
             Ok(lyrics) => lyrics,
+            Err(error) if api => {
+                let _ = fs::remove_file(&file);
+                return Err(error);
+            }
             Err(error) => return saved().ok_or(error),
         };
         if fs::create_dir_all(&cache).is_ok() {
@@ -1375,6 +1399,48 @@ mod tests {
             cache.get("provider", &failing).unwrap().source,
             "apple_music"
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn api_answers_expire_and_a_failed_refresh_drops_them() {
+        let root = std::env::temp_dir().join(format!("lyssna-api-cache-{}", std::process::id()));
+        let file = root.join("cache").join("provider").join("song.json");
+        let age = |days: u32| {
+            fs::File::options()
+                .write(true)
+                .open(&file)
+                .unwrap()
+                .set_modified(std::time::SystemTime::now() - days * DAY)
+                .unwrap();
+        };
+        let answer = || {
+            Ok(Lyrics {
+                source: "spicy_lyrics".into(),
+                ..Lyrics::default()
+            })
+        };
+        let failing = || Err(anyhow::anyhow!("denied"));
+        let online = SourceCache {
+            root: root.clone(),
+            key: "song".into(),
+            network: true,
+        };
+        let offline = SourceCache {
+            root: root.clone(),
+            key: "song".into(),
+            network: false,
+        };
+        online.get_api("provider", &answer).unwrap();
+        age(29);
+        assert!(offline.get_api("provider", &failing).is_ok());
+        age(31);
+        assert!(offline.get_api("provider", &failing).is_err());
+        assert!(!file.exists());
+        online.get_api("provider", &answer).unwrap();
+        age(4);
+        assert!(online.get_api("provider", &failing).is_err());
+        assert!(!file.exists());
         let _ = fs::remove_dir_all(root);
     }
 

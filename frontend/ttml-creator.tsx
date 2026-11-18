@@ -103,6 +103,8 @@ import {
   shiftLines,
   clearLines,
   removeLines,
+  providedSeed,
+  providedEdits,
 } from "./ttml-creator-model";
 import { romanizeAway } from "./romanization";
 import { MetadataDialog } from "./ttml-metadata";
@@ -346,6 +348,7 @@ export function TtmlCreator({
   // The content last written for `uri`, so loading or seeding a song is not
   // mistaken for an edit and only real changes get a new save time.
   const [metadata, setMetadata] = useState<MetaEntry[] | undefined>();
+  const [seed, setSeed] = useState<string[] | undefined>();
   const saved = useRef({ uri: "", content: "", loading: false });
   const current = useRef({ uri: "", lines, text, metadata });
   const versions = useRef<{ at?: number; changed: boolean }>({
@@ -373,6 +376,7 @@ export function TtmlCreator({
     setLinesRaw(loaded);
     setText(draft?.text ?? "");
     setMetadata(draft?.metadata);
+    setSeed(draft?.seed);
     setSavedAt(draft?.savedAt);
     saved.current = {
       uri: track.uri,
@@ -414,6 +418,7 @@ export function TtmlCreator({
     const seeded = joinHyphenated(fromLyrics(lyrics));
     if (!seeded.length) return;
     setLinesRaw(seeded);
+    setSeed(providedSeed(lyrics, seeded));
     setCursor(cursorAt(seeded, read()));
     setText(toText(seeded));
     saved.current.content = contentOf(seeded, toText(seeded), metadata);
@@ -441,6 +446,7 @@ export function TtmlCreator({
     saved.current.content = content;
     versions.current.changed = true;
     if (!lines.length && !text.trim()) {
+      setSeed(undefined);
       writeDraft(track.uri, null);
       forgetWorking(track.uri);
       setSavedAt(undefined);
@@ -453,11 +459,12 @@ export function TtmlCreator({
       metadata,
       savedAt: now,
       song: track,
+      seed,
     });
     setSavedAt(now);
     markWorking(track.uri);
     snapshot(false);
-  }, [track, lines, text, metadata, snapshot]);
+  }, [track, lines, text, metadata, seed, snapshot]);
 
   useEffect(() => () => void onSpeed(1), [onSpeed]);
 
@@ -1304,6 +1311,7 @@ export function TtmlCreator({
     if (!state.lyrics || !here) return;
     const seeded = fromLyrics(state.lyrics);
     setLines(seeded);
+    setSeed(providedSeed(state.lyrics, seeded));
     setText(toText(seeded));
     setCursor({ line: 0, unit: 0 });
   };
@@ -1842,6 +1850,14 @@ export function TtmlCreator({
     [metadata, track],
   );
   const ttml = () => (track ? toTtml(lines, meta(track), entries) : "");
+  const provided = useMemo(
+    () => (seed ? providedEdits(lines, seed) : undefined),
+    [lines, seed],
+  );
+  const exportLock =
+    provided && provided.edited < provided.needed
+      ? `Started from Spicy Lyrics or Apple Music lyrics: edit or retime ${provided.needed - provided.edited} more line${provided.needed - provided.edited === 1 ? "" : "s"} to export.`
+      : undefined;
   const [editingMeta, setEditingMeta] = useState(false);
   const changeMetadata = (next: MetaEntry[]) => {
     setMetadata(next);
@@ -1856,7 +1872,7 @@ export function TtmlCreator({
 
   const [exporting, setExporting] = useState(false);
   const download = (format: ExportFormat | "ttml" = "ttml") => {
-    if (!track) return;
+    if (!track || exportLock) return;
     setExporting(false);
     const link = document.createElement("a");
     link.href = URL.createObjectURL(
@@ -1928,10 +1944,12 @@ export function TtmlCreator({
     />
   );
   const copy = () =>
-    void navigator.clipboard.writeText(ttml()).then(
-      () => notify("TTML copied."),
-      () => notify("Couldn't copy the TTML.", true),
-    );
+    exportLock
+      ? notify(exportLock, true)
+      : void navigator.clipboard.writeText(ttml()).then(
+          () => notify("TTML copied."),
+          () => notify("Couldn't copy the TTML.", true),
+        );
   const apply = () => {
     if (!track || !here) return;
     void onApply(fileName(meta(track)), ttml());
@@ -2145,14 +2163,20 @@ export function TtmlCreator({
           <button onClick={() => setEditingMeta(true)} title="Metadata">
             <Tags size={15} />
           </button>
-          <button onClick={copy} disabled={!done} title="Copy TTML">
+          <button
+            onClick={copy}
+            disabled={!done}
+            title={exportLock ?? "Copy TTML"}
+          >
             <Copy size={15} />
           </button>
           <span className="ttml-export">
             <button
-              onClick={() => setExporting(!exporting)}
+              onClick={() =>
+                exportLock ? notify(exportLock, true) : setExporting(!exporting)
+              }
               disabled={!done}
-              title="Save lyrics file"
+              title={exportLock ?? "Save lyrics file"}
               aria-expanded={exporting}
             >
               <Download size={15} />

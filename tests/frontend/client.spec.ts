@@ -3527,7 +3527,7 @@ test("background-only vocals keep the main line anchored; long breaks show dots"
   for (const dot of await dots.all()) await expect(dot).toBeVisible();
   await expect(
     page.locator(".lyrics-page .lyric-source.expanded"),
-  ).toContainText("Community lyrics");
+  ).toContainText("Lyrics provided by: Spicy Lyrics");
   await expect(
     page.locator(".lyrics-page .lyric-source.expanded"),
   ).toContainText("Uploaded by @Uploader");
@@ -4380,7 +4380,7 @@ test("Appearance pins the lyrics footer with Off, No Writers and Full modes", as
     pinned = display.getByRole("region", { name: "Pinned lyrics footer" });
   await expect(pinned).toHaveCount(0);
   await mode("no_writers");
-  await expect(pinned).toContainText("Community lyrics");
+  await expect(pinned).toContainText("Lyrics provided by: Spicy Lyrics");
   await expect(pinned).toContainText("@TestMaker");
   await expect(pinned).not.toContainText("Written by");
   // Readable and clear of the bottom edge, like Spicy Lyrics' footer.
@@ -18880,6 +18880,70 @@ test("TTML Creator imports and exports other lyric formats", async ({
   expect(download.suggestedFilename()).toBe(
     "Come & Go (with Marshmello) - Juice WRLD, Marshmello.lys",
   );
+});
+
+test("TTML Creator exports Spicy Lyrics only after 10 lines are edited", async ({
+  page,
+}) => {
+  await startClient(page);
+  await playLyricTrack(page, false);
+  await page.evaluate(() => {
+    const host = (window as any).__clientTest;
+    host.emit({
+      type: "lyrics",
+      uri: "spotify:track:0123456789abcdefghijkl",
+      lyrics: {
+        source: "spicy_lyrics",
+        synced: true,
+        instrumental: false,
+        lines: Array.from({ length: 30 }, (_, index) => {
+          const start = 10000 + index * 3000;
+          return {
+            text: `I lyric ${index + 1}`,
+            start_ms: start,
+            end_ms: start + 3000,
+            translation: "",
+            romanization: "",
+            background: false,
+            opposite: false,
+            words: ["I", " lyric", ` ${index + 1}`].map((text, word) => ({
+              text,
+              start_ms: start + word * 1000,
+              end_ms: start + word * 1000 + 900,
+            })),
+          };
+        }),
+      },
+    });
+  });
+  await openSettings(page, "Lyrics");
+  await page.getByRole("switch", { name: "TTML Creator", exact: true }).check();
+  await page
+    .getByRole("dialog", { name: "Lyssna settings" })
+    .getByRole("button", { name: "Close settings" })
+    .click();
+  await page
+    .locator(".player-extras")
+    .getByTitle("TTML Creator", { exact: true })
+    .click();
+  const creator = page.getByRole("region", { name: "TTML Creator" });
+  const cards = creator.locator(".ttml-card");
+  await expect(cards).toHaveCount(30);
+  await creator.locator(".ttml-export > button").click();
+  await expect(page.getByText(/edit or retime 10 more lines/)).toBeVisible();
+  await expect(creator.getByRole("menu")).toHaveCount(0);
+  for (let index = 0; index < 10; index++) {
+    await cards
+      .nth(index)
+      .getByRole("button", { name: "lyric", exact: true })
+      .click();
+    await page.keyboard.press("F2");
+    const field = creator.getByLabel("Selected word", { exact: true });
+    await field.fill("song");
+    await field.press("Enter");
+  }
+  await creator.locator(".ttml-export > button").click();
+  await expect(creator.getByRole("menu")).toBeVisible();
 });
 
 test("TTML Creator saves drafts with a time and keeps versions", async ({

@@ -219,6 +219,40 @@ export function keepTimings(
   });
 }
 
+/** Edits Spicy Lyrics asks for before its or Apple Music's lyrics can be
+ * exported, so the creator is not a way to copy them out. */
+export const PROVIDED_EDITS = 10;
+const PROVIDED_SOURCES = ["spicy_lyrics", "apple_music", "aml"];
+
+function lineKey(line: CreatorLine) {
+  return JSON.stringify(line.units.map((unit) => [unit.text, unit.start]));
+}
+
+/** Each line of a draft started from Spicy Lyrics or Apple Music lyrics. */
+export function providedSeed(
+  lyrics: Lyrics,
+  lines: CreatorLine[],
+): string[] | undefined {
+  return PROVIDED_SOURCES.includes(lyrics.source)
+    ? lines.map(lineKey)
+    : undefined;
+}
+
+/** Lines whose text or timing differs from the seed, and how many must. */
+export function providedEdits(lines: CreatorLine[], seed: string[]) {
+  const left = new Map<string, number>();
+  for (const key of seed) left.set(key, (left.get(key) ?? 0) + 1);
+  let edited = 0;
+  for (const line of lines) {
+    if (!line.units.some((unit) => unit.text.trim())) continue;
+    const key = lineKey(line);
+    const count = left.get(key) ?? 0;
+    if (count) left.set(key, count - 1);
+    else edited++;
+  }
+  return { edited, needed: Math.min(PROVIDED_EDITS, seed.length) };
+}
+
 export function fromLyrics(lyrics: Lyrics): CreatorLine[] {
   return lyrics.lines
     .map((line): CreatorLine => {

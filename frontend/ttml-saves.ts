@@ -14,6 +14,8 @@ export interface Draft {
   metadata?: MetaEntry[];
   savedAt?: number;
   song?: Track;
+  /** Set when the draft started from Spicy Lyrics or Apple Music lyrics. */
+  seed?: string[];
 }
 export interface SavedSong {
   uri: string;
