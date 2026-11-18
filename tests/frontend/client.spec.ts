@@ -11332,7 +11332,7 @@ test("animator presets import Spicy Lyrics share codes into Custom tuning", asyn
   await expect(preset).toHaveValue("Lyssna");
   await expect(preset.locator("option")).toHaveText([
     "Lyssna (Default)",
-    "Lyssna (legacy)",
+    "Lyssna (Legacy)",
     "Custom",
   ]);
   await preset.selectOption("Legacy");

@@ -13,7 +13,7 @@ export const ANIMATOR_PRESETS: AnimatorPreset[] = [
 ];
 export const ANIMATOR_PRESET_LABELS: Record<AnimatorPreset, string> = {
   Lyssna: "Lyssna (Default)",
-  Legacy: "Lyssna (legacy)",
+  Legacy: "Lyssna (Legacy)",
   Custom: "Custom",
 };
 export const ANIMATOR_DETAILS: AnimatorDetail[] = [
@@ -218,7 +218,7 @@ export const ANIMATOR_DEFAULTS = Object.freeze(
     ANIMATOR_PARAMETERS.map((item) => [item.id, item.defaultValue]),
   ) as AnimatorValues,
 );
-/** Lyssna (legacy): upstream's values (main 2a14863f) with words resting at
+/** Lyssna (Legacy): upstream's values (main 2a14863f) with words resting at
  * full size rather than 0.95, so they peak at 1.075 instead of 1.0505 to keep
  * more of the pop. */
 export const LEGACY_ANIMATOR_VALUES: Readonly<AnimatorValues> = Object.freeze({

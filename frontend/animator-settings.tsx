@@ -33,7 +33,7 @@ const readClipboard = () =>
   rpc<string>("read_clipboard").catch(() => navigator.clipboard.readText());
 
 const PRESET_HELP =
-  "Lyssna (Default) is the standard animation, Lyssna (legacy) the earlier one. Custom stores live tuning.";
+  "Lyssna (Default) is the standard animation, Lyssna (Legacy) the earlier one. Custom stores live tuning.";
 
 /** The Animator Presets row, with Manage for Custom tuning. */
 export function AnimatorPresetRow({
