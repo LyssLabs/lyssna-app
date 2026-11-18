@@ -11,10 +11,12 @@ import {
   ArrowUp,
   CircleCheck,
   CirclePlus,
+  Play,
   Search,
 } from "lucide-react";
 import { rpc } from "./bridge";
 import { Cover, ExplicitBadge } from "./components";
+import { PauseIcon } from "./player-icons";
 import { searchEntries, type SearchEntry } from "./search-results";
 import type { Album, Artist, Playlist, Profile, Track } from "./types";
 
@@ -84,6 +86,8 @@ export function SearchSuggestions({
   save,
   saved,
   menu,
+  play,
+  playing,
 }: {
   query: string;
   keys: Ref<SuggestionKeys>;
@@ -92,6 +96,8 @@ export function SearchSuggestions({
   save: (track: Track) => void;
   saved: Record<string, boolean>;
   menu: (track: Track, x: number, y: number) => void;
+  play: (entry: SearchEntry, active: boolean) => void;
+  playing: { track?: string; context?: string | null; playing: boolean };
 }) {
   const term = query.trim();
   const [rows, setRows] = useState<Row[]>(() => cache.get(term) ?? []);
@@ -225,6 +231,10 @@ export function SearchSuggestions({
         const { entry } = row;
         const liked = !!saved[entry.uri];
         const [, kind, id] = entry.uri.split(":");
+        const current = entry.track
+          ? playing.track === entry.uri
+          : playing.context === entry.uri;
+        const pausing = current && playing.playing;
         return (
           <div
             className={`recent-search ${selected ? "active" : ""}`}
@@ -264,6 +274,12 @@ export function SearchSuggestions({
                 </small>
               </span>
             </button>
+            <SearchPlayButton
+              item={entry}
+              pausing={pausing}
+              onClick={() => play(entry, current)}
+              onMouseMove={() => setActive(index)}
+            />
             {entry.track && (
               <button
                 className={`icon-button search-suggestion-save ${liked ? "saved" : ""}`}
@@ -285,5 +301,36 @@ export function SearchSuggestions({
         );
       })}
     </div>
+  );
+}
+
+/** Play button over a search row's cover, as on library rows. */
+export function SearchPlayButton({
+  item,
+  pausing,
+  onClick,
+  onMouseMove,
+}: {
+  item: Pick<SearchEntry, "name" | "kind">;
+  pausing: boolean;
+  onClick: () => void;
+  onMouseMove?: () => void;
+}) {
+  if (item.kind === "Profile") return null;
+  const label = `${pausing ? "Pause" : "Play"} ${item.name}`;
+  return (
+    <button
+      className={`search-suggestion-play ${item.kind === "Artist" ? "round" : ""}`}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      onMouseMove={onMouseMove}
+    >
+      {pausing ? (
+        <PauseIcon size={18} />
+      ) : (
+        <Play size={20} fill="currentColor" />
+      )}
+    </button>
   );
 }

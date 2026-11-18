@@ -177,7 +177,11 @@ import { NightlyButton } from "./nightly-button";
 import { NightlyDialog } from "./nightly-dialog";
 import { GlassBackdrop } from "./liquid-glass";
 import { BrowsePage } from "./BrowsePage";
-import { SearchSuggestions, type SuggestionKeys } from "./SearchSuggestions";
+import {
+  SearchPlayButton,
+  SearchSuggestions,
+  type SuggestionKeys,
+} from "./SearchSuggestions";
 import { setWindowActivity, setWindowPosition } from "./window-activity";
 import { useArtworkColor } from "./artwork-color";
 import { SongSortMenu } from "./song-sort-menu";
@@ -2199,6 +2203,17 @@ function App() {
       })
       .catch((error) => notify(String(error), true));
   }, [state.profile?.id, state.native_ready, linkSignal]);
+  const searchPlaying = (item: RecentSearch) =>
+    item.track
+      ? state.playback.item?.uri === item.uri
+      : state.playback.context === item.uri;
+  const playSearch = (item: RecentSearch, current: boolean) => {
+    if (current)
+      play({ command: state.playback.is_playing ? "pause" : "play" });
+    else if (item.track)
+      play({ command: "play", uri: item.track.uri, track: item.track });
+    else play({ command: "play_home", context: item.uri });
+  };
   const openRecentSearch = (item: RecentSearch) => {
     setSearchFocused(false);
     searchInput.current?.blur();
@@ -3460,6 +3475,15 @@ function App() {
                     updateRecentSearches((list) => rememberSearch(list, entry));
                     openRecentSearch(entry);
                   }}
+                  playing={{
+                    track: state.playback.item?.uri,
+                    context: state.playback.context,
+                    playing: state.playback.is_playing,
+                  }}
+                  play={(entry, current) => {
+                    updateRecentSearches((list) => rememberSearch(list, entry));
+                    playSearch(entry, current);
+                  }}
                 />
               )}
             {searchFocused && !query && recentSearches.length > 0 && (
@@ -3514,6 +3538,11 @@ function App() {
                         </small>
                       </span>
                     </button>
+                    <SearchPlayButton
+                      item={item}
+                      pausing={searchPlaying(item) && state.playback.is_playing}
+                      onClick={() => playSearch(item, searchPlaying(item))}
+                    />
                     <button
                       className="icon-button"
                       aria-label={`Remove ${item.name} from recent searches`}

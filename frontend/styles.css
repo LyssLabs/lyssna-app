@@ -734,6 +734,38 @@ small {
 .search-suggestions .recent-search span {
   gap: 4px;
 }
+.recent-search:has(.search-suggestion-play) {
+  position: relative;
+}
+/* Play button over the cover, as on library rows. */
+.search-suggestion-play {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  color: light-dark(#000, #fff);
+  background: light-dark(#fff9, #0009);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.recent-searches:not(.search-suggestions) .search-suggestion-play {
+  left: 10px;
+}
+.search-suggestion-play.round {
+  border-radius: 50%;
+}
+.recent-search:hover .search-suggestion-play,
+.search-suggestion-play:focus-visible {
+  opacity: 1;
+}
+.search-suggestion-play:hover svg {
+  scale: 1.08;
+}
 .search-suggestions .recent-search strong {
   font-size: 16px;
 }

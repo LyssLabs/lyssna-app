@@ -19056,6 +19056,35 @@ test("recent searches open the song or artist menu on right-click", async ({
   const search = page.getByPlaceholder("What do you want to play?");
   await search.focus();
   const list = page.getByRole("listbox", { name: "Recent searches" });
+  const artistRow = list.locator(
+    '.recent-search[data-context-name="Recent artist"]',
+  );
+  const playArtist = artistRow.getByRole("button", {
+    name: "Play Recent artist",
+  });
+  await expect(playArtist).toHaveCSS("opacity", "0");
+  await artistRow.hover();
+  await expect(playArtist).toHaveCSS("opacity", "1");
+  const [button, cover] = [
+    (await playArtist.boundingBox())!,
+    (await artistRow.locator(".cover").boundingBox())!,
+  ];
+  expect(Math.abs(button.x - cover.x)).toBeLessThan(1);
+  expect(Math.abs(button.y - cover.y)).toBeLessThan(1);
+  await playArtist.click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__clientTest.commands.some(
+          (call: any) =>
+            call.command === "player" &&
+            call.args?.request?.command === "play_home" &&
+            call.args.request.context ===
+              "spotify:artist:0123456789abcdefghij02",
+        ),
+      ),
+    )
+    .toBe(true);
   await list
     .locator(".recent-search", { hasText: "Recent song" })
     .click({ button: "right" });
@@ -19087,6 +19116,48 @@ test("recent searches open the song or artist menu on right-click", async ({
     page.getByRole("menu", { name: "artist actions" }),
   ).toBeVisible();
   await expect(list).toBeVisible();
+});
+
+test("hovering a suggestion shows a play button over its cover", async ({
+  page,
+}) => {
+  await startClient(page);
+  await page.getByPlaceholder("What do you want to play?").fill("song");
+  const list = page.getByRole("listbox", { name: "Search suggestions" });
+  const song = list.locator(".recent-search", { hasText: "Suggested song" });
+  const play = song.getByRole("button", { name: "Play Suggested song" });
+  await expect(play).toHaveCSS("opacity", "0");
+  await song.hover();
+  await expect(play).toHaveCSS("opacity", "1");
+  const [button, cover] = [
+    (await play.boundingBox())!,
+    (await song.locator(".cover").boundingBox())!,
+  ];
+  expect(Math.abs(button.x - cover.x)).toBeLessThan(1);
+  expect(Math.abs(button.y - cover.y)).toBeLessThan(1);
+  await play.click();
+  const artist = list.locator(
+    '.recent-search[data-context-name="Suggested artist"]',
+  );
+  await artist.hover();
+  await artist.getByRole("button", { name: "Play Suggested artist" }).click();
+  await expect(list).toBeVisible();
+  const requests = () =>
+    page.evaluate(() =>
+      (window as any).__clientTest.commands
+        .filter((call: any) => call.command === "player")
+        .map((call: any) => call.args.request),
+    );
+  await expect
+    .poll(async () => (await requests()).map((request: any) => request.command))
+    .toEqual(expect.arrayContaining(["play", "play_home"]));
+  const sent = await requests();
+  expect(sent.find((request: any) => request.command === "play").uri).toBe(
+    "spotify:track:0123456789abcdefghij01",
+  );
+  expect(
+    sent.find((request: any) => request.command === "play_home").context,
+  ).toBe("spotify:artist:0123456789abcdefghij02");
 });
 
 test("a suggested song has the song menu, a tick when saved and an inline E", async ({
