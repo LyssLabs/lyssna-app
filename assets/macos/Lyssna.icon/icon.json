@@ -1,14 +1,12 @@
 {
   "fill-specializations": [
-    {
-      "value": { "solid": "srgb:1.00000,1.00000,1.00000,1.00000" }
-    },
+    { "value": { "solid": "gray:0.00000,1.00000" } },
     {
       "appearance": "dark",
       "value": {
         "linear-gradient": [
-          "srgb:0.12549,0.12549,0.12549,1.00000",
-          "srgb:0.06275,0.06275,0.06275,1.00000"
+          "srgb:0.12157,0.12157,0.12157,1.00000",
+          "srgb:0.05882,0.05882,0.05882,1.00000"
         ]
       }
     }
@@ -17,18 +15,14 @@
     {
       "layers": [
         {
-          "image-name": "microphone.svg",
-          "name": "Microphone",
-          "glass": false
-        },
-        {
           "image-name": "disc.svg",
-          "name": "Green disc",
+          "name": "Green disc with microphone cutout",
           "fill": { "solid": "display-p3:0.11800,0.84300,0.37600,1.00000" },
-          "glass": false
+          "glass": true
         }
       ],
-      "specular": false
+      "specular": true,
+      "translucency": { "enabled": false, "value": 0.5 }
     }
   ],
   "supported-platforms": {

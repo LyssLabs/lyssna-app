@@ -138,7 +138,7 @@ fn refresh_bundle_files(bundle: &Path, work: &Path, replaced: bool) -> Result<()
     let mut changed = Vec::new();
     for key in &keys {
         let value = extract(&wanted, key)?;
-        if extract(&info, key).ok() != Some(value.clone()) {
+        if extract(&info, key).ok().as_deref() != Some(value.as_str()) {
             changed.push((key.clone(), value));
         }
     }
@@ -166,7 +166,7 @@ fn refresh_bundle_files(bundle: &Path, work: &Path, replaced: bool) -> Result<()
         fs::write(&staged, &original)?;
         for (key, value) in &changed {
             let status = Command::new(PLUTIL)
-                .args(["-replace", key, "-json", &value.to_string()])
+                .args(["-replace", key, "-xml", value])
                 .arg(&staged)
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -314,15 +314,16 @@ fn top_level_keys(plist: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-/// One key's value, compared by content rather than layout.
-fn extract(plist: &Path, key: &str) -> Result<serde_json::Value> {
+/// Normalize each value to XML. plutil's JSON output requires an array or
+/// dictionary at the top level, so it cannot extract scalar keys as JSON.
+fn extract(plist: &Path, key: &str) -> Result<String> {
     let output = Command::new(PLUTIL)
-        .args(["-extract", key, "json", "-o", "-"])
+        .args(["-extract", key, "xml1", "-o", "-"])
         .arg(plist)
         .stderr(Stdio::null())
         .output()?;
     ensure!(output.status.success(), "no {key}");
-    Ok(serde_json::from_slice(&output.stdout)?)
+    Ok(String::from_utf8(output.stdout)?)
 }
 
 fn tempfile_dir() -> Result<PathBuf> {
