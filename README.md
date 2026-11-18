@@ -177,8 +177,6 @@ At the time of writing, 234 Rust tests, 185 frontend unit tests and 183 browser 
 - **[spr](https://github.com/Fraktality/spr)** · Fraktality · MIT<br>The spring that animates lyrics.
 - **[Kawarp](https://github.com/better-lyrics/kawarp)** · Better Lyrics · MIT<br>The warped artwork and Canvas ambience.
 
-Lyssna reimplements Spicy Lyrics' behaviour. The only Spicy Lyrics code it copies is the Gibberish word filter's dictionary and rules, under the same AGPL-3.0 licence; [NOTICE.md](NOTICE.md) has the details.
-
 ## License
 
 Lyssna is free software under the [GNU AGPL v3](LICENSE). [NOTICE.md](NOTICE.md) records each upstream project Lyssna references, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) holds the licences of bundled dependencies. Spotify is a trademark of Spotify AB; Lyssna is not affiliated with Spotify.
