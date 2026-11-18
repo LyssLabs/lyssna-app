@@ -45,6 +45,7 @@ import { DEFAULT_MARKER, MARKER_COLOURS } from "./highlighter";
 import { OffsetSetting } from "./lyric-offset";
 import { LyricsProvider } from "./lyrics-provider";
 import { MusixmatchToken } from "./musixmatch-token";
+import { LyssnaAccount } from "./lyssna-account";
 import { AnimatorPresetRow } from "./animator-settings";
 import { SOLOIST_PLAYS, SoloistRows } from "./soloist-settings";
 import { SettingsTransferControls } from "./settings-transfer-controls";
@@ -448,6 +449,7 @@ export function SettingsWindow({
             Sign out
           </button>
         </SettingRow>,
+        <LyssnaAccount key="lyssna" onCall={onCall} onNotice={onNotice} />,
         !state.can_follow ? (
           <SettingRow
             key="follow"

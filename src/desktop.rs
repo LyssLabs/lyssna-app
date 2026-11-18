@@ -3228,6 +3228,42 @@ async fn creator_prepare(
     .map_err(|_| "Creator player unavailable".to_owned())?
     .map_err(error)
 }
+static LYSSNA_SIGN_IN_CANCELLED: AtomicBool = AtomicBool::new(false);
+#[tauri::command]
+async fn lyssna_account() -> std::result::Result<Option<crate::lyssna_account::Account>, String> {
+    if !crate::lyssna_account::signed_in() {
+        return Ok(None);
+    }
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::lyssna_account::account(&crate::auth::http_client()?)
+    })
+    .await
+    .map_err(|_| "Lyssna account worker unavailable".to_owned())?
+    .map_err(error)
+}
+#[tauri::command]
+async fn lyssna_sign_in() -> std::result::Result<crate::lyssna_account::Account, String> {
+    LYSSNA_SIGN_IN_CANCELLED.store(false, Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::lyssna_account::sign_in(&crate::auth::http_client()?, &LYSSNA_SIGN_IN_CANCELLED)
+    })
+    .await
+    .map_err(|_| "Lyssna sign-in worker unavailable".to_owned())?
+    .map_err(error)
+}
+#[tauri::command]
+fn lyssna_cancel_sign_in() {
+    LYSSNA_SIGN_IN_CANCELLED.store(true, Ordering::Relaxed);
+}
+#[tauri::command]
+async fn lyssna_sign_out() -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::lyssna_account::sign_out(&crate::auth::http_client()?)
+    })
+    .await
+    .map_err(|_| "Lyssna account worker unavailable".to_owned())?
+    .map_err(error)
+}
 #[tauri::command]
 async fn genius_lyrics(track: Track) -> std::result::Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -5750,7 +5786,8 @@ fn allowed_link(url: &url::Url) -> bool {
                 | "developers.spicylyrics.org"
                 | "spicylyrics.org"
                 | "lyrprep.spicylyrics.org"
-                | "lrc.red",
+                | "lrc.red"
+                | "lyssna.org",
             ) => true,
             Some("github.com") => {
                 CREDITED.contains(&url.path()) && url.query().is_none() && url.fragment().is_none()
@@ -6411,6 +6448,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             creator_play,
             creator_prepare,
             genius_lyrics,
+            lyssna_account,
+            lyssna_sign_in,
+            lyssna_cancel_sign_in,
+            lyssna_sign_out,
             creator_volume,
             test_audio_output,
             refresh,

@@ -134,14 +134,14 @@ pub fn http_client() -> Result<Client> {
         .build()?)
 }
 
-fn random_string() -> Result<String> {
+pub(crate) fn random_string() -> Result<String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes)
         .map_err(|_| anyhow::anyhow!("Operating system random source unavailable"))?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-fn challenge(verifier: &str) -> String {
+pub(crate) fn challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
@@ -205,7 +205,7 @@ fn callback_code_for(target: &str, expected_state: &str, flow: &Flow<'_>) -> Res
     Ok(code)
 }
 
-fn read_target(stream: &mut TcpStream) -> Result<String> {
+pub(crate) fn read_target(stream: &mut TcpStream) -> Result<String> {
     stream.set_read_timeout(Some(Duration::from_millis(500)))?;
     let mut request = Vec::new();
     let mut buffer = [0; 1024];
@@ -227,7 +227,7 @@ fn read_target(stream: &mut TcpStream) -> Result<String> {
     Ok(parts.next().context("Callback URL missing")?.to_owned())
 }
 
-fn reply(stream: &mut TcpStream, status: &str, message: &str) {
+pub(crate) fn reply(stream: &mut TcpStream, status: &str, message: &str) {
     let body = format!(
         "<!doctype html><html><head><meta name=viewport content='width=device-width'><title>Lyssna</title></head><body style='background:#121212;color:#fff;font:18px system-ui;padding:64px'><h1>Lyssna</h1><p>{message}</p><p>You can close this tab.</p></body></html>"
     );
