@@ -48,8 +48,11 @@ fn source_history() -> Option<String> {
 
 fn main() {
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
-    std::fs::write(out.join("source-history"), source_history().unwrap_or_default())
-        .expect("write source history");
+    std::fs::write(
+        out.join("source-history"),
+        source_history().unwrap_or_default(),
+    )
+    .expect("write source history");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rerun-if-changed=src/macos_audio.m");
         cc::Build::new()
