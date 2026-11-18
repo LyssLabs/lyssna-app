@@ -148,11 +148,8 @@ pub const COMMIT: Option<&str> = match option_env!("LYSSNA_NIGHTLY") {
     // Set by Nightly copies from before the rename that build this source.
     None => option_env!("SPOTIFLEX_NIGHTLY"),
 };
-/// The source commit used for Nightly update checks, including local builds.
-const SOURCE_COMMIT: Option<&str> = match COMMIT {
-    Some(commit) => Some(commit),
-    None => option_env!("LYSSNA_SOURCE_COMMIT"),
-};
+/// Whether the checkout is shallow, followed by its HEAD and ancestors.
+const SOURCE_HISTORY: &str = include_str!(concat!(env!("OUT_DIR"), "/source-history"));
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -253,10 +250,12 @@ pub fn last() -> Option<Report> {
     LAST.lock().ok()?.clone()
 }
 
-/// Build the latest Nightly on a background thread, reporting each change.
+/// Build a Nightly on a background thread, reporting each change.
+/// Without a commit, fetch the latest Nightly.
 /// `done` is called when the new build is installed and should restart.
 pub fn start(
     mode: Mode,
+    commit: Option<String>,
     report: impl Fn(&Report) + Send + 'static,
     done: impl FnOnce(Result<Outcome, String>) + Send + 'static,
 ) -> Result<()> {
@@ -272,6 +271,7 @@ pub fn start(
     thread::spawn(move || {
         let mut run = Run::new(report);
         run.mode = mode;
+        run.requested_commit = commit;
         let result = run.build();
         if let Err(error) = &result {
             let message = if CANCEL.load(Ordering::SeqCst) {
@@ -336,14 +336,23 @@ pub fn check(build: bool) -> Result<Status> {
     if RUNNING.load(Ordering::SeqCst) {
         return Ok(Status::Building);
     }
+    let mut history = SOURCE_HISTORY.lines();
+    let complete_history = history.next() == Some("false");
+    let checkout = history.next();
+    let current = COMMIT
+        .or(checkout)
+        .or(option_env!("LYSSNA_SOURCE_COMMIT"))
+        .filter(|commit| is_commit(commit))
+        .context("Cannot check Nightly updates. This build's source commit is unknown.")?;
     let client = client()?;
     let latest = latest_commit(&client)?;
-    if SOURCE_COMMIT == Some(latest.as_str()) {
+    let checkout_matches = checkout == Some(current);
+    if latest == current
+        || (checkout_matches && history.any(|commit| commit == latest))
+        || !available_update(&client, current, &latest, checkout_matches && complete_history)?
+    {
         status(Status::Current);
         return Ok(Status::Current);
-    }
-    if let Some(current) = SOURCE_COMMIT {
-        remember_changes(&client, current, &latest);
     }
     if ready().as_deref() == Some(latest.as_str()) {
         status(Status::Ready(latest.clone()));
@@ -356,6 +365,7 @@ pub fn check(build: bool) -> Result<Status> {
     let report = hooks.report.clone();
     start(
         Mode::Stage,
+        Some(latest),
         move |progress| report(progress),
         |result| {
             let Some(hooks) = HOOKS.get() else { return };
@@ -506,6 +516,7 @@ struct Run<F: Fn(&Report)> {
     last_sent: Instant,
     tools: Tools,
     mode: Mode,
+    requested_commit: Option<String>,
     /// Build and check without installing, for the end-to-end test.
     dry_run: bool,
 }
@@ -547,6 +558,7 @@ impl<F: Fn(&Report)> Run<F> {
             last_sent: Instant::now(),
             tools: Tools::default(),
             mode: Mode::Install,
+            requested_commit: None,
             dry_run: false,
         }
     }
@@ -892,9 +904,12 @@ impl<F: Fn(&Report)> Run<F> {
     ) -> Result<Outcome> {
         let client = client.clone();
         let downloads = downloads.to_path_buf();
-        // The source of the newest commit on main.
+        // Source for the checked update, or the current tip for a manual build.
         self.set("source", State::Running);
-        let latest = latest_commit(&client).ok();
+        let latest = self
+            .requested_commit
+            .take()
+            .or_else(|| latest_commit(&client).ok());
         if let (Some(latest), Some(current)) = (&latest, COMMIT)
             && latest == current
         {
@@ -1709,6 +1724,7 @@ fn latest_commit(client: &reqwest::blocking::Client) -> Result<String> {
             "https://api.github.com/repos/{REPOSITORY}/commits/main"
         ))
         .header("Accept", "application/vnd.github.sha")
+        .header("Cache-Control", "no-cache")
         .timeout(Duration::from_secs(30))
         .send()?
         .error_for_status()?;
@@ -1717,40 +1733,73 @@ fn latest_commit(client: &reqwest::blocking::Client) -> Result<String> {
     Ok(commit)
 }
 
-/// The commits since this copy for the latest Nightly, and that commit.
-static CHANGES: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
+struct Comparison {
+    latest: String,
+    available: bool,
+    notes: String,
+}
+
+static COMPARISON: Mutex<Option<Comparison>> = Mutex::new(None);
 /// At most this many commits are listed.
 const CHANGES_SHOWN: usize = 30;
 
 /// What the latest Nightly changes since this copy, newest first: one
 /// "abc1234 Subject" line per commit. Empty when GitHub couldn't say.
 pub fn changes() -> String {
-    CHANGES
+    COMPARISON
         .lock()
-        .map(|changes| changes.1.clone())
+        .map(|comparison| {
+            comparison
+                .as_ref()
+                .map_or_else(String::new, |comparison| comparison.notes.clone())
+        })
         .unwrap_or_default()
 }
 
-fn remember_changes(client: &reqwest::blocking::Client, current: &str, latest: &str) {
-    if CHANGES.lock().is_ok_and(|changes| changes.0 == latest) {
-        return;
+fn available_update(
+    client: &reqwest::blocking::Client,
+    current: &str,
+    latest: &str,
+    complete_history: bool,
+) -> Result<bool> {
+    if let Ok(comparison) = COMPARISON.lock()
+        && let Some(comparison) = comparison.as_ref()
+        && comparison.latest == latest
+    {
+        return Ok(comparison.available);
     }
     let url = format!("https://api.github.com/repos/{REPOSITORY}/compare/{current}...{latest}");
-    let lines = client
+    let comparison = client
         .get(url)
         .header("Accept", "application/vnd.github+json")
         .timeout(Duration::from_secs(30))
         .send()
         .and_then(|response| response.error_for_status())
-        .and_then(|response| response.json::<serde_json::Value>())
-        .map(|comparison| change_lines(&comparison))
-        .unwrap_or_else(|error| {
+        .and_then(|response| response.json::<serde_json::Value>());
+    let (available, notes) = match comparison {
+        Ok(comparison) => match comparison["status"].as_str() {
+            Some("ahead" | "diverged") => (true, change_lines(&comparison)),
+            Some("behind" | "identical") => (false, String::new()),
+            _ => bail!("GitHub did not report how this build compares with the latest Nightly"),
+        },
+        // GitHub may not know a local commit. The checkout's complete
+        // history already establishes whether it contains the remote tip.
+        Err(error) if complete_history => {
             log::warn!("Cannot list Nightly changes: {error}");
-            String::new()
+            (true, String::new())
+        }
+        Err(error) => {
+            return Err(error).context("Cannot compare this build with the latest Nightly");
+        }
+    };
+    if let Ok(mut comparison) = COMPARISON.lock() {
+        *comparison = Some(Comparison {
+            latest: latest.to_owned(),
+            available,
+            notes,
         });
-    if let Ok(mut changes) = CHANGES.lock() {
-        *changes = (latest.to_owned(), lines);
     }
+    Ok(available)
 }
 
 /// GitHub's comparison as change lines, newest first.

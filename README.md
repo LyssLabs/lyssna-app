@@ -110,7 +110,7 @@ By default each script requires a clean worktree, switches to `main`, fast-forwa
 - **Windows** installs to `%LOCALAPPDATA%\Programs\Lyssna\lyssna.exe`, closes a running copy first, and starts the new one. `-NoLaunch` installs without starting it. Run the script again to update a local build on the Stable channel. If PowerShell blocks the script, use `powershell -ExecutionPolicy Bypass -File .\build.ps1`. The script finds Visual Studio's bundled CMake and LLVM's default folder; otherwise put CMake on `PATH` and set `LIBCLANG_PATH` to the folder that contains `libclang.dll`.
 - **macOS** signs the bundle with a reusable self-signed certificate (an explicit `APPLE_SIGNING_IDENTITY` or `APPLE_CERTIFICATE` takes precedence, and `LYSSNA_ADHOC_SIGNING=1` opts out), replaces `/Applications/Lyssna.app` (and removes an old `/Applications/Lyssna.app`) and opens it. Credentials live encrypted under `~/Library/Application Support/Lyssna/credentials/`; keep `device.key` with them when backing up.
 - `.\build.ps1 <branch>` or `./build.sh <branch>` builds another branch; a commit hash builds that commit.
-- Both scripts record the checkout's commit so Lyssna can compare it with the latest Nightly when Nightly is selected.
+- Builds from a Git checkout record its commit history so Lyssna can tell whether it already contains the latest Nightly.
 
 To build by hand:
 

@@ -2,7 +2,54 @@
 
 include!("src/ui/icon_pixels.rs");
 
+fn git_output(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .arg("--no-replace-objects")
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()
+}
+
+fn source_history() -> Option<String> {
+    // Archives have no checkout. Do not read a containing repository's history.
+    if !std::path::Path::new(".git").exists() {
+        return None;
+    }
+    // Track branch moves and detached HEADs, including linked worktrees.
+    let head_ref = git_output(&["symbolic-ref", "--quiet", "HEAD"]);
+    let mut paths = vec![
+        "rev-parse",
+        "--git-path",
+        "HEAD",
+        "--git-path",
+        "logs/HEAD",
+        "--git-path",
+        "packed-refs",
+        "--git-path",
+        "shallow",
+    ];
+    if let Some(reference) = head_ref.as_deref() {
+        paths.extend(["--git-path", reference.trim()]);
+    }
+    for path in git_output(&paths)?.lines() {
+        if std::path::Path::new(path).exists() {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+
+    let shallow = git_output(&["rev-parse", "--is-shallow-repository"])?;
+    let commits = git_output(&["rev-list", "HEAD"])?;
+    Some(format!("{}\n{commits}", shallow.trim()))
+}
+
 fn main() {
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    std::fs::write(out.join("source-history"), source_history().unwrap_or_default())
+        .expect("write source history");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rerun-if-changed=src/macos_audio.m");
         cc::Build::new()
@@ -49,7 +96,6 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let path = out.join("lyssna.ico");
     std::fs::write(&path, ico(&[16, 24, 32, 48, 64, 128, 256])).expect("write icon");
     let mut resource = winresource::WindowsResource::new();

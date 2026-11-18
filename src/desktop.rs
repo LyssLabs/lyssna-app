@@ -4144,6 +4144,7 @@ fn nightly_build(
     let inner = state.0.clone();
     crate::nightly::start(
         crate::nightly::Mode::Install,
+        None,
         move |report| {
             let _ = events.emit("lyssna", json!({"type":"nightly","report":report}));
         },
