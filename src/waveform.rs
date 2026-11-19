@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use librespot_audio::{AudioDecrypt, AudioFile};
 use librespot_core::{Session, SpotifyId, SpotifyUri};
 use librespot_metadata::audio::{AudioFileFormat, AudioFiles, AudioItem};
+use librespot_metadata::track::Tracks;
 use librespot_playback::decoder::{AudioDecoder, AudioPacket, SymphoniaDecoder};
 use std::{
     collections::VecDeque,
@@ -177,6 +178,29 @@ fn stereo_of(mut decoder: impl AudioDecoder) -> Result<Vec<i16>> {
     Ok(stereo)
 }
 
+/// The song's own files, or, like the player, those of the first available
+/// alternative when Spotify serves the song through another release.
+async fn playable_item(session: &Session, uri: SpotifyUri) -> Result<AudioItem> {
+    let item = AudioItem::get_file(session, uri).await?;
+    if !item.files.is_empty() {
+        return Ok(item);
+    }
+    let alternatives = item
+        .alternatives
+        .clone()
+        .map(|Tracks(ids)| ids)
+        .unwrap_or_default();
+    for id in alternatives {
+        if let Ok(alternative) = AudioItem::get_file(session, id).await
+            && alternative.availability.is_ok()
+            && !alternative.files.is_empty()
+        {
+            return Ok(alternative);
+        }
+    }
+    Ok(item)
+}
+
 fn open_track(session: &Session, uri: &str) -> Result<(impl AudioDecoder, u32)> {
     let track_uri = SpotifyUri::from_uri(uri).context("Not a Spotify track")?;
     if !matches!(track_uri, SpotifyUri::Track { .. }) {
@@ -187,11 +211,16 @@ fn open_track(session: &Session, uri: &str) -> Result<(impl AudioDecoder, u32)> 
         .enable_all()
         .build()?;
     let (file, key, duration_ms, format) = runtime.block_on(async {
-        let item = AudioItem::get_file(session, track_uri).await?;
+        let item = playable_item(session, track_uri).await?;
         let (format, file_id, rate) = FORMATS
             .iter()
             .find_map(|&(format, rate)| item.files.get(&format).map(|&id| (format, id, rate)))
-            .context("No playable audio file")?;
+            .with_context(|| {
+                format!(
+                    "No playable audio file (Spotify offers {:?})",
+                    item.files.keys().collect::<Vec<_>>()
+                )
+            })?;
         let (file, key) = tokio::join!(
             AudioFile::open(session, file_id, rate),
             session.audio_key().request(track_id, file_id),

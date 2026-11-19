@@ -3146,8 +3146,14 @@ async fn track_spectrogram(
 ) -> std::result::Result<tauri::ipc::Response, String> {
     let controls = state.0.controls.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let session = controls.session()?;
-        crate::waveform::track_spectrogram(&session, &uri, from_ms, to_ms, columns, rows)
+        controls
+            .session()
+            .and_then(|session| {
+                crate::waveform::track_spectrogram(&session, &uri, from_ms, to_ms, columns, rows)
+            })
+            .inspect_err(|failure| {
+                crate::native::diagnostic(&format!("spectrogram {uri} failed: {failure:#}"))
+            })
     })
     .await
     .map_err(|_| "Spectrogram worker unavailable".to_owned())?
