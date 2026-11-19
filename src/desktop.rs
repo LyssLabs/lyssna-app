@@ -3277,7 +3277,8 @@ async fn lyssna_submit(
     state: State<'_, Desktop>,
 ) -> std::result::Result<crate::lyssna_account::Submission, String> {
     let controls = state.0.controls.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let submitted = track.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let isrc = if track.is_local {
             None
         } else {
@@ -3293,7 +3294,21 @@ async fn lyssna_submit(
     })
     .await
     .map_err(|_| "Lyssna account worker unavailable".to_owned())?
-    .map_err(error)
+    .map_err(error)?;
+    // Drop the song's saved "no lyrics" answer so the upload shows without a
+    // manual refresh, and refetch at once if the song is still playing.
+    let _ = state
+        .0
+        .lyrics
+        .send(LyricCommand::ForgetCached(submitted.clone()));
+    let playing = lock(&state.0.snapshot)
+        .ok()
+        .and_then(|snapshot| snapshot.playback.item.clone())
+        .filter(|item| item.uri == submitted.uri);
+    if let Some(item) = playing {
+        let _ = state.0.commands.send(Command::FetchLyrics(item));
+    }
+    Ok(result)
 }
 #[tauri::command]
 async fn lyssna_backfill_isrc(
