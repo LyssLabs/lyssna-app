@@ -1065,7 +1065,8 @@ fn fetch_from(
                 crate::lyric_sources::spotify(&native, &track)
             }),
             "lrclib" => cache.get("lrclib", &|| crate::lyric_sources::lrclib(&client, &track)),
-            "lyssna" => cache.get("lyssna", &|| {
+            // Renamed when background brackets parsing changed.
+            "lyssna" => cache.get("lyssna-2", &|| {
                 crate::lyssna_lyrics::fetch(
                     &client,
                     || native.isrc(&track.uri).ok().flatten(),
