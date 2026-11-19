@@ -3398,6 +3398,15 @@ test("Lyssna lyrics credit their makers and link to their profiles", async ({
     )
     .toContain("https://lyssna.org/u/Arashii");
   await expect(credits.getByText("Deleted user")).not.toHaveRole("button");
+  // Squeezed, "Made by" drops to the next line with its name instead of
+  // leaving the name to wrap alone.
+  await credits.evaluate((element) => {
+    (element as HTMLElement).style.width = "15em";
+  });
+  const madeBy = credits.locator(".community-label-name").first();
+  expect(
+    await madeBy.evaluate((element) => element.getClientRects().length),
+  ).toBe(1);
 });
 
 test("community credits show the Discord username looked up by ID", async ({

@@ -1302,10 +1302,12 @@ const LyricCredits = memo(function LyricCredits({
           return (
             <span key={label} className="community-person">
               <span className="community-dot"> · </span>
-              {label}{" "}
-              {shown.map((person, index) => (
+              <span className="community-label-name">
+                {label} <LyssnaPerson person={shown[0]} />
+              </span>
+              {shown.slice(1).map((person, index) => (
                 <span key={person.user_id ?? `deleted-${index}`}>
-                  {index > 0 && ", "}
+                  {", "}
                   <LyssnaPerson person={person} />
                 </span>
               ))}
@@ -1351,17 +1353,19 @@ const LyricCredits = memo(function LyricCredits({
           return (
             <span key={role} className="community-person">
               <span className="community-dot"> · </span>
-              {label}{" "}
-              {linkOf(person, url) ? (
-                <button
-                  className="community-profile"
-                  onClick={linkOf(person, url)}
-                >
-                  {name}
-                </button>
-              ) : (
-                <span className="community-profile">{name}</span>
-              )}
+              <span className="community-label-name">
+                {label}{" "}
+                {linkOf(person, url) ? (
+                  <button
+                    className="community-profile"
+                    onClick={linkOf(person, url)}
+                  >
+                    {name}
+                  </button>
+                ) : (
+                  <span className="community-profile">{name}</span>
+                )}
+              </span>
             </span>
           );
         })}

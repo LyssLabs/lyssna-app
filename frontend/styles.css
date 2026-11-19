@@ -6812,6 +6812,11 @@ input[type="range"]:hover {
 .community-credits span.community-profile {
   cursor: default;
 }
+/* "Made by" moves to the next line with its name rather than leaving the
+   name to wrap alone, e.g. when Up Next narrows the credits. */
+.community-credits .community-label-name {
+  white-space: nowrap;
+}
 .lyric-source.community-credits.expanded > span {
   display: inline;
   margin-top: 0;
