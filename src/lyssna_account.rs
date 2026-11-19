@@ -30,16 +30,16 @@ pub const API: &str = "https://api.lyssna.org";
 const WEB: &str = "https://lyssna.org";
 const CALLBACK_PATH: &str = "/cb";
 
-// The desktop app's project on api.lyssna.org. Both are filled in once the project is created
-// there; builds can also set them with LYSSNA_CLIENT_ID and LYSSNA_KEY. The key is publishable,
-// not a secret: it only lifts the API's rate limits. While it is empty no header is sent.
+// The desktop app's project on api.lyssna.org. Builds can point at another project with
+// LYSSNA_CLIENT_ID and LYSSNA_KEY. The key is publishable, not a secret: it names the project
+// and anyone can read it out of the app. Requests also carry this copy's install id.
 pub const CLIENT_ID: &str = match option_env!("LYSSNA_CLIENT_ID") {
     Some(id) => id,
-    None => "",
+    None => "01a1f5b3-3428-7ce0-918c-894bd775c2bd",
 };
 pub const PUBLISHABLE_KEY: &str = match option_env!("LYSSNA_KEY") {
     Some(key) => key,
-    None => "",
+    None => "lk_pub_4qv4iYxKjDz6pp0vDQOWJ4cAi6JM3LMb",
 };
 
 /// Adds the project's publishable key, and this copy's install id, to a request for
