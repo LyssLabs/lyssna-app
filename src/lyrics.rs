@@ -124,6 +124,59 @@ fn timestamp(value: &str) -> Option<u64> {
         .then_some((seconds * 1000.0).round() as u64)
 }
 
+/// Some TTML editors write a paragraph or background container that ends
+/// before it begins (e.g. `end="00:00.000"`), which Lyssna's API rejects.
+/// Such a span takes its timing from the words inside it; everything else
+/// in the file is left byte for byte.
+pub fn repair_container_timing(source: &str) -> String {
+    let Ok(document) = roxmltree::Document::parse(source) else {
+        return source.to_owned();
+    };
+    let timed = |node: roxmltree::Node<'_, '_>| {
+        Some((
+            timestamp(node.attribute("begin")?)?,
+            timestamp(node.attribute("end")?)?,
+        ))
+    };
+    let mut edits = Vec::new();
+    for node in document
+        .descendants()
+        .filter(|node| matches!(node.tag_name().name(), "p" | "span"))
+    {
+        let (Some(begin), Some(end)) = (node.attribute_node("begin"), node.attribute_node("end"))
+        else {
+            continue;
+        };
+        if timed(node).is_none_or(|(start, finish)| finish >= start) {
+            continue;
+        }
+        let words: Vec<(u64, u64)> = node
+            .descendants()
+            .skip(1)
+            .filter(|word| {
+                word.tag_name().name() == "span" && !word.children().any(|child| child.is_element())
+            })
+            .filter_map(timed)
+            .filter(|(start, finish)| finish >= start)
+            .collect();
+        let (Some(first), Some(last)) = (
+            words.iter().map(|word| word.0).min(),
+            words.iter().map(|word| word.1).max(),
+        ) else {
+            continue;
+        };
+        let clock = |ms: u64| format!("{:02}:{:02}.{:03}", ms / 60_000, ms / 1000 % 60, ms % 1000);
+        edits.push((begin.range_value(), clock(first)));
+        edits.push((end.range_value(), clock(last)));
+    }
+    edits.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
+    let mut repaired = source.to_owned();
+    for (range, value) in edits {
+        repaired.replace_range(range, &value);
+    }
+    repaired
+}
+
 pub fn parse_lrc(source: &str, duration_ms: u64) -> Result<Lyrics> {
     let mut lines = Vec::new();
     let offset = source
@@ -1183,6 +1236,19 @@ mod tests {
         assert_eq!(background.text, "Ooh-ooh");
         assert_eq!(background.words.len(), 2);
         assert_eq!(background.end_ms, 50_391);
+    }
+
+    #[test]
+    fn containers_that_end_before_they_begin_take_their_words_timing() {
+        let source = r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+<p begin="02:16.775" end="00:00.000"><span begin="02:16.775" end="02:16.931">Can</span> <span begin="02:18.317" end="02:18.613">ger</span><span ttm:role="x-bg" begin="02:21.476" end="02:18.311"><span begin="02:18.311" end="02:19.175">(Oh</span> <span begin="02:20.896" end="02:21.476">hour)</span></span></p>
+<p begin="02:19.047" end="02:21.127"><span begin="02:19.047" end="02:21.127">Fine</span></p>
+</div></body></tt>"#;
+        let repaired = super::repair_container_timing(source);
+        assert!(repaired.contains(r#"<p begin="02:16.775" end="02:21.476">"#));
+        assert!(repaired.contains(r#"ttm:role="x-bg" begin="02:18.311" end="02:21.476">"#));
+        assert!(repaired.contains(r#"<p begin="02:19.047" end="02:21.127">"#));
+        assert_eq!(super::repair_container_timing(&repaired), repaired);
     }
 
     fn timed_line(words: &[(&str, u64)]) -> Line {

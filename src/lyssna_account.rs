@@ -332,7 +332,7 @@ fn submission_body(ttml: &str, track: &Track, isrc: Option<&str>) -> Result<serd
     }
     links.push(serde_json::json!({ "platform": "spotify", "external_id": id }));
     let mut body = serde_json::json!({
-        "ttml": ttml,
+        "ttml": crate::lyrics::repair_container_timing(ttml),
         "links": links,
         "title": track.name,
         "artists": track.artists.iter().map(|artist| &artist.name).collect::<Vec<_>>(),
