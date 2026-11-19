@@ -90,15 +90,16 @@ const collator = new Intl.Collator(undefined, {
 });
 
 /** Clicking a column header cycles like Spotify: ascending, descending,
- * then back to the playlist's own order. Date added ascends oldest first. */
-export function nextHeaderSort(
-  column: "title" | "album" | "added",
-  current: string,
-) {
-  const [ascending, descending] =
-    column === "added"
-      ? ["added_oldest", "recent"]
-      : [`${column}_asc`, `${column}_desc`];
+ * then back to the playlist's own order. Date added ascends oldest first,
+ * duration shortest first. */
+export type SortColumn = "title" | "album" | "added" | "duration";
+export function headerSorts(column: SortColumn): [string, string] {
+  if (column === "added") return ["added_oldest", "recent"];
+  if (column === "duration") return ["shortest", "longest"];
+  return [`${column}_asc`, `${column}_desc`];
+}
+export function nextHeaderSort(column: SortColumn, current: string) {
+  const [ascending, descending] = headerSorts(column);
   return current === ascending
     ? descending
     : current === descending

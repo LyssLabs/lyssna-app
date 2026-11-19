@@ -223,6 +223,8 @@ import {
   collectionTracks,
   genresFor,
   nextHeaderSort,
+  headerSorts,
+  type SortColumn,
   playable,
 } from "./collection";
 import {
@@ -2384,14 +2386,15 @@ function App() {
     },
     [play, collection, likedRoute, displayTracks, filtering],
   );
-  // Title, Album and Date added headers sort like Spotify's on playlists
-  // and Liked Songs: ascending, descending, then the playlist's own order.
-  const headerSort = (column: "title" | "album" | "added", label: string) => {
-    if (!collection) return label;
-    const [ascending, descending] =
-      column === "added"
-        ? ["added_oldest", "recent"]
-        : [`${column}_asc`, `${column}_desc`];
+  // Title, Album, Date added and duration headers sort like Spotify's on
+  // playlists and Liked Songs: ascending, descending, then the playlist's own order.
+  const headerSort = (
+    column: SortColumn,
+    label: string,
+    content: ReactNode = label,
+  ) => {
+    if (!collection) return content;
+    const [ascending, descending] = headerSorts(column);
     const direction =
       songSort === ascending ? "up" : songSort === descending ? "down" : null;
     return (
@@ -2401,7 +2404,7 @@ function App() {
         aria-label={`Sort by ${label}${direction === "up" ? ", ascending" : direction === "down" ? ", descending" : ""}`}
         onClick={() => setSongSort(nextHeaderSort(column, songSort))}
       >
-        {label}
+        {content}
         {direction === "up" && <ChevronUp size={14} />}
         {direction === "down" && <ChevronDown size={14} />}
       </button>
@@ -4621,7 +4624,11 @@ function App() {
                           )}
                           {collectionPlays && <span>Plays</span>}
                           <span>
-                            <Clock3 size={16} />
+                            {headerSort(
+                              "duration",
+                              "Duration",
+                              <Clock3 size={16} />,
+                            )}
                           </span>
                         </div>
                         {rows.before > 0 && (

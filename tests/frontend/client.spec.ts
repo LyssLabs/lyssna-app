@@ -10236,7 +10236,7 @@ for (const route of ["liked", "playlist:0123456789abcdefghijkl"]) {
   }
 }
 
-test("Title, Album and Date added headers sort like Spotify", async ({
+test("Title, Album, Date added and duration headers sort like Spotify", async ({
   page,
 }) => {
   await startClient(page);
@@ -10273,6 +10273,11 @@ test("Title, Album and Date added headers sort like Spotify", async ({
   await expect.poll(saved).toBe("added_oldest");
   await added.click();
   await expect.poll(saved).toBe("recent");
+  const duration = head.getByRole("button", { name: /Sort by Duration/ });
+  await duration.click();
+  await expect.poll(saved).toBe("shortest");
+  await duration.click();
+  await expect.poll(saved).toBe("longest");
 });
 
 test("custom header fonts retain italic overhang and artist descenders", async ({

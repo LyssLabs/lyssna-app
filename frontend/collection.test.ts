@@ -203,6 +203,9 @@ describe("date added", () => {
   });
   it("cycles header sorts like Spotify: ascending, descending, then off", () => {
     expect(nextHeaderSort("title", "order")).toBe("title_asc");
+    expect(nextHeaderSort("duration", "order")).toBe("shortest");
+    expect(nextHeaderSort("duration", "shortest")).toBe("longest");
+    expect(nextHeaderSort("duration", "longest")).toBe("order");
     expect(nextHeaderSort("title", "title_asc")).toBe("title_desc");
     expect(nextHeaderSort("title", "title_desc")).toBe("order");
     expect(nextHeaderSort("album", "title_desc")).toBe("album_asc");
