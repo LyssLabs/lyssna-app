@@ -31,24 +31,44 @@ pub(crate) fn spotify_id(track: &Track) -> Option<&str> {
     })
 }
 
-pub fn fetch(client: &Client, track: &Track) -> Result<Lyrics> {
-    let Some(id) = spotify_id(track) else {
-        bail!("Lyssna has no lyrics for local songs");
-    };
+/// `None` when Lyssna has no lyrics under this platform ID.
+fn view(client: &Client, platform: &str, id: &str) -> Result<Option<LyricsView>> {
     let response = client
         .get(format!(
-            "{}/v1/lyrics/spotify/{id}",
+            "{}/v1/lyrics/{platform}/{id}",
             crate::lyssna_account::API
         ))
         .send()
         .context("Cannot reach Lyssna")?;
     if response.status() == StatusCode::NOT_FOUND {
-        bail!("No Lyssna lyrics for this song");
+        return Ok(None);
     }
     if !response.status().is_success() {
         bail!("Lyssna lyrics failed: HTTP {}", response.status().as_u16());
     }
-    let view: LyricsView = response.json().context("Unreadable Lyssna lyrics")?;
+    Ok(Some(response.json().context("Unreadable Lyssna lyrics")?))
+}
+
+/// Looks the song up by its Spotify ID, then by its ISRC: the same recording is often on
+/// Spotify several times (singles, albums, compilations), and lyrics are uploaded for one.
+pub fn fetch(
+    client: &Client,
+    isrc: impl FnOnce() -> Option<String>,
+    track: &Track,
+) -> Result<Lyrics> {
+    let Some(id) = spotify_id(track) else {
+        bail!("Lyssna has no lyrics for local songs");
+    };
+    let found = match view(client, "spotify", id)? {
+        Some(found) => Some(found),
+        None => match isrc() {
+            Some(isrc) => view(client, "isrc", &isrc)?,
+            None => None,
+        },
+    };
+    let Some(view) = found else {
+        bail!("No Lyssna lyrics for this song");
+    };
     let mut lyrics = parse_ttml(&view.ttml, track.duration_ms)?;
     shift(&mut lyrics, view.offset_ms);
     lyrics.source = "lyssna".into();

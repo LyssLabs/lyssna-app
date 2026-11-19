@@ -1056,7 +1056,13 @@ fn fetch_from(
                 crate::lyric_sources::spotify(&native, &track)
             }),
             "lrclib" => cache.get("lrclib", &|| crate::lyric_sources::lrclib(&client, &track)),
-            "lyssna" => cache.get("lyssna", &|| crate::lyssna_lyrics::fetch(&client, &track)),
+            "lyssna" => cache.get("lyssna", &|| {
+                crate::lyssna_lyrics::fetch(
+                    &client,
+                    || native.isrc(&track.uri).ok().flatten(),
+                    &track,
+                )
+            }),
             // Renamed when parsing changed: saved answers had dropped lines.
             "lrcred" => cache.get("lrcred-2", &|| {
                 crate::lyric_sources::lrc_red(&client, &native, &track)
