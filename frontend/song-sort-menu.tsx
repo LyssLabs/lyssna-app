@@ -9,31 +9,37 @@ const SORTS = [
   ["added_oldest", "Oldest added"],
   ["newest", "Newest releases"],
   ["oldest", "Oldest releases"],
+  ["longest", "Longest"],
+  ["shortest", "Shortest"],
   ["popular", "Most played"],
   ["random", "Random"],
 ] as const;
 
 /**
  * Spotify-style "Recently added ☰" button: one popover holding the playlist
- * sort plus the genre and release-age filters, so the action bar stays on
+ * sort plus the genre, release-age and length filters, so the action bar stays on
  * one line.
  */
 export function SongSortMenu({
   sort,
   genre,
   age,
+  length,
   genres,
   onSort,
   onGenre,
   onAge,
+  onLength,
 }: {
   sort: string;
   genre: string;
   age: string;
+  length: string;
   genres: string[];
   onSort: (value: string) => void;
   onGenre: (value: string) => void;
   onAge: (value: string) => void;
+  onLength: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -59,7 +65,7 @@ export function SongSortMenu({
       sort
     ] ??
     "Custom order";
-  const filtered = !!(genre || age);
+  const filtered = !!(genre || age || length);
   return (
     <div className="sort-menu-root" ref={root}>
       <button
@@ -112,6 +118,20 @@ export function SongSortMenu({
               <option value="five">1–5 years old</option>
               <option value="ten">5–10 years old</option>
               <option value="older">10+ years old</option>
+            </select>
+          </label>
+          <label>
+            <span className="sort-menu-heading">Length</span>
+            <select
+              aria-label="Length"
+              value={length}
+              onChange={(event) => onLength(event.target.value)}
+            >
+              <option value="">Any length</option>
+              <option value="under3">Under 3 min</option>
+              <option value="3to5">3–5 min</option>
+              <option value="5to10">5–10 min</option>
+              <option value="over10">Over 10 min</option>
             </select>
           </label>
         </div>

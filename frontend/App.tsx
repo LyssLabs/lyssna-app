@@ -687,7 +687,8 @@ function App() {
   const [songSearch, setSongSearch] = useState(false);
   const [songQuery, setSongQuery] = useState(""),
     [songGenre, setSongGenre] = useState(""),
-    [songAge, setSongAge] = useState("");
+    [songAge, setSongAge] = useState(""),
+    [songLength, setSongLength] = useState("");
   // Each page remembers its own sort across restarts, like Spotify.
   const songSort = state.settings.song_sorts?.[state.route] ?? "order";
   // Random reshuffles every launch, when a page is opened and when picked
@@ -714,6 +715,7 @@ function App() {
     setSongQuery("");
     setSongGenre("");
     setSongAge("");
+    setSongLength("");
   }, [state.route]);
   const generation = useRef(0),
     bootRoute = useRef("home"),
@@ -2306,6 +2308,7 @@ function App() {
     songQuery.trim() ||
     songGenre ||
     songAge ||
+    songLength ||
     songSort !== "order"
   );
 
@@ -2333,6 +2336,7 @@ function App() {
           query: songQuery,
           genre: songGenre,
           age: songAge,
+          length: songLength,
           sort: songSort,
           seed: shuffleSeed,
         })
@@ -4575,10 +4579,12 @@ function App() {
                               sort={songSort}
                               genre={songGenre}
                               age={songAge}
+                              length={songLength}
                               genres={songGenres}
                               onSort={setSongSort}
                               onGenre={setSongGenre}
                               onAge={setSongAge}
+                              onLength={setSongLength}
                             />
                           </div>
                         )}

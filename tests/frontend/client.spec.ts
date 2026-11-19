@@ -3210,6 +3210,10 @@ test("playlist search spans unloaded pages and play counts drive sorting", async
   await expect(page.locator(".track-row").first()).toContainText("Song 125");
   await page.getByLabel("Genre", { exact: true }).selectOption("rock");
   await expect(page.locator(".track-row")).toHaveCount(1);
+  await page.getByLabel("Length", { exact: true }).selectOption("under3");
+  await expect(page.locator(".track-row")).toHaveCount(0);
+  await page.getByLabel("Length", { exact: true }).selectOption("3to5");
+  await expect(page.locator(".track-row")).toHaveCount(1);
 });
 
 test("Now playing and each page's sort are saved for the next launch", async ({

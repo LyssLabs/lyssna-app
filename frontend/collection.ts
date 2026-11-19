@@ -3,6 +3,8 @@ export interface SongFilters {
   query: string;
   genre: string;
   age: string;
+  /** Song length band, from `LENGTHS`. */
+  length?: string;
   sort: string;
   /** Orders the Random sort; a new one reshuffles. */
   seed?: number;
@@ -68,6 +70,13 @@ export function addedLabel(added: string | undefined, now = Date.now()) {
     year: "numeric",
   });
 }
+const MINUTE = 60000;
+export const LENGTHS: Record<string, [number, number]> = {
+  under3: [0, 3 * MINUTE],
+  "3to5": [3 * MINUTE, 5 * MINUTE],
+  "5to10": [5 * MINUTE, 10 * MINUTE],
+  over10: [10 * MINUTE, Infinity],
+};
 /** Text sorts compare like Spotify: case-insensitive, numbers in order. */
 const TEXT_SORTS: Record<string, [(track: Track) => string, 1 | -1]> = {
   title_asc: [(track) => track.name, 1],
@@ -140,6 +149,12 @@ export function collectionTracks(
         if (filters.age === "ten" && (years <= 5 || years > 10)) return false;
         if (filters.age === "older" && years <= 10) return false;
       }
+      const band = filters.length ? LENGTHS[filters.length] : undefined;
+      if (
+        band &&
+        !(track.duration_ms >= band[0] && track.duration_ms < band[1])
+      )
+        return false;
       return true;
     })
     .sort((a, b) => {
@@ -152,11 +167,13 @@ export function collectionTracks(
         );
       }
       const value = (track: Track) =>
-        filters.sort === "popular"
-          ? facts[track.uri]?.plays
-          : filters.sort === "recent" || filters.sort === "added_oldest"
-            ? Date.parse(track.added_at || "")
-            : release(track);
+        filters.sort === "longest" || filters.sort === "shortest"
+          ? track.duration_ms
+          : filters.sort === "popular"
+            ? facts[track.uri]?.plays
+            : filters.sort === "recent" || filters.sort === "added_oldest"
+              ? Date.parse(track.added_at || "")
+              : release(track);
       if (filters.sort === "order") return a.index - b.index;
       if (filters.sort === "random") {
         const seed = filters.seed ?? 0;
@@ -172,7 +189,9 @@ export function collectionTracks(
       if (!hasLeft || !hasRight)
         return Number(hasRight) - Number(hasLeft) || a.index - b.index;
       return (
-        (filters.sort === "oldest" || filters.sort === "added_oldest"
+        (filters.sort === "oldest" ||
+        filters.sort === "added_oldest" ||
+        filters.sort === "shortest"
           ? left! - right!
           : right! - left!) || a.index - b.index
       );

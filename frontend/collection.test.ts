@@ -105,6 +105,32 @@ it("filters by song, artist, genre and release age without changing the playlist
   ).toEqual([tracks[1]]);
   expect(tracks.map((track) => track.uri)).toEqual(["a", "b", "c"]);
 });
+it("filters and sorts by song length", () => {
+  const timed = tracks.map((track, index) => ({
+    ...track,
+    duration_ms: [150000, 420000, 180000][index],
+  }));
+  expect(
+    collectionTracks(timed, {}, { ...filters, length: "under3" }).map(
+      (track) => track.uri,
+    ),
+  ).toEqual(["a"]);
+  expect(
+    collectionTracks(timed, {}, { ...filters, length: "3to5" }).map(
+      (track) => track.uri,
+    ),
+  ).toEqual(["c"]);
+  expect(
+    collectionTracks(timed, {}, { ...filters, sort: "longest" }).map(
+      (track) => track.uri,
+    ),
+  ).toEqual(["b", "c", "a"]);
+  expect(
+    collectionTracks(timed, {}, { ...filters, sort: "shortest" }).map(
+      (track) => track.uri,
+    ),
+  ).toEqual(["a", "c", "b"]);
+});
 it("orders real plays before unknown values and sorts recent additions separately from release date", () => {
   expect(
     collectionTracks(
