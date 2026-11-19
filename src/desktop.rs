@@ -5339,8 +5339,13 @@ fn song_page_url(song_id: &str) -> Result<url::Url> {
         song_id.len() == 36 && song_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'),
         "Invalid song"
     );
+    // A fresh query each open: WebView2 reused a cached page from before a
+    // site deploy, whose stylesheets no longer existed.
+    let opened = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis());
     Ok(url::Url::parse(&format!(
-        "https://lyssna.org/song/{song_id}?embed"
+        "https://lyssna.org/song/{song_id}?embed&opened={opened}"
     ))?)
 }
 /// The song's lyrics page from lyssna.org in a sheet over the window that
@@ -6876,11 +6881,13 @@ mod tests {
     }
     #[test]
     fn song_pages_take_only_song_ids() {
-        assert_eq!(
+        assert!(
             song_page_url("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44")
                 .unwrap()
-                .as_str(),
-            "https://lyssna.org/song/0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44?embed"
+                .as_str()
+                .starts_with(
+                    "https://lyssna.org/song/0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44?embed&opened="
+                )
         );
         assert!(song_page_url("../../account").is_err());
         assert!(song_page_url("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c4/").is_err());
