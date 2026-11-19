@@ -1960,6 +1960,7 @@ export function TtmlCreator({
       const result = await rpc<LyssnaSubmission>("lyssna_submit", {
         ttml: ttml(),
         track,
+        authoredAt: savedAt ? new Date(savedAt).toISOString() : undefined,
       });
       notify(
         result.status === "approved"

@@ -3274,6 +3274,7 @@ async fn lyssna_sign_out() -> std::result::Result<(), String> {
 async fn lyssna_submit(
     ttml: String,
     track: Track,
+    authored_at: Option<String>,
     state: State<'_, Desktop>,
 ) -> std::result::Result<crate::lyssna_account::Submission, String> {
     let controls = state.0.controls.clone();
@@ -3290,7 +3291,13 @@ async fn lyssna_submit(
                 None
             })
         };
-        crate::lyssna_account::submit(&crate::auth::http_client()?, &ttml, &track, isrc.as_deref())
+        crate::lyssna_account::submit(
+            &crate::auth::http_client()?,
+            &ttml,
+            &track,
+            isrc.as_deref(),
+            authored_at.as_deref(),
+        )
     })
     .await
     .map_err(|_| "Lyssna account worker unavailable".to_owned())?

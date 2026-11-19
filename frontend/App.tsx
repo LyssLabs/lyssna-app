@@ -1631,7 +1631,13 @@ function App() {
         song_title: string;
         kind: "new" | "edit";
         status: string;
-      }>("lyssna_submit", { ttml: await file.text(), track });
+      }>("lyssna_submit", {
+        ttml: await file.text(),
+        track,
+        authoredAt: file.lastModified
+          ? new Date(file.lastModified).toISOString()
+          : undefined,
+      });
       setTtmlOpen(false);
       notify(
         result.status === "approved"

@@ -14,7 +14,10 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use reqwest::{StatusCode, blocking::Client};
+use reqwest::{
+    StatusCode,
+    blocking::{Client, RequestBuilder},
+};
 use serde::{Deserialize, Serialize};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use url::Url;
@@ -25,7 +28,37 @@ use crate::model::Track;
 
 pub const API: &str = "https://api.lyssna.org";
 const WEB: &str = "https://lyssna.org";
-const CALLBACK_PATH: &str = "/lyssna";
+const CALLBACK_PATH: &str = "/cb";
+
+// The desktop app's project on api.lyssna.org. Builds can point at another project with
+// LYSSNA_CLIENT_ID and LYSSNA_KEY. The key is publishable, not a secret: it names the project
+// and anyone can read it out of the app. Requests also carry this copy's install id.
+pub const CLIENT_ID: &str = match option_env!("LYSSNA_CLIENT_ID") {
+    Some(id) => id,
+    None => "01a1f5b3-3428-7ce0-918c-894bd775c2bd",
+};
+pub const PUBLISHABLE_KEY: &str = match option_env!("LYSSNA_KEY") {
+    Some(key) => key,
+    None => "lk_pub_4qv4iYxKjDz6pp0vDQOWJ4cAi6JM3LMb",
+};
+
+/// Adds the project's publishable key, and this copy's install id, to a request for
+/// api.lyssna.org. The first call on a new install registers it.
+pub(crate) fn keyed(request: RequestBuilder) -> RequestBuilder {
+    let request = with_key(request, PUBLISHABLE_KEY);
+    match crate::lyssna_install::header(API, PUBLISHABLE_KEY) {
+        Some(install) => request.header("Lyssna-Install", install),
+        None => request,
+    }
+}
+
+fn with_key(request: RequestBuilder, key: &str) -> RequestBuilder {
+    if key.is_empty() {
+        request
+    } else {
+        request.header("Lyssna-Key", key)
+    }
+}
 const CREDENTIAL_SERVICE: &str = "Lyssna/Account";
 const CREDENTIAL_USER: &str = "tokens";
 
@@ -131,19 +164,83 @@ fn forget() -> Result<()> {
     }
 }
 
-fn failure(response: reqwest::blocking::Response) -> anyhow::Error {
+/// An error answer from the API, read once so callers can look at its code first.
+struct Rejection {
+    status: StatusCode,
+    retry_after: Option<String>,
+    code: Option<String>,
+    message: Option<String>,
+}
+
+fn rejection(response: reqwest::blocking::Response) -> Rejection {
     let status = response.status();
-    let message = response
-        .json::<ApiError>()
-        .ok()
-        .and_then(|body| body.message)
-        .unwrap_or_else(|| format!("Lyssna answered {status}"));
-    anyhow::anyhow!("{message}")
+    let retry_after = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let body = response.json::<ApiError>().unwrap_or(ApiError {
+        error: None,
+        message: None,
+    });
+    if body.error.as_deref() == Some("install_required") {
+        // the API no longer knows this install: register a new one on the next request
+        crate::lyssna_install::forget();
+    }
+    Rejection {
+        status,
+        retry_after,
+        code: body.error,
+        message: body.message,
+    }
+}
+
+/// Plain wording for the errors every route can answer with.
+fn friendly(status: StatusCode, code: Option<&str>, retry_after: Option<&str>) -> Option<String> {
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        let wait = retry_after
+            .and_then(|text| text.trim().parse::<u64>().ok())
+            .filter(|seconds| *seconds > 0);
+        return Some(match wait {
+            Some(seconds) => format!("Lyssna is busy. Try again in {seconds} seconds"),
+            None => "Lyssna is busy. Try again in a moment".to_owned(),
+        });
+    }
+    let text = match code? {
+        "token_app_mismatch" => "This sign-in belongs to another app. Sign in again from Settings",
+        "insufficient_scope" => "This sign-in cannot do that. Sign in again from Settings",
+        "app_suspended" => "Lyssna has paused this app. Try again later",
+        "blocked" => "Lyssna has blocked requests from your network",
+        "invalid_key" => "This copy of Lyssna has an invalid API key. Update the app",
+        "install_required" => "Lyssna needs to register this copy again. Try once more",
+        _ => return None,
+    };
+    Some(text.to_owned())
+}
+
+impl Rejection {
+    fn friendly(&self) -> Option<String> {
+        friendly(
+            self.status,
+            self.code.as_deref(),
+            self.retry_after.as_deref(),
+        )
+    }
+    fn into_error(self) -> anyhow::Error {
+        match (self.friendly(), self.message) {
+            (Some(text), _) => anyhow::anyhow!("{text}"),
+            (None, Some(message)) => anyhow::anyhow!("{message}"),
+            (None, None) => anyhow::anyhow!("Lyssna answered {}", self.status),
+        }
+    }
+}
+
+fn failure(response: reqwest::blocking::Response) -> anyhow::Error {
+    rejection(response).into_error()
 }
 
 fn request_tokens(client: &Client, body: &serde_json::Value) -> Result<Tokens> {
-    let response = client
-        .post(format!("{API}/v1/auth/token"))
+    let response = keyed(client.post(format!("{API}/v1/auth/token")))
         .json(body)
         .send()
         .context("Cannot reach Lyssna")?;
@@ -153,13 +250,14 @@ fn request_tokens(client: &Client, body: &serde_json::Value) -> Result<Tokens> {
     response.json::<TokenPair>()?.try_into()
 }
 
-fn sign_in_url(redirect_uri: &str, verifier: &str, state: &str) -> Result<Url> {
-    let mut url = Url::parse(&format!("{WEB}/login"))?;
+fn sign_in_url(client_id: &str, redirect_uri: &str, verifier: &str, state: &str) -> Result<Url> {
+    let mut url = Url::parse(&format!("{WEB}/authorize"))?;
     url.query_pairs_mut().extend_pairs([
-        ("client", "desktop"),
+        ("client_id", client_id),
         ("redirect_uri", redirect_uri),
-        ("code_challenge", &challenge(verifier)),
         ("state", state),
+        ("code_challenge", &challenge(verifier)),
+        ("code_challenge_method", "S256"),
     ]);
     Ok(url)
 }
@@ -217,6 +315,10 @@ fn wait_for_code(listener: &TcpListener, state: &str, cancelled: &AtomicBool) ->
 }
 
 pub fn sign_in(client: &Client, cancelled: &AtomicBool) -> Result<Account> {
+    ensure!(
+        !CLIENT_ID.is_empty(),
+        "This build of Lyssna cannot sign in yet. Update the app"
+    );
     let verifier = random_string()?;
     let state = random_string()?;
     let listener = TcpListener::bind("127.0.0.1:0").context("Cannot open a local sign-in port")?;
@@ -224,13 +326,14 @@ pub fn sign_in(client: &Client, cancelled: &AtomicBool) -> Result<Account> {
         "http://127.0.0.1:{}{CALLBACK_PATH}",
         listener.local_addr()?.port()
     );
-    let url = sign_in_url(&redirect_uri, &verifier, &state)?;
+    let url = sign_in_url(CLIENT_ID, &redirect_uri, &verifier, &state)?;
     webbrowser::open(url.as_str()).context("Cannot open the browser to sign in to Lyssna")?;
     let code = wait_for_code(&listener, &state, cancelled)?;
     let tokens = request_tokens(
         client,
         &serde_json::json!({
             "grant_type": "authorization_code",
+            "client_id": CLIENT_ID,
             "code": code,
             "code_verifier": verifier,
             "redirect_uri": redirect_uri,
@@ -257,23 +360,26 @@ fn access_token(client: &Client) -> Result<Option<String>> {
         forget()?;
         return Ok(None);
     }
-    let response = client
-        .post(format!("{API}/v1/auth/token"))
+    let response = keyed(client.post(format!("{API}/v1/auth/token")))
         .json(&serde_json::json!({
             "grant_type": "refresh_token",
+            "client_id": CLIENT_ID,
             "refresh_token": tokens.refresh_token,
         }))
         .send()
         .context("Cannot reach Lyssna")?;
-    if matches!(
-        response.status(),
-        StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED
-    ) {
-        forget()?;
-        return Ok(None);
-    }
     if !response.status().is_success() {
-        return Err(failure(response));
+        let rejected = rejection(response);
+        // A bad API key says nothing about the sign-in, so it stays.
+        let sign_in_refused = matches!(
+            rejected.status,
+            StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED
+        ) && rejected.code.as_deref() != Some("invalid_key");
+        if sign_in_refused {
+            forget()?;
+            return Ok(None);
+        }
+        return Err(rejected.into_error());
     }
     let fresh: Tokens = response.json::<TokenPair>()?.try_into()?;
     save(&fresh)?;
@@ -285,18 +391,20 @@ pub fn account(client: &Client) -> Result<Option<Account>> {
     let Some(token) = access_token(client)? else {
         return Ok(None);
     };
-    let response = client
-        .get(format!("{API}/v1/me"))
+    let response = keyed(client.get(format!("{API}/v1/me")))
         .bearer_auth(token)
         .send()
         .context("Cannot reach Lyssna")?;
-    if response.status() == StatusCode::UNAUTHORIZED {
-        let _guard = TOKENS.lock().unwrap_or_else(|error| error.into_inner());
-        forget()?;
-        return Ok(None);
-    }
     if !response.status().is_success() {
-        return Err(failure(response));
+        let rejected = rejection(response);
+        if rejected.status == StatusCode::UNAUTHORIZED
+            && rejected.code.as_deref() != Some("invalid_key")
+        {
+            let _guard = TOKENS.lock().unwrap_or_else(|error| error.into_inner());
+            forget()?;
+            return Ok(None);
+        }
+        return Err(rejected.into_error());
     }
     let me: MeResponse = response.json()?;
     Ok(Some(Account {
@@ -320,7 +428,27 @@ pub struct Submission {
     pub status: String,
 }
 
-fn submission_body(ttml: &str, track: &Track, isrc: Option<&str>) -> Result<serde_json::Value> {
+// The API takes authored dates from 2015 on, and not in the future.
+const EARLIEST_AUTHORED: i64 = 1_420_070_400;
+// A little slack so a file saved just now is not ahead of the server's clock.
+const AUTHORED_SLACK: i64 = 60;
+
+/// The RFC 3339 time the lyrics were made, or `None` when it is unreadable or out of the API's range.
+fn authored_at(text: &str, now: OffsetDateTime) -> Option<String> {
+    let at = OffsetDateTime::parse(text.trim(), &Rfc3339).ok()?;
+    let seconds = at.unix_timestamp();
+    if seconds < EARLIEST_AUTHORED || seconds > now.unix_timestamp() - AUTHORED_SLACK {
+        return None;
+    }
+    at.to_offset(time::UtcOffset::UTC).format(&Rfc3339).ok()
+}
+
+fn submission_body(
+    ttml: &str,
+    track: &Track,
+    isrc: Option<&str>,
+    authored: Option<&str>,
+) -> Result<serde_json::Value> {
     let Some(id) = crate::lyssna_lyrics::spotify_id(track) else {
         bail!("Only Spotify songs can be submitted to Lyssna");
     };
@@ -340,26 +468,24 @@ fn submission_body(ttml: &str, track: &Track, isrc: Option<&str>) -> Result<serd
     if !track.album.name.is_empty() {
         body["album"] = track.album.name.clone().into();
     }
+    if let Some(at) = authored.and_then(|text| authored_at(text, OffsetDateTime::now_utc())) {
+        body["authored_at"] = at.into();
+    }
     Ok(body)
 }
 
 fn submit_failure(response: reqwest::blocking::Response) -> anyhow::Error {
-    let status = response.status();
-    let body = response.json::<ApiError>().unwrap_or(ApiError {
-        error: None,
-        message: None,
-    });
-    let known = match body.error.as_deref() {
+    let rejected = rejection(response);
+    let known = match rejected.code.as_deref() {
         Some("unverified") => Some("Confirm your email on lyssna.org before submitting lyrics"),
         Some("pending_exists") => Some("This song already has lyrics waiting for review"),
         Some("own_open_edit") => Some("You already have an open submission for this song"),
         Some("no_changes") => Some("These lyrics match what Lyssna already has"),
         _ => None,
     };
-    match (known, body.message) {
-        (Some(text), _) => anyhow::anyhow!("{text}"),
-        (None, Some(message)) => anyhow::anyhow!("{message}"),
-        (None, None) => anyhow::anyhow!("Lyssna answered {status}"),
+    match known {
+        Some(text) => anyhow::anyhow!("{text}"),
+        None => rejected.into_error(),
     }
 }
 
@@ -369,13 +495,13 @@ pub fn submit(
     ttml: &str,
     track: &Track,
     isrc: Option<&str>,
+    authored: Option<&str>,
 ) -> Result<Submission> {
-    let body = submission_body(ttml, track, isrc)?;
+    let body = submission_body(ttml, track, isrc, authored)?;
     let Some(token) = access_token(client)? else {
         bail!("Sign in to Lyssna in Settings to submit lyrics");
     };
-    let response = client
-        .post(format!("{API}/v1/submissions"))
+    let response = keyed(client.post(format!("{API}/v1/submissions")))
         .bearer_auth(token)
         .json(&body)
         .send()
@@ -422,16 +548,16 @@ struct SongLink {
 const PAGE: usize = 50;
 
 fn get_page<T: serde::de::DeserializeOwned>(client: &Client, token: &str, path: &str) -> Result<T> {
-    let response = client
-        .get(format!("{API}{path}"))
+    let response = keyed(client.get(format!("{API}{path}")))
         .bearer_auth(token)
         .send()
         .context("Cannot reach Lyssna")?;
-    if response.status() == StatusCode::FORBIDDEN {
-        bail!("Only Lyssna admins can add ISRC links to every song");
-    }
     if !response.status().is_success() {
-        return Err(failure(response));
+        let rejected = rejection(response);
+        if rejected.status == StatusCode::FORBIDDEN && rejected.friendly().is_none() {
+            bail!("Only Lyssna admins can add ISRC links to every song");
+        }
+        return Err(rejected.into_error());
     }
     Ok(response.json()?)
 }
@@ -500,8 +626,7 @@ pub fn backfill_isrc(
             report.no_isrc += 1;
             continue;
         };
-        let response = client
-            .post(format!("{API}/v1/songs/{id}/links"))
+        let response = keyed(client.post(format!("{API}/v1/songs/{id}/links")))
             .bearer_auth(&token)
             .json(&serde_json::json!({ "platform": "isrc", "external_id": isrc }))
             .send()
@@ -530,8 +655,7 @@ pub fn sign_out(client: &Client) -> Result<()> {
     let _guard = TOKENS.lock().unwrap_or_else(|error| error.into_inner());
     if let Some(tokens) = load()? {
         // Best effort: the server session also expires on its own.
-        let _ = client
-            .post(format!("{API}/v1/auth/logout"))
+        let _ = keyed(client.post(format!("{API}/v1/auth/logout")))
             .bearer_auth(&tokens.access_token)
             .json(&serde_json::json!({}))
             .send();
@@ -545,27 +669,30 @@ mod tests {
 
     #[test]
     fn sign_in_url_carries_the_desktop_request() {
-        let url = sign_in_url("http://127.0.0.1:5000/lyssna", "verifier", "state").unwrap();
+        let url = sign_in_url("proj1", "http://127.0.0.1:5000/cb", "verifier", "state").unwrap();
         assert_eq!(url.host_str(), Some("lyssna.org"));
-        assert_eq!(url.path(), "/login");
+        assert_eq!(url.path(), "/authorize");
         let query: Vec<(String, String)> = url.query_pairs().into_owned().collect();
-        assert!(query.contains(&("client".into(), "desktop".into())));
-        assert!(query.contains(&("redirect_uri".into(), "http://127.0.0.1:5000/lyssna".into())));
+        assert!(query.contains(&("client_id".into(), "proj1".into())));
+        assert!(query.contains(&("redirect_uri".into(), "http://127.0.0.1:5000/cb".into())));
         assert!(query.contains(&("code_challenge".into(), challenge("verifier"))));
+        assert!(query.contains(&("code_challenge_method".into(), "S256".into())));
         assert!(query.contains(&("state".into(), "state".into())));
+        assert!(
+            !query
+                .iter()
+                .any(|(key, _)| key == "client" || key == "scope")
+        );
     }
 
     #[test]
     fn callback_requires_matching_state_and_path() {
-        assert_eq!(
-            callback_code("/lyssna?code=abc&state=s1", "s1").unwrap(),
-            "abc"
-        );
-        assert!(callback_code("/lyssna?code=abc&state=other", "s1").is_err());
+        assert_eq!(callback_code("/cb?code=abc&state=s1", "s1").unwrap(), "abc");
+        assert!(callback_code("/cb?code=abc&state=other", "s1").is_err());
         assert!(callback_code("/other?code=abc&state=s1", "s1").is_err());
-        assert!(callback_code("/lyssna?code=abc&code=def&state=s1", "s1").is_err());
-        assert!(callback_code("/lyssna?state=s1", "s1").is_err());
-        assert!(callback_code("/lyssna?code=&state=s1", "s1").is_err());
+        assert!(callback_code("/cb?code=abc&code=def&state=s1", "s1").is_err());
+        assert!(callback_code("/cb?state=s1", "s1").is_err());
+        assert!(callback_code("/cb?code=&state=s1", "s1").is_err());
     }
 
     #[test]
@@ -606,12 +733,12 @@ mod tests {
             }],
             ..Track::default()
         };
-        let body = submission_body("<tt/>", &track, Some("GBAHT0600097")).unwrap();
+        let body = submission_body("<tt/>", &track, Some("GBAHT0600097"), None).unwrap();
         assert_eq!(body["links"][0]["platform"], "isrc");
         assert_eq!(body["links"][0]["external_id"], "GBAHT0600097");
         assert_eq!(body["links"][1]["platform"], "spotify");
         assert_eq!(body["links"][1]["external_id"], "4cOdK2wGLETKBW3PvgPWqT");
-        let without = submission_body("<tt/>", &track, None).unwrap();
+        let without = submission_body("<tt/>", &track, None, None).unwrap();
         assert_eq!(without["links"][0]["platform"], "spotify");
         assert_eq!(without["links"].as_array().unwrap().len(), 1);
         assert_eq!(body["title"], "Uprising");
@@ -622,7 +749,78 @@ mod tests {
             is_local: true,
             ..track
         };
-        assert!(submission_body("<tt/>", &local, None).is_err());
+        assert!(submission_body("<tt/>", &local, None, None).is_err());
+    }
+
+    #[test]
+    fn the_key_header_is_sent_only_when_there_is_a_key() {
+        let client = Client::new();
+        let with = with_key(client.get("https://api.lyssna.org/v1/me"), "pk_test")
+            .build()
+            .unwrap();
+        assert_eq!(with.headers()["Lyssna-Key"], "pk_test");
+        let without = with_key(client.get("https://api.lyssna.org/v1/me"), "")
+            .build()
+            .unwrap();
+        assert!(without.headers().get("Lyssna-Key").is_none());
+    }
+
+    #[test]
+    fn authored_at_keeps_only_dates_the_api_accepts() {
+        let now = OffsetDateTime::parse("2026-11-19T12:00:00Z", &Rfc3339).unwrap();
+        assert_eq!(
+            authored_at("2026-05-01T10:00:00+02:00", now).as_deref(),
+            Some("2026-05-01T08:00:00Z")
+        );
+        assert_eq!(
+            authored_at("2015-01-01T00:00:00Z", now).as_deref(),
+            Some("2015-01-01T00:00:00Z")
+        );
+        assert!(authored_at("2014-12-31T23:59:59Z", now).is_none());
+        assert!(authored_at("1970-01-01T00:00:00Z", now).is_none());
+        assert!(authored_at("2026-11-20T00:00:00Z", now).is_none());
+        assert!(authored_at("2026-11-19T11:59:30Z", now).is_none());
+        assert!(authored_at("2026-11-19T11:58:00Z", now).is_some());
+        assert!(authored_at("yesterday", now).is_none());
+    }
+
+    #[test]
+    fn submission_carries_a_valid_authored_date_only() {
+        let track = Track {
+            id: Some("4cOdK2wGLETKBW3PvgPWqT".into()),
+            ..Track::default()
+        };
+        let body =
+            submission_body("<tt/>", &track, None, Some("2024-03-01T09:30:00.000Z")).unwrap();
+        assert_eq!(body["authored_at"], "2024-03-01T09:30:00Z");
+        let early = submission_body("<tt/>", &track, None, Some("2001-01-01T00:00:00Z")).unwrap();
+        assert!(early.get("authored_at").is_none());
+        let none = submission_body("<tt/>", &track, None, None).unwrap();
+        assert!(none.get("authored_at").is_none());
+    }
+
+    #[test]
+    fn api_errors_get_plain_wording() {
+        let forbidden = StatusCode::FORBIDDEN;
+        for code in [
+            "token_app_mismatch",
+            "insufficient_scope",
+            "app_suspended",
+            "blocked",
+        ] {
+            assert!(friendly(forbidden, Some(code), None).is_some(), "{code}");
+        }
+        assert!(friendly(StatusCode::UNAUTHORIZED, Some("invalid_key"), None).is_some());
+        assert!(friendly(forbidden, Some("something_else"), None).is_none());
+        assert!(friendly(forbidden, None, None).is_none());
+        assert_eq!(
+            friendly(StatusCode::TOO_MANY_REQUESTS, None, Some("12")).as_deref(),
+            Some("Lyssna is busy. Try again in 12 seconds")
+        );
+        assert_eq!(
+            friendly(StatusCode::TOO_MANY_REQUESTS, None, Some("soon")).as_deref(),
+            Some("Lyssna is busy. Try again in a moment")
+        );
     }
 
     #[test]

@@ -74,10 +74,17 @@ fn lyrics_url(platform: &str, id: &str, fresh: bool) -> String {
 
 /// `None` when Lyssna has no lyrics under this platform ID.
 fn view(client: &Client, platform: &str, id: &str, fresh: bool) -> Result<Option<LyricsView>> {
-    let response = client
-        .get(lyrics_url(platform, id, fresh))
+    let url = lyrics_url(platform, id, fresh);
+    let mut response = crate::lyssna_account::keyed(client.get(&url))
         .send()
         .context("Cannot reach Lyssna")?;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        // the API may have forgotten this install: register a new one and ask again
+        crate::lyssna_install::forget();
+        response = crate::lyssna_account::keyed(client.get(&url))
+            .send()
+            .context("Cannot reach Lyssna")?;
+    }
     if response.status() == StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -151,10 +158,10 @@ pub fn record_play(client: &Client, song_id: &str) {
     if !song_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
         return;
     }
-    let mut request = client.post(format!(
+    let mut request = crate::lyssna_account::keyed(client.post(format!(
         "{}/v1/songs/{song_id}/play",
         crate::lyssna_account::API
-    ));
+    )));
     if let Some(id) = client_id() {
         request = request.json(&serde_json::json!({ "client_id": id }));
     }
