@@ -105,6 +105,14 @@ describe("TTML Creator model", () => {
     expect(edited[1].units[0].start).toBeUndefined();
   });
 
+  it("starts an exported line at its first exported word", () => {
+    const lines = timeAll("No clubs" + String.fromCharCode(10) + "No cars");
+    lines[1].units.push({ text: "", start: 0, joined: true });
+    const ttml = toTtml(lines, meta);
+    const second = [...ttml.matchAll(/<p begin="([^"]+)"[^>]*><span begin="([^"]+)"/g)][1];
+    expect(second[1]).toBe(second[2]);
+  });
+
   it("exports TTML with escaped text, word spacing and nested background", () => {
     const lines = timeAll("Rock & roll|ing\n(back)");
     expect(problems(lines)).toEqual([]);

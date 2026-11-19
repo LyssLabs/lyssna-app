@@ -1117,11 +1117,12 @@ export function cursorAt(lines: CreatorLine[], ms: number): Cursor {
   return { line, unit };
 }
 
-export function lineSpan(line: CreatorLine) {
-  const starts = line.units.flatMap((unit) =>
+export function lineSpan(line: CreatorLine, onlyTimed = false) {
+  const units = onlyTimed ? line.units.filter(timed) : line.units;
+  const starts = units.flatMap((unit) =>
     unit.start === undefined ? [] : [unit.start],
   );
-  const ends = line.units.flatMap((unit) =>
+  const ends = units.flatMap((unit) =>
     unit.end === undefined ? [] : [unit.end],
   );
   if (!starts.length) return null;
@@ -1266,7 +1267,7 @@ export function toTtml(
   type Paragraph = { lead?: CreatorLine; backgrounds: CreatorLine[] };
   const paragraphs: Paragraph[] = [];
   for (const line of lines) {
-    if (!lineSpan(line)) continue;
+    if (!lineSpan(line, true)) continue;
     const last = paragraphs.at(-1);
     if (line.background && last) last.backgrounds.push(line);
     else if (line.background) paragraphs.push({ backgrounds: [line] });
@@ -1280,7 +1281,7 @@ export function toTtml(
       const all = [paragraph.lead, ...paragraph.backgrounds].filter(
         (line): line is CreatorLine => !!line,
       );
-      const spansOf = all.map((line) => lineSpan(line)!);
+      const spansOf = all.map((line) => lineSpan(line, true)!);
       const begin = Math.min(...spansOf.map((span) => span.start));
       const finish = Math.max(...spansOf.map((span) => span.end));
       end = Math.max(end, finish);
@@ -1296,7 +1297,7 @@ export function toTtml(
         : "";
       const backgrounds = paragraph.backgrounds
         .map((line) => {
-          const span = lineSpan(line)!;
+          const span = lineSpan(line, true)!;
           return `<span ttm:role="x-bg" begin="${formatTime(span.start)}" end="${formatTime(span.end)}">${spans(line)}</span>`;
         })
         .join("");
@@ -1336,7 +1337,7 @@ export function toTtml(
       : "",
   ].join("");
   const duration = Math.max(end, meta.durationMs ?? 0);
-  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}"><div begin="${formatTime(paragraphs.length ? Math.min(...paragraphs.map((p) => lineSpan(p.lead ?? p.backgrounds[0])!.start)) : 0)}" end="${formatTime(end)}">${body}</div></body></tt>`;
+  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}"><div begin="${formatTime(paragraphs.length ? Math.min(...paragraphs.map((p) => lineSpan(p.lead ?? p.backgrounds[0], true)!.start)) : 0)}" end="${formatTime(end)}">${body}</div></body></tt>`;
 }
 
 export function fileName(meta: SongMeta): string {

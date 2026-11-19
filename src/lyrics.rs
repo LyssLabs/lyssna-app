@@ -545,11 +545,19 @@ pub fn parse_ttml(source: &str, duration_ms: u64) -> Result<Lyrics> {
                 line.translation = text.clone();
             }
         }
+        // Order by the words, not the paragraph's `begin`: some files carry a
+        // `begin` of 0 on lines sung much later, which floats them to the top.
+        let group_start = [&line, &background]
+            .into_iter()
+            .filter(|part| !part.words.is_empty())
+            .map(|part| part.start_ms)
+            .min()
+            .unwrap_or(start_ms);
         if !line.text.is_empty() || !line.romanization.is_empty() {
-            lines.push((start_ms, line));
+            lines.push((group_start, line));
         }
         if !background.text.is_empty() {
-            lines.push((start_ms, background));
+            lines.push((group_start, background));
         }
     }
     ensure!(
@@ -1144,6 +1152,22 @@ impl SourceCache {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ttml_lines_follow_their_words_when_the_paragraph_begin_is_wrong() {
+        let lyrics = super::parse_ttml(
+            r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+<p begin="00:01.000" end="00:02.000"><span begin="00:01.000" end="00:02.000">First</span></p>
+<p begin="00:00.000" end="00:18.637"><span begin="00:17.925" end="00:18.637">Later</span></p>
+<p begin="00:05.000" end="00:06.000"><span begin="00:05.000" end="00:06.000">Middle</span></p>
+</div></body></tt>"#,
+            200_000,
+        )
+        .unwrap();
+        let order: Vec<_> = lyrics.lines.iter().map(|line| line.text.as_str()).collect();
+        assert_eq!(order, ["First", "Middle", "Later"]);
+        assert_eq!(lyrics.lines[2].start_ms, 17_925);
+    }
+
     fn timed_line(words: &[(&str, u64)]) -> Line {
         let words: Vec<Word> = words
             .iter()
