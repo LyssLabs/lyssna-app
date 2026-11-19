@@ -6262,7 +6262,7 @@ function App() {
           }}
           onGuide={() =>
             void call("open_link", {
-              url: "https://lyrprep.spicylyrics.org/guide",
+              url: "https://lyssna.org/guides",
             })
           }
           listSaved={listSavedLyrics}
