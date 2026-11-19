@@ -42,9 +42,14 @@ pub const PUBLISHABLE_KEY: &str = match option_env!("LYSSNA_KEY") {
     None => "",
 };
 
-/// Adds the project's publishable key to a request for api.lyssna.org.
+/// Adds the project's publishable key, and this copy's install id, to a request for
+/// api.lyssna.org. The first call on a new install registers it.
 pub(crate) fn keyed(request: RequestBuilder) -> RequestBuilder {
-    with_key(request, PUBLISHABLE_KEY)
+    let request = with_key(request, PUBLISHABLE_KEY);
+    match crate::lyssna_install::header(API, PUBLISHABLE_KEY) {
+        Some(install) => request.header("Lyssna-Install", install),
+        None => request,
+    }
 }
 
 fn with_key(request: RequestBuilder, key: &str) -> RequestBuilder {
@@ -178,6 +183,10 @@ fn rejection(response: reqwest::blocking::Response) -> Rejection {
         error: None,
         message: None,
     });
+    if body.error.as_deref() == Some("install_required") {
+        // the API no longer knows this install: register a new one on the next request
+        crate::lyssna_install::forget();
+    }
     Rejection {
         status,
         retry_after,
@@ -203,6 +212,7 @@ fn friendly(status: StatusCode, code: Option<&str>, retry_after: Option<&str>) -
         "app_suspended" => "Lyssna has paused this app. Try again later",
         "blocked" => "Lyssna has blocked requests from your network",
         "invalid_key" => "This copy of Lyssna has an invalid API key. Update the app",
+        "install_required" => "Lyssna needs to register this copy again. Try once more",
         _ => return None,
     };
     Some(text.to_owned())

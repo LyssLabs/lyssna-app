@@ -35,6 +35,7 @@ pub mod lyric_bulk;
 pub mod lyric_sources;
 pub mod lyrics;
 pub mod lyssna_account;
+pub mod lyssna_install;
 pub mod lyssna_lyrics;
 #[cfg(target_os = "macos")]
 pub mod mac_bundle;
