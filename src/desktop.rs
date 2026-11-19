@@ -5349,8 +5349,8 @@ fn song_page_url(song_id: &str) -> Result<url::Url> {
     ))?)
 }
 /// The song's lyrics page from lyssna.org in a sheet over the window that
-/// asked, like the creator profile sheet. Links that leave the song page go
-/// to the browser.
+/// asked, like the creator profile sheet. Song and profile links stay in
+/// the sheet; the rest of the site and other sites open in the browser.
 #[tauri::command]
 async fn open_song_page(
     app: tauri::AppHandle,
@@ -5384,7 +5384,7 @@ async fn open_song_page(
                     }
                     if url.scheme() == "https"
                         && url.host_str() == Some("lyssna.org")
-                        && url.path().starts_with("/song/")
+                        && (url.path().starts_with("/song/") || url.path().starts_with("/u/"))
                     {
                         return true;
                     }
