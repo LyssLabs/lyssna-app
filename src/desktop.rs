@@ -3265,6 +3265,18 @@ async fn lyssna_sign_out() -> std::result::Result<(), String> {
     .map_err(error)
 }
 #[tauri::command]
+async fn lyssna_submit(
+    ttml: String,
+    track: Track,
+) -> std::result::Result<crate::lyssna_account::Submission, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::lyssna_account::submit(&crate::auth::http_client()?, &ttml, &track)
+    })
+    .await
+    .map_err(|_| "Lyssna account worker unavailable".to_owned())?
+    .map_err(error)
+}
+#[tauri::command]
 async fn genius_lyrics(track: Track) -> std::result::Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::genius::lyrics(&crate::auth::http_client()?, &track)
@@ -6452,6 +6464,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             lyssna_sign_in,
             lyssna_cancel_sign_in,
             lyssna_sign_out,
+            lyssna_submit,
             creator_volume,
             test_audio_output,
             refresh,

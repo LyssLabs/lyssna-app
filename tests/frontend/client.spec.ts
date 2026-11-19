@@ -1043,6 +1043,8 @@ async function startClient(
             );
           if (command === "audio_outputs")
             return ["Test speakers", "Test headphones"];
+          if (command === "lyssna_submit")
+            return { id: "s1", song_title: args.track.name, kind: "new", status: "pending" };
           if (command === "genius_lyrics")
             return "From Genius one\nFrom Genius two";
           if (command === "search_suggestions") {
@@ -16883,6 +16885,14 @@ test("TTML Creator times words on the playing song, slows it and saves TTML", as
     .fill("someone");
   await metadata.getByRole("button", { name: "Close metadata" }).click();
   await expect(metadata).toHaveCount(0);
+
+  await creator.getByRole("button", { name: "Submit to Lyssna" }).click();
+  await expect(
+    page.getByText("Come & Go (with Marshmello) is waiting for review on Lyssna."),
+  ).toBeVisible();
+  const submitted = await last("lyssna_submit");
+  expect(submitted.track.id).toBe("0123456789abcdefghijkl");
+  expect(submitted.ttml).toContain('<amll:meta key="isrc" value="USUM71703861"/>');
 
   await creator.getByRole("button", { name: "Use for this song" }).click();
   const saved = await last("import_lyrics");

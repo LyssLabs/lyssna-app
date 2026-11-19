@@ -21,6 +21,7 @@ use url::Url;
 
 use crate::auth::{challenge, random_string, read_target, reply};
 use crate::credential::{Entry, Error as CredentialError};
+use crate::model::Track;
 
 pub const API: &str = "https://api.lyssna.org";
 const WEB: &str = "https://lyssna.org";
@@ -91,6 +92,8 @@ struct MeTier {
 
 #[derive(Deserialize)]
 struct ApiError {
+    #[serde(default)]
+    error: Option<String>,
     message: Option<String>,
 }
 
@@ -306,6 +309,71 @@ pub fn account(client: &Client) -> Result<Option<Account>> {
     }))
 }
 
+/// What Lyssna made of an uploaded TTML.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct Submission {
+    pub id: String,
+    pub song_title: String,
+    /// `new` or `edit`.
+    pub kind: String,
+    /// `approved` when the submitter's role skips review, otherwise `pending`.
+    pub status: String,
+}
+
+fn submission_body(ttml: &str, track: &Track) -> Result<serde_json::Value> {
+    let Some(id) = crate::lyssna_lyrics::spotify_id(track) else {
+        bail!("Only Spotify songs can be submitted to Lyssna");
+    };
+    let mut body = serde_json::json!({
+        "ttml": ttml,
+        "links": [{ "platform": "spotify", "external_id": id }],
+        "title": track.name,
+        "artists": track.artists.iter().map(|artist| &artist.name).collect::<Vec<_>>(),
+    });
+    if !track.album.name.is_empty() {
+        body["album"] = track.album.name.clone().into();
+    }
+    Ok(body)
+}
+
+fn submit_failure(response: reqwest::blocking::Response) -> anyhow::Error {
+    let status = response.status();
+    let body = response.json::<ApiError>().unwrap_or(ApiError {
+        error: None,
+        message: None,
+    });
+    let known = match body.error.as_deref() {
+        Some("unverified") => Some("Confirm your email on lyssna.org before submitting lyrics"),
+        Some("pending_exists") => Some("This song already has lyrics waiting for review"),
+        Some("own_open_edit") => Some("You already have an open submission for this song"),
+        Some("no_changes") => Some("These lyrics match what Lyssna already has"),
+        _ => None,
+    };
+    match (known, body.message) {
+        (Some(text), _) => anyhow::anyhow!("{text}"),
+        (None, Some(message)) => anyhow::anyhow!("{message}"),
+        (None, None) => anyhow::anyhow!("Lyssna answered {status}"),
+    }
+}
+
+/// Uploads a TTML for the song, linked by its Spotify ID.
+pub fn submit(client: &Client, ttml: &str, track: &Track) -> Result<Submission> {
+    let body = submission_body(ttml, track)?;
+    let Some(token) = access_token(client)? else {
+        bail!("Sign in to Lyssna in Settings to submit lyrics");
+    };
+    let response = client
+        .post(format!("{API}/v1/submissions"))
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .context("Cannot reach Lyssna")?;
+    if !response.status().is_success() {
+        return Err(submit_failure(response));
+    }
+    Ok(response.json()?)
+}
+
 pub fn signed_in() -> bool {
     matches!(load(), Ok(Some(_)))
 }
@@ -377,5 +445,40 @@ mod tests {
         .unwrap();
         assert_eq!(me.user.username, "Arashii");
         assert_eq!(me.tier.name, "New");
+    }
+
+    #[test]
+    fn submission_links_the_spotify_song_and_names_it() {
+        let track = Track {
+            id: Some("4cOdK2wGLETKBW3PvgPWqT".into()),
+            name: "Uprising".into(),
+            artists: vec![crate::model::Artist {
+                name: "Muse".into(),
+                ..Default::default()
+            }],
+            ..Track::default()
+        };
+        let body = submission_body("<tt/>", &track).unwrap();
+        assert_eq!(body["links"][0]["platform"], "spotify");
+        assert_eq!(body["links"][0]["external_id"], "4cOdK2wGLETKBW3PvgPWqT");
+        assert_eq!(body["title"], "Uprising");
+        assert_eq!(body["artists"][0], "Muse");
+        assert!(body.get("album").is_none());
+
+        let local = Track {
+            is_local: true,
+            ..track
+        };
+        assert!(submission_body("<tt/>", &local).is_err());
+    }
+
+    #[test]
+    fn submission_reads_what_lyssna_made_of_it() {
+        let submission: Submission = serde_json::from_str(
+            r#"{"id":"s1","song_id":"x","song_title":"Uprising","kind":"new","status":"pending","priority":false}"#,
+        )
+        .unwrap();
+        assert_eq!(submission.status, "pending");
+        assert_eq!(submission.kind, "new");
     }
 }

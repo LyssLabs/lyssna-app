@@ -25,7 +25,7 @@ struct Song {
     id: String,
 }
 
-fn spotify_id(track: &Track) -> Option<&str> {
+pub(crate) fn spotify_id(track: &Track) -> Option<&str> {
     track.id.as_deref().filter(|id| {
         !track.is_local && id.len() == 22 && id.bytes().all(|b| b.is_ascii_alphanumeric())
     })

@@ -23,6 +23,7 @@ import {
   Redo2,
   RotateCcw,
   Save,
+  Send,
   Settings,
   Tags,
   Trash2,
@@ -217,6 +218,13 @@ const contentOf = (
   text: string,
   metadata: MetaEntry[] | undefined,
 ) => JSON.stringify({ lines, text, metadata });
+
+interface LyssnaSubmission {
+  id: string;
+  song_title: string;
+  kind: "new" | "edit";
+  status: string;
+}
 
 const meta = (track: Track): SongMeta => ({
   name: track.name,
@@ -1943,6 +1951,27 @@ export function TtmlCreator({
     if (!track || !here) return;
     void onApply(fileName(meta(track)), ttml());
   };
+  const [submitting, setSubmitting] = useState(false);
+  const submittable = !!track && !track.is_local && !!track.id;
+  const submit = async () => {
+    if (!track || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await rpc<LyssnaSubmission>("lyssna_submit", {
+        ttml: ttml(),
+        track,
+      });
+      notify(
+        result.status === "approved"
+          ? `${result.song_title} is live on Lyssna.`
+          : `${result.kind === "edit" ? "Your edit to " : ""}${result.song_title} is waiting for review on Lyssna.`,
+      );
+    } catch (error) {
+      notify(String(error), true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const [saves, setSaves] = useState<{
     songs: SavedSong[];
@@ -2179,6 +2208,19 @@ export function TtmlCreator({
               </div>
             )}
           </span>
+          <button
+            onClick={() => void submit()}
+            disabled={!done || !submittable || submitting}
+            aria-busy={submitting}
+            title={
+              submittable
+                ? "Send these lyrics to Lyssna so everyone gets them"
+                : "Only Spotify songs can be sent to Lyssna"
+            }
+          >
+            <Send size={15} />
+            Submit to Lyssna
+          </button>
           <button
             className="primary"
             onClick={apply}
