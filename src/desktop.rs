@@ -3297,6 +3297,7 @@ async fn lyssna_submit(
     .map_err(error)?;
     // Drop the song's saved "no lyrics" answer so the upload shows without a
     // manual refresh, and refetch at once if the song is still playing.
+    crate::lyssna_lyrics::mark_changed(&submitted);
     let _ = state
         .0
         .lyrics

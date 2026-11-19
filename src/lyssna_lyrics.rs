@@ -1,7 +1,10 @@
 //! Lyssna's own community lyrics from api.lyssna.org: the served TTML, who
 //! made it, and a play count when the lyrics show.
 
+use std::collections::HashMap;
 use std::fs;
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use reqwest::{StatusCode, blocking::Client};
@@ -31,13 +34,48 @@ pub(crate) fn spotify_id(track: &Track) -> Option<&str> {
     })
 }
 
+// The API's lyrics answers sit in Cloudflare's edge cache for this long, so a
+// song refetched right after an upload would get the old answer back.
+const EDGE_CACHE: Duration = Duration::from_secs(300);
+
+static CHANGED: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
+
+/// Skips the edge cache for this song's lookups until the cached answer has expired.
+pub(crate) fn mark_changed(track: &Track) {
+    let Some(id) = spotify_id(track) else {
+        return;
+    };
+    if let Ok(mut changed) = CHANGED.lock() {
+        let changed = changed.get_or_insert_with(HashMap::new);
+        changed.retain(|_, at| at.elapsed() < EDGE_CACHE);
+        changed.insert(id.to_owned(), Instant::now());
+    }
+}
+
+fn recently_changed(id: &str) -> bool {
+    CHANGED.lock().ok().is_some_and(|changed| {
+        changed
+            .as_ref()
+            .and_then(|changed| changed.get(id))
+            .is_some_and(|at| at.elapsed() < EDGE_CACHE)
+    })
+}
+
+fn lyrics_url(platform: &str, id: &str, fresh: bool) -> String {
+    let url = format!("{}/v1/lyrics/{platform}/{id}", crate::lyssna_account::API);
+    if !fresh {
+        return url;
+    }
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
+    format!("{url}?fresh={nonce}")
+}
+
 /// `None` when Lyssna has no lyrics under this platform ID.
-fn view(client: &Client, platform: &str, id: &str) -> Result<Option<LyricsView>> {
+fn view(client: &Client, platform: &str, id: &str, fresh: bool) -> Result<Option<LyricsView>> {
     let response = client
-        .get(format!(
-            "{}/v1/lyrics/{platform}/{id}",
-            crate::lyssna_account::API
-        ))
+        .get(lyrics_url(platform, id, fresh))
         .send()
         .context("Cannot reach Lyssna")?;
     if response.status() == StatusCode::NOT_FOUND {
@@ -59,10 +97,11 @@ pub fn fetch(
     let Some(id) = spotify_id(track) else {
         bail!("Lyssna has no lyrics for local songs");
     };
-    let found = match view(client, "spotify", id)? {
+    let fresh = recently_changed(id);
+    let found = match view(client, "spotify", id, fresh)? {
         Some(found) => Some(found),
         None => match isrc() {
-            Some(isrc) => view(client, "isrc", &isrc)?,
+            Some(isrc) => view(client, "isrc", &isrc, fresh)?,
             None => None,
         },
     };
@@ -148,6 +187,19 @@ mod tests {
         assert_eq!(lyrics.lines[0].words[0].end_ms, 1750);
         shift(&mut lyrics, -5000);
         assert_eq!(lyrics.lines[0].start_ms, 0);
+    }
+
+    #[test]
+    fn a_just_submitted_song_skips_the_edge_cache() {
+        let track = Track {
+            id: Some("0VjIjW4GlUZAMYd2vXMi3b".into()),
+            ..Track::default()
+        };
+        assert!(!recently_changed("0VjIjW4GlUZAMYd2vXMi3b"));
+        assert!(!lyrics_url("spotify", "0VjIjW4GlUZAMYd2vXMi3b", false).contains('?'));
+        mark_changed(&track);
+        assert!(recently_changed("0VjIjW4GlUZAMYd2vXMi3b"));
+        assert!(lyrics_url("spotify", "0VjIjW4GlUZAMYd2vXMi3b", true).contains("?fresh="));
     }
 
     #[test]
