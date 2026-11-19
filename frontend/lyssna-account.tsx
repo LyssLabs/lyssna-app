@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, LogOut } from "lucide-react";
+import { ExternalLink, Link2, LogOut } from "lucide-react";
 import { SettingRow } from "./setting-row";
+
+interface IsrcBackfill {
+  songs: number;
+  added: number;
+  already: number;
+  no_spotify: number;
+  no_isrc: number;
+  taken: string[];
+  failed: string[];
+}
 
 interface Account {
   id: string;
@@ -51,6 +61,29 @@ export function LyssnaAccount({
       setSigningIn(false);
     }
   };
+  const [backfilling, setBackfilling] = useState(false);
+  const backfill = async () => {
+    setBackfilling(true);
+    try {
+      const report = await onCall<IsrcBackfill>("lyssna_backfill_isrc");
+      if (!report) return;
+      const extra = [
+        report.already && `${report.already} already had one`,
+        report.no_isrc && `${report.no_isrc} without an ISRC on Spotify`,
+        report.no_spotify && `${report.no_spotify} without a Spotify link`,
+        report.taken.length &&
+          `${report.taken.length} with an ISRC already on another song: ${report.taken.join(", ")}`,
+        report.failed.length &&
+          `${report.failed.length} failed: ${report.failed.join("; ")}`,
+      ].filter(Boolean);
+      onNotice(
+        `Added ISRC links to ${report.added} of ${report.songs} songs${extra.length ? `. ${extra.join(". ")}` : ""}`,
+        report.failed.length > 0,
+      );
+    } finally {
+      setBackfilling(false);
+    }
+  };
   const signOut = async () => {
     await onCall("lyssna_sign_out");
     setAccount(null);
@@ -76,6 +109,17 @@ export function LyssnaAccount({
     >
       {account ? (
         <div className="inline-actions">
+          {account.role === "admin" && (
+            <button
+              className="pill outline"
+              disabled={backfilling}
+              title="Look up each Lyssna song's ISRC on Spotify and add it as a link"
+              onClick={() => void backfill()}
+            >
+              <Link2 size={14} />
+              {backfilling ? "Adding ISRCs…" : "Add ISRC links"}
+            </button>
+          )}
           <button
             className="pill outline"
             onClick={() =>

@@ -3296,6 +3296,26 @@ async fn lyssna_submit(
     .map_err(error)
 }
 #[tauri::command]
+async fn lyssna_backfill_isrc(
+    state: State<'_, Desktop>,
+) -> std::result::Result<crate::lyssna_account::IsrcBackfill, String> {
+    let controls = state.0.controls.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::lyssna_account::backfill_isrc(&crate::auth::http_client()?, |spotify| {
+            controls
+                .isrc(&format!("spotify:track:{spotify}"))
+                .inspect_err(|failure| {
+                    crate::native::diagnostic(&format!("isrc lookup {spotify} failed: {failure:#}"))
+                })
+                .ok()
+                .flatten()
+        })
+    })
+    .await
+    .map_err(|_| "Lyssna account worker unavailable".to_owned())?
+    .map_err(error)
+}
+#[tauri::command]
 async fn genius_lyrics(track: Track) -> std::result::Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::genius::lyrics(&crate::auth::http_client()?, &track)
@@ -6484,6 +6504,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             lyssna_cancel_sign_in,
             lyssna_sign_out,
             lyssna_submit,
+            lyssna_backfill_isrc,
             creator_volume,
             test_audio_output,
             refresh,

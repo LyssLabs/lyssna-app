@@ -386,6 +386,142 @@ pub fn submit(
     Ok(response.json()?)
 }
 
+/// Tally of an ISRC backfill over every song on Lyssna.
+#[derive(Clone, Serialize, Debug, Default, PartialEq)]
+pub struct IsrcBackfill {
+    pub songs: usize,
+    pub added: usize,
+    pub already: usize,
+    pub no_spotify: usize,
+    pub no_isrc: usize,
+    /// Songs whose ISRC is already linked to a different Lyssna song: likely duplicates.
+    pub taken: Vec<String>,
+    pub failed: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Listed {
+    id: String,
+}
+#[derive(Deserialize)]
+struct Credit {
+    song_id: String,
+}
+#[derive(Deserialize)]
+struct LinkedSong {
+    title: String,
+    #[serde(default)]
+    links: Vec<SongLink>,
+}
+#[derive(Deserialize)]
+struct SongLink {
+    platform: String,
+    external_id: String,
+}
+
+const PAGE: usize = 50;
+
+fn get_page<T: serde::de::DeserializeOwned>(client: &Client, token: &str, path: &str) -> Result<T> {
+    let response = client
+        .get(format!("{API}{path}"))
+        .bearer_auth(token)
+        .send()
+        .context("Cannot reach Lyssna")?;
+    if response.status() == StatusCode::FORBIDDEN {
+        bail!("Only Lyssna admins can add ISRC links to every song");
+    }
+    if !response.status().is_success() {
+        return Err(failure(response));
+    }
+    Ok(response.json()?)
+}
+
+fn every<T: serde::de::DeserializeOwned>(
+    client: &Client,
+    token: &str,
+    path: &str,
+) -> Result<Vec<T>> {
+    let mut found = Vec::new();
+    loop {
+        let separator = if path.contains('?') { '&' } else { '?' };
+        let page: Vec<T> = get_page(
+            client,
+            token,
+            &format!("{path}{separator}limit={PAGE}&offset={}", found.len()),
+        )?;
+        let done = page.len() < PAGE;
+        found.extend(page);
+        if done {
+            return Ok(found);
+        }
+    }
+}
+
+/// Adds an `isrc` link to every song that only has a Spotify one. There is no
+/// endpoint listing all songs, so they are gathered from every account's credits.
+pub fn backfill_isrc(
+    client: &Client,
+    isrc_for: impl Fn(&str) -> Option<String>,
+) -> Result<IsrcBackfill> {
+    let Some(token) = access_token(client)? else {
+        bail!("Sign in to Lyssna in Settings first");
+    };
+    let mut songs = std::collections::BTreeSet::new();
+    for user in every::<Listed>(client, &token, "/v1/users")? {
+        for credit in every::<Credit>(
+            client,
+            &token,
+            &format!("/v1/users/{}/contributions", user.id),
+        )? {
+            songs.insert(credit.song_id);
+        }
+    }
+    let mut report = IsrcBackfill {
+        songs: songs.len(),
+        ..IsrcBackfill::default()
+    };
+    for id in songs {
+        let song: LinkedSong = match get_page(client, &token, &format!("/v1/songs/{id}")) {
+            Ok(song) => song,
+            Err(error) => {
+                report.failed.push(format!("{id}: {error:#}"));
+                continue;
+            }
+        };
+        if song.links.iter().any(|link| link.platform == "isrc") {
+            report.already += 1;
+            continue;
+        }
+        let Some(spotify) = song.links.iter().find(|link| link.platform == "spotify") else {
+            report.no_spotify += 1;
+            continue;
+        };
+        let Some(isrc) = isrc_for(&spotify.external_id) else {
+            report.no_isrc += 1;
+            continue;
+        };
+        let response = client
+            .post(format!("{API}/v1/songs/{id}/links"))
+            .bearer_auth(&token)
+            .json(&serde_json::json!({ "platform": "isrc", "external_id": isrc }))
+            .send()
+            .context("Cannot reach Lyssna")?;
+        match response.status() {
+            status if status.is_success() => report.added += 1,
+            StatusCode::CONFLICT => report.taken.push(format!("{} ({isrc})", song.title)),
+            _ => {
+                let message = response
+                    .json::<ApiError>()
+                    .ok()
+                    .and_then(|body| body.message.or(body.error))
+                    .unwrap_or_default();
+                report.failed.push(format!("{}: {message}", song.title));
+            }
+        }
+    }
+    Ok(report)
+}
+
 pub fn signed_in() -> bool {
     matches!(load(), Ok(Some(_)))
 }
