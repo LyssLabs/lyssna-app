@@ -287,6 +287,8 @@ export interface Lyrics {
   estimated_lines?: boolean;
   /** Lyssna community members credited, largest share first. */
   credits?: LyssnaCredit[];
+  /** The Lyssna song these lyrics belong to. */
+  song_id?: string;
 }
 /** A deleted account has no user_id, username or avatar_url. */
 export interface LyssnaCredit {

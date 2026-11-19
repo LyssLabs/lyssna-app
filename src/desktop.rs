@@ -5279,25 +5279,8 @@ async fn open_creator_profile(
                 || (url.scheme() == "https" && url.host_str() == Some("spicylyrics.org"))
         })
         .build()?;
-        let placed = || -> Result<()> {
-            let (origin, size, scale) = (
-                main.inner_position()?,
-                main.inner_size()?,
-                main.scale_factor()?,
-            );
-            // 1080 px keeps the profile page in its two-column layout.
-            let width = (f64::from(size.width) * 0.9).min(1080. * scale);
-            let height = (f64::from(size.height) * 0.9).min(800. * scale);
-            window.set_size(tauri::PhysicalSize::new(width, height))?;
-            #[cfg(windows)]
-            round_corners(&window, width as i32, height as i32, (18. * scale) as i32)?;
-            window.set_position(tauri::PhysicalPosition::new(
-                f64::from(origin.x) + (f64::from(size.width) - width) / 2.,
-                f64::from(origin.y) + (f64::from(size.height) - height) / 2.,
-            ))?;
-            Ok(())
-        };
-        if let Err(problem) = placed() {
+        // 1080 px keeps the profile page in its two-column layout.
+        if let Err(problem) = place_sheet(&main, &window, 1080., 800.) {
             let _ = window.close();
             return Err(problem);
         }
@@ -5324,6 +5307,110 @@ async fn open_creator_profile(
     };
     result().map_err(|problem| {
         crate::native::diagnostic(&format!("creator profile failed: {problem}"));
+        error(problem)
+    })
+}
+/// Centres a sheet over the window that opened it, at most `max_width` by
+/// `max_height` logical pixels.
+fn place_sheet(
+    main: &tauri::WebviewWindow,
+    window: &tauri::WebviewWindow,
+    max_width: f64,
+    max_height: f64,
+) -> Result<()> {
+    let (origin, size, scale) = (
+        main.inner_position()?,
+        main.inner_size()?,
+        main.scale_factor()?,
+    );
+    let width = (f64::from(size.width) * 0.9).min(max_width * scale);
+    let height = (f64::from(size.height) * 0.9).min(max_height * scale);
+    window.set_size(tauri::PhysicalSize::new(width, height))?;
+    #[cfg(windows)]
+    round_corners(window, width as i32, height as i32, (18. * scale) as i32)?;
+    window.set_position(tauri::PhysicalPosition::new(
+        f64::from(origin.x) + (f64::from(size.width) - width) / 2.,
+        f64::from(origin.y) + (f64::from(size.height) - height) / 2.,
+    ))?;
+    Ok(())
+}
+fn song_page_url(song_id: &str) -> Result<url::Url> {
+    ensure!(
+        song_id.len() == 36 && song_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'),
+        "Invalid song"
+    );
+    Ok(url::Url::parse(&format!(
+        "https://lyssna.org/song/{song_id}?embed"
+    ))?)
+}
+/// The song's lyrics page from lyssna.org in a sheet over the window that
+/// asked, like the creator profile sheet. Links that leave the song page go
+/// to the browser.
+#[tauri::command]
+async fn open_song_page(
+    app: tauri::AppHandle,
+    caller: tauri::WebviewWindow,
+    song_id: String,
+) -> std::result::Result<(), String> {
+    const LABEL: &str = "song-page";
+    let result = || -> Result<()> {
+        let url = song_page_url(&song_id)?;
+        if let Some(window) = app.get_webview_window(LABEL) {
+            let _ = window.close();
+        }
+        let main = caller;
+        let listens = app.clone();
+        let window =
+            tauri::WebviewWindowBuilder::new(&app, LABEL, tauri::WebviewUrl::External(url))
+                .title("Lyssna lyrics")
+                .decorations(false)
+                .resizable(false)
+                .skip_taskbar(true)
+                .shadow(false)
+                .visible(false)
+                .theme(Some(tauri::Theme::Dark))
+                .background_color(tauri::window::Color(0x0a, 0x0a, 0x0b, 0xff))
+                .parent(&main)?
+                .additional_browser_args(BROWSER_ARGS)
+                .on_navigation(move |url| {
+                    if let Some(uri) = listen_uri(url) {
+                        let _ = listens.emit("lyssna", json!({"type":"play_uri","uri":uri}));
+                        return false;
+                    }
+                    if url.scheme() == "https"
+                        && url.host_str() == Some("lyssna.org")
+                        && url.path().starts_with("/song/")
+                    {
+                        return true;
+                    }
+                    if url.scheme() == "https" {
+                        let _ = webbrowser::open(url.as_str());
+                    }
+                    false
+                })
+                .build()?;
+        if let Err(problem) = place_sheet(&main, &window, 1200., 860.) {
+            let _ = window.close();
+            return Err(problem);
+        }
+        let _ = app.emit("lyssna", json!({"type":"creator_profile","open":true}));
+        let events = app.clone();
+        let sheet = window.clone();
+        window.on_window_event(move |event| match event {
+            tauri::WindowEvent::Focused(false) => {
+                let _ = sheet.close();
+            }
+            tauri::WindowEvent::Destroyed => {
+                let _ = events.emit("lyssna", json!({"type":"creator_profile","open":false}));
+            }
+            _ => {}
+        });
+        window.show()?;
+        window.set_focus()?;
+        Ok(())
+    };
+    result().map_err(|problem| {
+        crate::native::diagnostic(&format!("song page failed: {problem}"));
         error(problem)
     })
 }
@@ -6577,6 +6664,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             saved_status,
             open_link,
             open_creator_profile,
+            open_song_page,
             resolve_album,
             user_profile,
             follow_user,
@@ -6785,6 +6873,17 @@ mod tests {
         assert!(
             matches!(action,PlayerAction::PlayContext{context,offset:None} if context==crate::home::DJ_URI)
         );
+    }
+    #[test]
+    fn song_pages_take_only_song_ids() {
+        assert_eq!(
+            song_page_url("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44")
+                .unwrap()
+                .as_str(),
+            "https://lyssna.org/song/0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44?embed"
+        );
+        assert!(song_page_url("../../account").is_err());
+        assert!(song_page_url("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c4/").is_err());
     }
     #[test]
     fn creator_profiles_use_usernames_and_encode_path_characters() {

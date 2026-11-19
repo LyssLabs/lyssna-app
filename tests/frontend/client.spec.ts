@@ -3330,7 +3330,7 @@ test("playlist toolbar stays above the track table", async ({ page }) => {
   expect(toolbar!.y + toolbar!.height).toBeLessThanOrEqual(rows!.y);
 });
 
-test("Lyssna lyrics credit their makers and link to their profiles", async ({
+test("Lyssna lyrics credit their makers and open the song's page", async ({
   page,
 }) => {
   await startClient(page);
@@ -3343,6 +3343,7 @@ test("Lyssna lyrics credit their makers and link to their profiles", async ({
         source: "lyssna",
         synced: true,
         instrumental: false,
+        song_id: "0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44",
         credits: [
           {
             user_id: "u1",
@@ -3392,11 +3393,11 @@ test("Lyssna lyrics credit their makers and link to their profiles", async ({
     .poll(() =>
       page.evaluate(() =>
         (window as any).__clientTest.commands
-          .filter((entry: any) => entry.command === "open_link")
-          .map((entry: any) => entry.args.url),
+          .filter((entry: any) => entry.command === "open_song_page")
+          .map((entry: any) => entry.args.songId),
       ),
     )
-    .toContain("https://lyssna.org/u/Arashii");
+    .toContain("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44");
   await expect(credits.getByText("Deleted user")).not.toHaveRole("button");
   // Squeezed, "Made by" drops to the next line with its name instead of
   // leaving the name to wrap alone.

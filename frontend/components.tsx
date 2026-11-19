@@ -1184,7 +1184,13 @@ export function LyricsDisplay({
   );
 }
 
-function LyssnaPerson({ person }: { person: LyssnaCredit }) {
+function LyssnaPerson({
+  person,
+  song,
+}: {
+  person: LyssnaCredit;
+  song?: string;
+}) {
   const [avatar, setAvatar] = useState(
     person.avatar_url?.startsWith("https://") ? person.avatar_url : undefined,
   );
@@ -1201,9 +1207,13 @@ function LyssnaPerson({ person }: { person: LyssnaCredit }) {
       className="community-profile"
       title={share}
       onClick={() =>
-        void rpc("open_link", {
-          url: `https://lyssna.org/u/${encodeURIComponent(name)}`,
-        }).catch(() => {})
+        void (
+          song
+            ? rpc("open_song_page", { songId: song })
+            : rpc("open_link", {
+                url: `https://lyssna.org/u/${encodeURIComponent(name)}`,
+              })
+        ).catch(() => {})
       }
     >
       {avatar && (
@@ -1303,12 +1313,12 @@ const LyricCredits = memo(function LyricCredits({
             <span key={label} className="community-person">
               <span className="community-dot"> · </span>
               <span className="community-label-name">
-                {label} <LyssnaPerson person={shown[0]} />
+                {label} <LyssnaPerson person={shown[0]} song={lyrics.song_id} />
               </span>
               {shown.slice(1).map((person, index) => (
                 <span key={person.user_id ?? `deleted-${index}`}>
                   {", "}
-                  <LyssnaPerson person={person} />
+                  <LyssnaPerson person={person} song={lyrics.song_id} />
                 </span>
               ))}
               {people.length > shown.length &&
