@@ -239,25 +239,26 @@ pub fn fit_to_words(line: &mut Line) {
 
 /// Background vocals already render smaller beneath the lead, so drop the
 /// parentheses sources wrap them in, e.g. `(oh yeah)` becomes `oh yeah`.
+/// Doubled brackets go too: hand-made TTML sometimes closes with a stray
+/// `))` unit of its own.
 pub fn strip_background_parentheses(line: &mut Line) {
     fn unwrap(text: &str) -> String {
-        let text = text.trim();
-        let text = text.strip_prefix('(').unwrap_or(text);
-        text.strip_suffix(')').unwrap_or(text).trim().to_owned()
+        text.trim()
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .trim()
+            .to_owned()
     }
     line.text = unwrap(&line.text);
     line.romanization = unwrap(&line.romanization);
     if let Some(first) = line.words.first_mut() {
         let leading = first.text.len() - first.text.trim_start().len();
-        if first.text[leading..].starts_with('(') {
-            first.text.remove(leading);
-        }
+        let kept = first.text[leading..].trim_start_matches('(').to_owned();
+        first.text.replace_range(leading.., &kept);
     }
-    if let Some(last) = line.words.last_mut()
-        && last.text.trim_end().ends_with(')')
-    {
-        let end = last.text.trim_end().len();
-        last.text.remove(end - 1);
+    if let Some(last) = line.words.last_mut() {
+        let trailing = &last.text[last.text.trim_end().len()..];
+        last.text = format!("{}{trailing}", last.text.trim_end().trim_end_matches(')'));
     }
     line.words.retain(|word| !word.text.trim().is_empty());
 }
@@ -524,11 +525,11 @@ pub fn parse_ttml(source: &str, duration_ms: u64) -> Result<Lyrics> {
                     .collect::<String>()
                     .trim()
                     .to_owned();
-                fit_to_words(target);
             }
             if target.background {
                 strip_background_parentheses(target);
             }
+            fit_to_words(target);
         }
         if broken_end && line.words.is_empty() {
             continue;
@@ -1166,6 +1167,21 @@ mod tests {
         let order: Vec<_> = lyrics.lines.iter().map(|line| line.text.as_str()).collect();
         assert_eq!(order, ["First", "Middle", "Later"]);
         assert_eq!(lyrics.lines[2].start_ms, 17_925);
+    }
+
+    #[test]
+    fn ttml_background_drops_a_stray_closing_bracket_unit() {
+        let lyrics = super::parse_ttml(
+            r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+<p begin="00:48.706" end="00:53.945"><span begin="00:48.706" end="00:53.945">Lead</span><span ttm:role="x-bg" begin="00:00.000" end="01:00.267"><span begin="00:46.340" end="00:48.819">(Ooh-</span><span begin="00:48.819" end="00:50.391">ooh</span><span begin="00:00.000" end="01:00.267">))</span></span></p>
+</div></body></tt>"#,
+            200_000,
+        )
+        .unwrap();
+        let background = lyrics.lines.iter().find(|line| line.background).unwrap();
+        assert_eq!(background.text, "Ooh-ooh");
+        assert_eq!(background.words.len(), 2);
+        assert_eq!(background.end_ms, 50_391);
     }
 
     fn timed_line(words: &[(&str, u64)]) -> Line {
