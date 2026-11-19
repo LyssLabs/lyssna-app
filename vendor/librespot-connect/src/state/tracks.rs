@@ -416,6 +416,20 @@ impl<'ct> ConnectState {
         Some((SpotifyUri::from_uri(&next.uri).ok()?, next.narration()))
     }
 
+    /// Songs queued after the next one, for opening their audio early.
+    pub fn tracks_after_next(&self, count: usize) -> Vec<SpotifyUri> {
+        if self.repeat_track() {
+            return Vec::new();
+        }
+        self.next_tracks()
+            .iter()
+            .skip(1)
+            .filter_map(|track| SpotifyUri::from_uri(&track.uri).ok())
+            .filter(|uri| matches!(uri, SpotifyUri::Track { .. }))
+            .take(count)
+            .collect()
+    }
+
     /// The lines DJ speaks around the current track.
     pub fn current_narration(&self) -> Option<HashMap<String, String>> {
         self.current_track(|t| t.as_ref().and_then(Metadata::narration))

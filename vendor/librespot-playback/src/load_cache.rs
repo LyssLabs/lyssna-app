@@ -1,4 +1,5 @@
 //! Bounded, session-owned startup data. Audio keys never reach disk.
+use crate::audio::AudioFile;
 use crate::core::{FileId, SpotifyId, SpotifyUri, audio_key::AudioKey};
 use crate::metadata::audio::AudioItem;
 use std::{
@@ -51,6 +52,41 @@ impl<K: PartialEq, V: Clone> TimedCache<K, V> {
 pub(crate) struct LoadCache {
     pub metadata: TimedCache<SpotifyUri, AudioItem>,
     pub keys: TimedCache<(SpotifyId, FileId), AudioKey>,
+    pub warm_files: WarmFiles,
+}
+
+const WARM_CAPACITY: usize = 3;
+const WARM_LIFETIME: Duration = Duration::from_secs(120);
+
+/// Audio files opened ahead of a skip. Each holds a live download, so only a
+/// few are kept and each is handed out once.
+#[derive(Default)]
+pub(crate) struct WarmFiles {
+    entries: Mutex<VecDeque<(FileId, Instant, AudioFile)>>,
+}
+impl WarmFiles {
+    pub fn contains(&self, file: FileId) -> bool {
+        self.entries
+            .lock()
+            .is_ok_and(|entries| entries.iter().any(|(id, _, _)| *id == file))
+    }
+    pub fn take(&self, file: FileId, now: Instant) -> Option<AudioFile> {
+        let mut entries = self.entries.lock().ok()?;
+        let index = entries.iter().position(|(id, _, _)| *id == file)?;
+        let (_, opened, audio) = entries.remove(index)?;
+        (now.saturating_duration_since(opened) < WARM_LIFETIME).then_some(audio)
+    }
+    pub fn insert(&self, file: FileId, audio: AudioFile, now: Instant) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.retain(|(id, opened, _)| {
+                *id != file && now.saturating_duration_since(*opened) < WARM_LIFETIME
+            });
+            while entries.len() >= WARM_CAPACITY {
+                entries.pop_front();
+            }
+            entries.push_back((file, now, audio));
+        }
+    }
 }
 
 #[cfg(test)]

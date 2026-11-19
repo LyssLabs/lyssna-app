@@ -684,6 +684,8 @@ enum SpircCommand {
     HostJam(Option<String>),
 }
 
+/// Songs past the preloaded one whose audio is opened early.
+const WARM_AHEAD: usize = 2;
 const CONTEXT_FETCH_THRESHOLD: usize = 2;
 
 // delay to update volume after a certain amount of time, instead on each update request
@@ -3040,6 +3042,8 @@ impl SpircTask {
             let narration = self.narrated.unheard(&track_id.to_uri(), narration);
             self.player.set_narration(track_id.clone(), narration);
             self.player.preload(track_id);
+            self.player
+                .warm(self.connect_state.tracks_after_next(WARM_AHEAD));
         } else {
             // Nothing follows yet, for example when fetching autoplay failed
             // earlier; ask again before the song ends rather than stopping.

@@ -226,6 +226,7 @@ enum PlayerCommand {
         track_id: SpotifyUri,
         position_ms: u32,
     },
+    Warm(Vec<SpotifyUri>),
     SetNarration {
         track_id: SpotifyUri,
         narration: Option<Narration>,
@@ -736,6 +737,14 @@ impl Player {
             track_id,
             position_ms,
         });
+    }
+
+    /// Opens the audio of songs further ahead than the preloaded one, so
+    /// skipping several in a row doesn't wait on Spotify's servers.
+    pub fn warm(&self, tracks: Vec<SpotifyUri>) {
+        if !tracks.is_empty() {
+            self.command(PlayerCommand::Warm(tracks));
+        }
     }
 
     /// Gives a track the DJ lines to speak around it the next time it loads,
@@ -1280,26 +1289,11 @@ impl PlayerTrackLoader {
         }
     }
 
-    async fn load_remote_track(
+    async fn remote_file(
         &self,
         track_uri: SpotifyUri,
-        position_ms: u32,
-    ) -> Option<PlayerLoadedTrackData> {
-        let track_id: SpotifyId = match (&track_uri).try_into() {
-            Ok(id) => id,
-            Err(_) => {
-                warn!("<{track_uri}> could not be converted to a base62 ID");
-                return None;
-            }
-        };
-
-        if let Some(download) = crate::downloads::downloaded(&track_uri) {
-            match self.load_downloaded(track_uri.clone(), download, position_ms) {
-                Some(loaded) => return Some(loaded),
-                None => warn!("Downloaded copy of <{track_uri}> is unreadable; streaming it"),
-            }
-        }
-
+    ) -> Option<(AudioItem, AudioFileFormat, crate::core::FileId)> {
+        let track_id: SpotifyId = (&track_uri).try_into().ok()?;
         let cache_uri = track_uri.clone();
         let cached = self
             .load_cache
@@ -1327,11 +1321,6 @@ impl PlayerTrackLoader {
                 .insert(cache_uri, item.clone(), Instant::now());
             item
         };
-
-        info!(
-            "Loading <{}> with Spotify URI <{}>",
-            audio_item.name, audio_item.uri
-        );
 
         // (Most) podcasts seem to support only 96 kbps Ogg Vorbis, so fall back to it
         let bitrate = match BITRATE_KBPS.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1386,7 +1375,62 @@ impl PlayerTrackLoader {
                     return None;
                 }
             };
+        Some((audio_item, format, file_id))
+    }
 
+    /// Opens a song's audio ahead of a skip to it. Spotify's servers can
+    /// take seconds to send a file's first bytes, which a skip to an
+    /// unprepared song otherwise waits on.
+    async fn warm(&self, track_uri: SpotifyUri) {
+        if !matches!(track_uri, SpotifyUri::Track { .. })
+            || crate::downloads::downloaded(&track_uri).is_some()
+        {
+            return;
+        }
+        let Some((_, format, file_id)) = self.remote_file(track_uri).await else {
+            return;
+        };
+        if self.load_cache.warm_files.contains(file_id) {
+            return;
+        }
+        let Some(bytes_per_second) = self.stream_data_rate(format) else {
+            return;
+        };
+        if let Ok(file) = AudioFile::open(&self.session, file_id, bytes_per_second).await
+            && !file.is_cached()
+        {
+            self.load_cache
+                .warm_files
+                .insert(file_id, file, Instant::now());
+        }
+    }
+
+    async fn load_remote_track(
+        &self,
+        track_uri: SpotifyUri,
+        position_ms: u32,
+    ) -> Option<PlayerLoadedTrackData> {
+        let track_id: SpotifyId = match (&track_uri).try_into() {
+            Ok(id) => id,
+            Err(_) => {
+                warn!("<{track_uri}> could not be converted to a base62 ID");
+                return None;
+            }
+        };
+
+        if let Some(download) = crate::downloads::downloaded(&track_uri) {
+            match self.load_downloaded(track_uri.clone(), download, position_ms) {
+                Some(loaded) => return Some(loaded),
+                None => warn!("Downloaded copy of <{track_uri}> is unreadable; streaming it"),
+            }
+        }
+
+        let (audio_item, format, file_id) = self.remote_file(track_uri).await?;
+
+        info!(
+            "Loading <{}> with Spotify URI <{}>",
+            audio_item.name, audio_item.uri
+        );
         let bytes_per_second = self.stream_data_rate(format)?;
 
         // This is only a loop to be able to reload the file if an error occurred
@@ -1402,7 +1446,12 @@ impl PlayerTrackLoader {
                 Ok::<_, Error>(key)
             };
             let (encrypted_file, key) = tokio::join!(
-                AudioFile::open(&self.session, file_id, bytes_per_second),
+                async {
+                    match self.load_cache.warm_files.take(file_id, Instant::now()) {
+                        Some(file) => Ok(file),
+                        None => AudioFile::open(&self.session, file_id, bytes_per_second).await,
+                    }
+                },
                 key_request,
             );
 
@@ -2795,6 +2844,15 @@ impl PlayerInternal {
                 position_ms,
             } => self.handle_command_preload(track_id, position_ms),
 
+            PlayerCommand::Warm(tracks) => {
+                let loader = self.track_loader();
+                self.session.spawn(async move {
+                    for track in tracks {
+                        loader.warm(track).await;
+                    }
+                });
+            }
+
             PlayerCommand::Seek(position_ms) => self.handle_command_seek(position_ms)?,
 
             PlayerCommand::Play => self.handle_play(),
@@ -2950,6 +3008,16 @@ impl PlayerInternal {
             .retain(|sender| sender.send(event.clone()).is_ok());
     }
 
+    fn track_loader(&self) -> PlayerTrackLoader {
+        PlayerTrackLoader {
+            load_cache: self.load_cache.clone(),
+            session: self.session.clone(),
+            config: self.config.clone(),
+            local_file_lookup: self.local_file_lookup.clone(),
+            normalise_as_album: self.auto_normalise_as_album,
+        }
+    }
+
     fn load_track(
         &mut self,
         spotify_uri: SpotifyUri,
@@ -2961,13 +3029,7 @@ impl PlayerInternal {
         // easily. Instead we spawn a thread to do the work and return a one-shot channel as the
         // future to work with.
 
-        let loader = PlayerTrackLoader {
-            load_cache: self.load_cache.clone(),
-            session: self.session.clone(),
-            config: self.config.clone(),
-            local_file_lookup: self.local_file_lookup.clone(),
-            normalise_as_album: self.auto_normalise_as_album,
-        };
+        let loader = self.track_loader();
         let narration = self.narrations.get(&spotify_uri).cloned();
 
         let (result_tx, result_rx) = oneshot::channel();
@@ -3108,6 +3170,7 @@ impl fmt::Debug for PlayerCommand {
                 .field(&track_id)
                 .field(&position_ms)
                 .finish(),
+            PlayerCommand::Warm(tracks) => f.debug_tuple("Warm").field(&tracks).finish(),
             PlayerCommand::Play => f.debug_tuple("Play").finish(),
             PlayerCommand::Pause => f.debug_tuple("Pause").finish(),
             PlayerCommand::Stop => f.debug_tuple("Stop").finish(),
