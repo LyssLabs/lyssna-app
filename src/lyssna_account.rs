@@ -22,7 +22,7 @@ use url::Url;
 use crate::auth::{challenge, random_string, read_target, reply};
 use crate::credential::{Entry, Error as CredentialError};
 
-const API: &str = "https://api.lyssna.org";
+pub const API: &str = "https://api.lyssna.org";
 const WEB: &str = "https://lyssna.org";
 const CALLBACK_PATH: &str = "/lyssna";
 const CREDENTIAL_SERVICE: &str = "Lyssna/Account";

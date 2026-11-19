@@ -17,6 +17,31 @@ pub struct Lyrics {
     pub attribution: Option<Attribution>,
     #[serde(default)]
     pub songwriters: Vec<String>,
+    /// Lyssna community members credited for these lyrics, largest share first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credits: Vec<Credit>,
+    /// The Lyssna song these lyrics belong to, for counting plays.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub song_id: Option<String>,
+}
+
+/// A deleted account has no user ID, username or avatar.
+#[derive(Clone, Default, Serialize, Deserialize, Debug)]
+pub struct Credit {
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub share: f64,
+    #[serde(default)]
+    pub text_share: f64,
+    #[serde(default)]
+    pub timing_share: f64,
+    #[serde(default)]
+    pub original: bool,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -1031,6 +1056,7 @@ fn fetch_from(
                 crate::lyric_sources::spotify(&native, &track)
             }),
             "lrclib" => cache.get("lrclib", &|| crate::lyric_sources::lrclib(&client, &track)),
+            "lyssna" => cache.get("lyssna", &|| crate::lyssna_lyrics::fetch(&client, &track)),
             // Renamed when parsing changed: saved answers had dropped lines.
             "lrcred" => cache.get("lrcred-2", &|| {
                 crate::lyric_sources::lrc_red(&client, &native, &track)

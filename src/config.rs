@@ -743,7 +743,7 @@ mod tests {
             old.lyrics_source_order,
             Settings::default().lyrics_source_order
         );
-        assert_eq!(old.lyrics_source_order[..2], ["spicy", "apple"]);
+        assert_eq!(old.lyrics_source_order[..3], ["lyssna", "spicy", "apple"]);
         assert_eq!(old.lyrics_sources_disabled, ["lrclib", "netease"]);
         old.lyrics_source_order.reverse();
         let mut saved: Settings =

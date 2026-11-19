@@ -422,6 +422,7 @@ pub fn parse(value: &Value, duration_ms: u64) -> Result<Lyrics> {
                     .collect()
             })
             .unwrap_or_default(),
+        ..Lyrics::default()
     })
 }
 

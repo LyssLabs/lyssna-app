@@ -285,6 +285,18 @@ export interface Lyrics {
   split_words?: boolean;
   /** Line boundaries were estimated from static text and track duration. */
   estimated_lines?: boolean;
+  /** Lyssna community members credited, largest share first. */
+  credits?: LyssnaCredit[];
+}
+/** A deleted account has no user_id, username or avatar_url. */
+export interface LyssnaCredit {
+  user_id?: string;
+  username?: string;
+  avatar_url?: string;
+  share: number;
+  text_share: number;
+  timing_share: number;
+  original: boolean;
 }
 export interface Contributor {
   id: string;

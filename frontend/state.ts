@@ -212,6 +212,7 @@ export const emptyState: AppState = {
     fullscreen_volume: "off",
     fullscreen_animate_close: false,
     lyrics_source_order: [
+      "lyssna",
       "spicy",
       "apple",
       "lrcred",

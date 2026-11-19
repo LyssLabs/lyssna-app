@@ -540,6 +540,15 @@ impl Worker {
                         if result.is_err() && showing_cached.as_deref() == Some(&track.uri) {
                             continue;
                         }
+                        if let Ok(found) = &result
+                            && found.source == "lyssna"
+                            && let Some(song) = found.song_id.clone()
+                        {
+                            let client = client.clone();
+                            thread::spawn(move || {
+                                crate::lyssna_lyrics::record_play(&client, &song)
+                            });
+                        }
                         (track, result)
                     }
                     LyricCommand::Import(track, path) => {

@@ -55,6 +55,7 @@ import type {
   Album,
   Artist,
   Contributor,
+  LyssnaCredit,
   Track,
   PlayerRequest,
   Lyrics,
@@ -1183,6 +1184,38 @@ export function LyricsDisplay({
   );
 }
 
+function LyssnaPerson({ person }: { person: LyssnaCredit }) {
+  const [avatar, setAvatar] = useState(
+    person.avatar_url?.startsWith("https://") ? person.avatar_url : undefined,
+  );
+  const share = `${Math.round(person.share)}% of these lyrics: ${Math.round(person.text_share)}% of the words, ${Math.round(person.timing_share)}% of the timing`;
+  if (!person.username)
+    return (
+      <span className="community-profile" title={share}>
+        Deleted user
+      </span>
+    );
+  const name = person.username;
+  return (
+    <button
+      className="community-profile"
+      title={share}
+      onClick={() =>
+        void rpc("open_link", {
+          url: `https://lyssna.org/u/${encodeURIComponent(name)}`,
+        }).catch(() => {})
+      }
+    >
+      {avatar && (
+        <img src={avatar} alt="" onError={() => setAvatar(undefined)} />
+      )}
+      <Marquee text={`@${name}`} className="community-name">
+        @{name}
+      </Marquee>
+    </button>
+  );
+}
+
 const LyricCredits = memo(function LyricCredits({
   lyrics,
   expanded = false,
@@ -1215,6 +1248,7 @@ const LyricCredits = memo(function LyricCredits({
   const source =
     (
       {
+        lyssna: "Lyssna",
         spicy_lyrics: "Spicy Lyrics",
         apple_music: "Apple Music",
         spotify: "Spotify",
@@ -1252,6 +1286,37 @@ const LyricCredits = memo(function LyricCredits({
       /* Missing profile links remain plain credit text. */
     }
   };
+  if (lyrics.source === "lyssna" && lyrics.credits?.length) {
+    const groups = [
+      ["Made by", lyrics.credits.filter((person) => person.original)],
+      ["Improved by", lyrics.credits.filter((person) => !person.original)],
+    ] as const;
+    return (
+      <div
+        className={`lyric-source community-credits ${expanded ? "expanded" : ""}`}
+      >
+        <span className="community-lead">Lyrics provided by: Lyssna</span>
+        {groups.map(([label, people]) => {
+          if (!people.length) return null;
+          const shown = people.slice(0, 3);
+          return (
+            <span key={label} className="community-person">
+              <span className="community-dot"> · </span>
+              {label}{" "}
+              {shown.map((person, index) => (
+                <span key={person.user_id ?? `deleted-${index}`}>
+                  {index > 0 && ", "}
+                  <LyssnaPerson person={person} />
+                </span>
+              ))}
+              {people.length > shown.length &&
+                ` +${people.length - shown.length} more`}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
   const community =
     lyrics.source === "spicy_lyrics"
       ? (["maker", "uploader"] as const).flatMap((role) => {

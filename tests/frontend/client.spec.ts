@@ -3323,6 +3323,76 @@ test("playlist toolbar stays above the track table", async ({ page }) => {
   expect(toolbar!.y + toolbar!.height).toBeLessThanOrEqual(rows!.y);
 });
 
+test("Lyssna lyrics credit their makers and link to their profiles", async ({
+  page,
+}) => {
+  await startClient(page);
+  await page.getByTitle("Lyrics", { exact: true }).click();
+  await page.evaluate((uri) => {
+    (window as any).__clientTest.emit({
+      type: "lyrics",
+      uri,
+      lyrics: {
+        source: "lyssna",
+        synced: true,
+        instrumental: false,
+        credits: [
+          {
+            user_id: "u1",
+            username: "Arashii",
+            avatar_url: "https://api.lyssna.org/v1/images/a.png",
+            share: 75,
+            text_share: 100,
+            timing_share: 50,
+            original: true,
+          },
+          { share: 25, text_share: 0, timing_share: 50, original: false },
+        ],
+        lines: [
+          {
+            text: "Only line",
+            start_ms: 1000,
+            end_ms: 3000,
+            background: false,
+            opposite: false,
+            words: [],
+            translation: "",
+            romanization: "",
+          },
+        ],
+      },
+    });
+    (window as any).__clientTest.emit({
+      type: "native_position",
+      uri,
+      position_ms: 2000,
+      observed_at: Date.now(),
+      playing: false,
+    });
+  }, track.uri);
+  const credits = page.locator(".lyrics-page .lyric-source.expanded");
+  await expect(credits).toContainText("Lyrics provided by: Lyssna");
+  await expect(credits).toContainText("Made by @Arashii");
+  await expect(credits).toContainText("Improved by Deleted user");
+  await expect(
+    credits.getByRole("button", { name: "@Arashii" }),
+  ).toHaveAttribute(
+    "title",
+    "75% of these lyrics: 100% of the words, 50% of the timing",
+  );
+  await credits.getByRole("button", { name: "@Arashii" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__clientTest.commands
+          .filter((entry: any) => entry.command === "open_link")
+          .map((entry: any) => entry.args.url),
+      ),
+    )
+    .toContain("https://lyssna.org/u/Arashii");
+  await expect(credits.getByText("Deleted user")).not.toHaveRole("button");
+});
+
 test("community credits show the Discord username looked up by ID", async ({
   page,
 }) => {
@@ -9965,6 +10035,7 @@ test("Lyssna settings combines app and lyrics options with ordered sources", asy
   await openSettings(page, "Sources");
   const sources = page.locator(".lyric-sources li");
   await expect(sources).toHaveText([
+    /Lyssna/,
     /Spicy Lyrics/,
     /Apple Music/,
     /lrc\.red/,
@@ -9984,6 +10055,7 @@ test("Lyssna settings combines app and lyrics options with ordered sources", asy
   await expect
     .poll(() => saved("lyrics_source_order"))
     .toEqual([
+      "lyssna",
       "spicy",
       "apple",
       "lrcred",

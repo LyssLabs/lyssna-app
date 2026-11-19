@@ -32,7 +32,8 @@ use crate::lyrics::{Line, Lyrics, Word};
 use crate::model::Track;
 
 /// Every known source, in default order.
-pub const DEFAULT_ORDER: [&str; 7] = [
+pub const DEFAULT_ORDER: [&str; 8] = [
+    "lyssna",
     "spicy",
     "apple",
     "lrcred",
@@ -73,6 +74,8 @@ pub fn prefer_apple() -> bool {
 /// Sources added later that join saved orders right after another source
 /// rather than at the end.
 const JOIN_AFTER: [(&str, &str); 1] = [("lrcred", "spicy")];
+/// Sources added later that go to the top of saved orders.
+const JOIN_FIRST: [&str; 1] = ["lyssna"];
 
 /// Known source IDs in the saved order, with any missing ones appended.
 pub fn normalize_order(order: &[String]) -> Vec<String> {
@@ -84,6 +87,10 @@ pub fn normalize_order(order: &[String]) -> Vec<String> {
     }
     for id in DEFAULT_ORDER {
         if result.iter().any(|known| known == id) {
+            continue;
+        }
+        if JOIN_FIRST.contains(&id) {
+            result.insert(0, id.to_owned());
             continue;
         }
         let after = JOIN_AFTER
@@ -208,7 +215,7 @@ pub fn fetch_best(sources: &[String], prefer_apple: bool, fetch: SourceFetch) ->
 
 /// Whether the source is one whose lyrics stop LRCLIB and Netease counting.
 fn preferred_source(source: &str) -> bool {
-    matches!(source, "spicy" | "musixmatch" | "apple")
+    matches!(source, "lyssna" | "spicy" | "musixmatch" | "apple")
 }
 
 /// Timed lyrics, by line or by word, rank alike, so the source order
@@ -1013,6 +1020,7 @@ mod tests {
         assert_eq!(
             normalize_order(&["lrclib".into(), "bogus".into(), "lrclib".into()]),
             vec![
+                "lyssna",
                 "lrclib",
                 "spicy",
                 "lrcred",
@@ -1023,7 +1031,7 @@ mod tests {
             ]
         );
         configure(&["lrclib".into(), "spicy".into()], &["spicy".into()]);
-        assert_eq!(enabled()[0], "lrclib");
+        assert_eq!(enabled()[..2], ["lyssna", "lrclib"]);
         assert!(!enabled().contains(&"spicy".to_owned()));
     }
 
@@ -1034,6 +1042,7 @@ mod tests {
         assert_eq!(
             order,
             [
+                "lyssna",
                 "spicy",
                 "lrcred",
                 "lrclib",
