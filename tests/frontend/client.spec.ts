@@ -1045,6 +1045,7 @@ async function startClient(
             return ["Test speakers", "Test headphones"];
           if (command === "lyssna_submit")
             return { id: "s1", song_title: args.track.name, kind: "new", status: "pending" };
+          if (command === "lyssna_account") return (window as any).__lyssnaAccount ?? null;
           if (command === "genius_lyrics")
             return "From Genius one\nFrom Genius two";
           if (command === "search_suggestions") {
@@ -8989,7 +8990,32 @@ test("Load TTML offers Spicy Lyrics' load modes, reset and saved lyrics", async 
     "Persistent Load",
     "Temporary Load",
     "Session Load",
+    "Submit to Lyssna",
   ]);
+  // Shown to everyone, but only Uploaders and above can use it.
+  const submit = dialog.getByRole("button", { name: /Submit to Lyssna/ });
+  await expect(submit).toBeDisabled();
+  await expect(submit).toContainText("Sign in to Lyssna in Settings");
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await page.evaluate(() => ((window as any).__lyssnaAccount = { role: "user" }));
+  await page.getByTitle("Load TTML", { exact: true }).click();
+  await expect(submit).toBeDisabled();
+  await expect(submit).toContainText("Only Uploaders and above");
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await page.evaluate(() => ((window as any).__lyssnaAccount = { role: "uploader" }));
+  await page.getByTitle("Load TTML", { exact: true }).click();
+  await expect(submit).toBeEnabled();
+  const submitChooser = page.waitForEvent("filechooser");
+  await submit.click();
+  await (
+    await submitChooser
+  ).setFiles({
+    name: "song.ttml",
+    mimeType: "application/ttml+xml",
+    buffer: Buffer.from('<tt><body><div><p begin="1s" end="2s">Hi</p></div></body></tt>'),
+  });
+  await expect(page.getByText("Timing test is waiting for review on Lyssna.")).toBeVisible();
+  await page.getByTitle("Load TTML", { exact: true }).click();
   const last = (command: string) =>
     page.evaluate(
       (command) =>

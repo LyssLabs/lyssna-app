@@ -11,6 +11,7 @@ import {
   Play,
   RotateCcw,
   Search,
+  Send,
   Trash2,
   Upload,
   X,
@@ -70,8 +71,13 @@ export function LoadTtml({
   onBulk,
   searchSongs,
   attachSong,
+  onSubmit,
+  submitBlocked,
   initialView = "load",
 }: {
+  onSubmit: (file: File) => Promise<void>;
+  /** Why "Submit to Lyssna" is greyed out, or null when it can be used. */
+  submitBlocked: string | null;
   onBulk: (files: BulkFile[]) => Promise<BulkLyric[]>;
   searchSongs: (query: string) => Promise<Track[]>;
   attachSong: (file: BulkFile, song: Track) => Promise<void>;
@@ -102,6 +108,7 @@ export function LoadTtml({
     );
   }, [saved, filter]);
   const input = useRef<HTMLInputElement>(null);
+  const submitInput = useRef<HTMLInputElement>(null);
   const pending = useRef<LoadMode>("persistent");
   useEffect(() => {
     if (view !== "database") return;
@@ -196,7 +203,41 @@ export function LoadTtml({
                   </span>
                 </button>
               ))}
+              <button
+                className="load-ttml-mode load-ttml-submit"
+                title={submitBlocked ?? undefined}
+                onClick={() => {
+                  if (busy || submitBlocked || !submitInput.current) return;
+                  submitInput.current.value = "";
+                  submitInput.current.click();
+                }}
+                disabled={busy || !!submitBlocked}
+              >
+                <span className="load-ttml-icon">
+                  <Send size={15} />
+                </span>
+                <span>
+                  <strong>Submit to Lyssna</strong>
+                  <small>
+                    {submitBlocked ??
+                      "Upload a TTML for this song to Lyssna for everyone"}
+                  </small>
+                </span>
+              </button>
             </div>
+            <input
+              ref={submitInput}
+              type="file"
+              accept=".ttml,.xml"
+              hidden
+              aria-label="TTML file to submit"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                setBusy(true);
+                void onSubmit(file).finally(() => setBusy(false));
+              }}
+            />
             <input
               ref={many}
               type="file"

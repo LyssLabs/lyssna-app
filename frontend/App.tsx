@@ -234,6 +234,9 @@ import {
 import { DEFAULT_ZOOM, useAppZoom } from "./app-zoom";
 import { PlaylistFlyout } from "./playlist-flyout";
 import { LoadTtml, type LoadMode, type SavedLyrics } from "./load-ttml";
+
+// Lyssna roles whose uploads skip review; only these get "Submit to Lyssna" in Load TTML.
+const PUBLISHING_ROLES = ["uploader", "reviewer", "moderator", "admin"];
 import type { BulkLyric } from "./bulk-ttml";
 import { TtmlCreator } from "./ttml-creator";
 import { dismissDraft, draftPreview } from "./ttml-working";
@@ -642,6 +645,20 @@ function App() {
   const closeCoverView = useCallback(() => setCoverView(false), []);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [ttmlOpen, setTtmlOpen] = useState<false | "load" | "database">(false);
+  // undefined while checking, null when signed out of Lyssna.
+  const [lyssnaRole, setLyssnaRole] = useState<string | null | undefined>();
+  useEffect(() => {
+    if (!ttmlOpen) return;
+    let live = true;
+    setLyssnaRole(undefined);
+    void rpc<{ role: string } | null>("lyssna_account").then(
+      (account) => live && setLyssnaRole(account?.role ?? null),
+      () => live && setLyssnaRole(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [ttmlOpen]);
   // A draft edited in the TTML Creator shows on the Lyrics page behind it.
   const [draftDismissed, setDraftDismissed] = useState(0);
   const playingUri = state.playback.item?.uri;
@@ -1600,6 +1617,27 @@ function App() {
     },
     [call],
   );
+  const submitToLyssna = async (file: File, track: Track) => {
+    if (file.size > 2_000_000) {
+      notify("Lyric file exceeds 2 MB", true);
+      return;
+    }
+    try {
+      const result = await rpc<{
+        song_title: string;
+        kind: "new" | "edit";
+        status: string;
+      }>("lyssna_submit", { ttml: await file.text(), track });
+      setTtmlOpen(false);
+      notify(
+        result.status === "approved"
+          ? `${result.song_title} is live on Lyssna.`
+          : `${result.kind === "edit" ? "Your edit to " : ""}${result.song_title} is waiting for review on Lyssna.`,
+      );
+    } catch (error) {
+      notify(String(error), true);
+    }
+  };
   const importFile = async (file: File, mode: LoadMode = "persistent") => {
     if (file.size > 2_000_000) {
       notify("Lyric file exceeds 2 MB", true);
@@ -6200,6 +6238,22 @@ function App() {
           initialView={ttmlOpen}
           song={state.playback.item?.name ?? "No song playing"}
           onLoad={(file, mode) => importFile(file, mode)}
+          onSubmit={(file) =>
+            state.playback.item
+              ? submitToLyssna(file, state.playback.item)
+              : Promise.resolve()
+          }
+          submitBlocked={
+            lyssnaRole === undefined
+              ? "Checking your Lyssna account…"
+              : lyssnaRole === null
+                ? "Sign in to Lyssna in Settings to submit lyrics"
+                : !PUBLISHING_ROLES.includes(lyssnaRole)
+                  ? "Only Uploaders and above can submit from here"
+                  : !state.playback.item
+                    ? "Play the song you want to submit lyrics for"
+                    : null
+          }
           onReset={() => {
             void call("reset_lyrics").then(() =>
               notify("Imported lyrics cleared for this song."),
