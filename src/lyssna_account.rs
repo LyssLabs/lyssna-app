@@ -64,7 +64,7 @@ impl TryFrom<TokenPair> for Tokens {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct Account {
     pub id: String,
-    pub display_name: String,
+    pub username: String,
     pub role: String,
     pub reputation: i64,
     pub tier_name: String,
@@ -79,7 +79,7 @@ struct MeResponse {
 #[derive(Deserialize)]
 struct MeUser {
     id: String,
-    display_name: String,
+    username: String,
     role: String,
     reputation: i64,
     email_verified: bool,
@@ -298,7 +298,7 @@ pub fn account(client: &Client) -> Result<Option<Account>> {
     let me: MeResponse = response.json()?;
     Ok(Some(Account {
         id: me.user.id,
-        display_name: me.user.display_name,
+        username: me.user.username,
         role: me.user.role,
         reputation: me.user.reputation,
         tier_name: me.tier.name,
@@ -366,5 +366,16 @@ mod tests {
             tokens.refresh_expires_at - tokens.access_expires_at,
             30 * 86_400 - 3_600
         );
+    }
+
+    #[test]
+    fn me_reads_the_username() {
+        let me: MeResponse = serde_json::from_str(
+            r#"{"user":{"id":"u1","username":"Arashii","role":"admin","reputation":5,
+                "email_verified":true,"avatar_source":"discord"},"tier":{"level":0,"name":"New"}}"#,
+        )
+        .unwrap();
+        assert_eq!(me.user.username, "Arashii");
+        assert_eq!(me.tier.name, "New");
     }
 }

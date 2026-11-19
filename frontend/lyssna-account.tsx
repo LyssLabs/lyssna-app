@@ -4,7 +4,7 @@ import { SettingRow } from "./setting-row";
 
 interface Account {
   id: string;
-  display_name: string;
+  username: string;
   role: string;
   reputation: number;
   tier_name: string;
@@ -45,7 +45,7 @@ export function LyssnaAccount({
       const found = await onCall<Account>("lyssna_sign_in");
       if (found) {
         setAccount(found);
-        onNotice(`Signed in to Lyssna as ${found.display_name}`);
+        onNotice(`Signed in to Lyssna as ${found.username}`);
       }
     } finally {
       setSigningIn(false);
@@ -62,7 +62,7 @@ export function LyssnaAccount({
       : "";
   return (
     <SettingRow
-      label={account ? account.display_name : "Lyssna account"}
+      label={account ? account.username : "Lyssna account"}
       help={
         loading
           ? "Checking…"
