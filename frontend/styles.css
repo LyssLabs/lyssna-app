@@ -1849,7 +1849,7 @@ small {
 .load-ttml-submit .load-ttml-icon {
   color: #1ed760;
 }
-.load-ttml-submit:disabled {
+.load-ttml-mode.load-ttml-submit:disabled {
   cursor: not-allowed;
 }
 .load-ttml-mode {
