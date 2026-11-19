@@ -320,13 +320,20 @@ pub struct Submission {
     pub status: String,
 }
 
-fn submission_body(ttml: &str, track: &Track) -> Result<serde_json::Value> {
+fn submission_body(ttml: &str, track: &Track, isrc: Option<&str>) -> Result<serde_json::Value> {
     let Some(id) = crate::lyssna_lyrics::spotify_id(track) else {
         bail!("Only Spotify songs can be submitted to Lyssna");
     };
+    // The ISRC leads so the song is keyed to the recording rather than one platform's ID; the
+    // Spotify link stays so the app's own lookups still find it.
+    let mut links = Vec::new();
+    if let Some(isrc) = isrc {
+        links.push(serde_json::json!({ "platform": "isrc", "external_id": isrc }));
+    }
+    links.push(serde_json::json!({ "platform": "spotify", "external_id": id }));
     let mut body = serde_json::json!({
         "ttml": ttml,
-        "links": [{ "platform": "spotify", "external_id": id }],
+        "links": links,
         "title": track.name,
         "artists": track.artists.iter().map(|artist| &artist.name).collect::<Vec<_>>(),
     });
@@ -356,9 +363,14 @@ fn submit_failure(response: reqwest::blocking::Response) -> anyhow::Error {
     }
 }
 
-/// Uploads a TTML for the song, linked by its Spotify ID.
-pub fn submit(client: &Client, ttml: &str, track: &Track) -> Result<Submission> {
-    let body = submission_body(ttml, track)?;
+/// Uploads a TTML for the song, linked by its ISRC when Spotify knows it, and its Spotify ID.
+pub fn submit(
+    client: &Client,
+    ttml: &str,
+    track: &Track,
+    isrc: Option<&str>,
+) -> Result<Submission> {
+    let body = submission_body(ttml, track, isrc)?;
     let Some(token) = access_token(client)? else {
         bail!("Sign in to Lyssna in Settings to submit lyrics");
     };
@@ -448,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn submission_links_the_spotify_song_and_names_it() {
+    fn submission_links_the_isrc_first_then_spotify_and_names_it() {
         let track = Track {
             id: Some("4cOdK2wGLETKBW3PvgPWqT".into()),
             name: "Uprising".into(),
@@ -458,9 +470,14 @@ mod tests {
             }],
             ..Track::default()
         };
-        let body = submission_body("<tt/>", &track).unwrap();
-        assert_eq!(body["links"][0]["platform"], "spotify");
-        assert_eq!(body["links"][0]["external_id"], "4cOdK2wGLETKBW3PvgPWqT");
+        let body = submission_body("<tt/>", &track, Some("GBAHT0600097")).unwrap();
+        assert_eq!(body["links"][0]["platform"], "isrc");
+        assert_eq!(body["links"][0]["external_id"], "GBAHT0600097");
+        assert_eq!(body["links"][1]["platform"], "spotify");
+        assert_eq!(body["links"][1]["external_id"], "4cOdK2wGLETKBW3PvgPWqT");
+        let without = submission_body("<tt/>", &track, None).unwrap();
+        assert_eq!(without["links"][0]["platform"], "spotify");
+        assert_eq!(without["links"].as_array().unwrap().len(), 1);
         assert_eq!(body["title"], "Uprising");
         assert_eq!(body["artists"][0], "Muse");
         assert!(body.get("album").is_none());
@@ -469,7 +486,7 @@ mod tests {
             is_local: true,
             ..track
         };
-        assert!(submission_body("<tt/>", &local).is_err());
+        assert!(submission_body("<tt/>", &local, None).is_err());
     }
 
     #[test]

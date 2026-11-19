@@ -3274,9 +3274,22 @@ async fn lyssna_sign_out() -> std::result::Result<(), String> {
 async fn lyssna_submit(
     ttml: String,
     track: Track,
+    state: State<'_, Desktop>,
 ) -> std::result::Result<crate::lyssna_account::Submission, String> {
+    let controls = state.0.controls.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::lyssna_account::submit(&crate::auth::http_client()?, &ttml, &track)
+        let isrc = if track.is_local {
+            None
+        } else {
+            controls.isrc(&track.uri).unwrap_or_else(|failure| {
+                crate::native::diagnostic(&format!(
+                    "isrc lookup {} failed: {failure:#}",
+                    track.uri
+                ));
+                None
+            })
+        };
+        crate::lyssna_account::submit(&crate::auth::http_client()?, &ttml, &track, isrc.as_deref())
     })
     .await
     .map_err(|_| "Lyssna account worker unavailable".to_owned())?
