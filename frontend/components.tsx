@@ -2215,6 +2215,7 @@ function SongLyricsPage({
         (background === "animated" || background === "static") && (
           <Ambience
             track={track}
+            motion={background === "animated" ? motion : null}
             reduceMotion={state.settings.reduce_motion}
             animate={state.playback.is_playing && background !== "static"}
           />
@@ -2770,6 +2771,7 @@ export function NowPlaying({
       {state.settings.npv_ambience !== false && (
         <Ambience
           track={track}
+          motion={motion}
           reduceMotion={state.settings.reduce_motion}
           animate={state.playback.is_playing}
           // Only while Now playing shows the Canvas itself; with it on the
@@ -3101,6 +3103,10 @@ export function QueuePanel({
   onJamControl?: (allowed: boolean) => void;
 }) {
   const track = state.playback.item;
+  const motion = useMotionCover(
+    track,
+    state.settings.animated_covers !== false && !state.settings.reduce_motion,
+  );
   const known = useMemo(
     () =>
       knownTracks([
@@ -3261,6 +3267,7 @@ export function QueuePanel({
       {!state.settings.liquid_glass && (
         <Ambience
           track={track}
+          motion={motion}
           reduceMotion={state.settings.reduce_motion}
           animate={state.playback.is_playing}
         />

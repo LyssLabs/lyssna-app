@@ -17,6 +17,7 @@ export const Ambience = memo(function Ambience({
   shade = true,
   saturation = 3,
   followCanvas = false,
+  motion: motionCover = null,
 }: {
   track?: Track;
   /** Artwork URL used instead of the track's album art. */
@@ -36,12 +37,18 @@ export const Ambience = memo(function Ambience({
    * Lyrics' Now Playing background does; "window" follows whichever Canvas
    * the window shows, the lyrics page's first. */
   followCanvas?: boolean | "window";
+  /** The album's animated cover, warped in place of its still artwork. */
+  motion?: string | null;
 }) {
   const source = image ?? track?.album.images?.[0]?.url ?? "",
     surface = useRef<HTMLCanvasElement>(null),
     renderer = useRef<Kawarp | null>(null),
     resume = useRef<((settleMs?: number) => void) | null>(null),
     following = useRef<HTMLVideoElement | null>(null),
+    // The animated cover's own hidden video, and a way to show it again
+    // once a Canvas stops taking over.
+    motionVideo = useRef<HTMLVideoElement | null>(null),
+    showMotion = useRef<(() => boolean) | null>(null),
     artwork = useRef(source),
     motion = useRef({ animate, reduceMotion });
   motion.current = { animate, reduceMotion };
@@ -114,7 +121,7 @@ export const Ambience = memo(function Ambience({
       engine.renderFrame();
       // Kawarp samples video frames only while its own loop runs. Ours paces
       // the drawing, so the engine is marked playing without that loop.
-      if (following.current && allowed())
+      if ((following.current || motionVideo.current) && allowed())
         (engine as unknown as { isPlaying: boolean }).isPlaying = true;
       if (allowed() || settling()) frame = requestAnimationFrame(tick);
     };
@@ -175,6 +182,7 @@ export const Ambience = memo(function Ambience({
       following.current = null;
       delete surface.current?.dataset.source;
       engine.unloadVideo();
+      if (showMotion.current?.()) return;
       if (artwork.current)
         void engine
           .loadImage(artwork.current)
@@ -228,7 +236,70 @@ export const Ambience = memo(function Ambience({
     };
   }, [followCanvas, generation]);
   useEffect(() => {
-    if (!source || following.current) return;
+    const engine = renderer.current;
+    if (!motionCover || !engine) return;
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    let ready = false,
+      broken = false;
+    const show = () => {
+      if (!ready || broken || following.current) return false;
+      try {
+        engine.loadVideo(video, {
+          sampleWidth: 96,
+          sampleHeight: 96,
+          frameRate: Math.max(1, ambienceFps(windowActivity())),
+          smoothing: 100,
+          onError: fail,
+        });
+      } catch {
+        fail();
+        return false;
+      }
+      motionVideo.current = video;
+      if (!motion.current.animate) video.pause();
+      if (surface.current) surface.current.dataset.source = "motion";
+      resume.current?.();
+      return true;
+    };
+    function fail() {
+      broken = true;
+      if (motionVideo.current !== video) return;
+      motionVideo.current = null;
+      delete surface.current?.dataset.source;
+      engine?.unloadVideo();
+      if (artwork.current)
+        void engine
+          ?.loadImage(artwork.current)
+          .then(() => resume.current?.(engine.transitionDuration + 100))
+          .catch(() => {});
+    }
+    showMotion.current = show;
+    video.addEventListener(
+      "playing",
+      () => {
+        ready = true;
+        show();
+      },
+      { once: true },
+    );
+    video.addEventListener("error", fail);
+    video.src = motionCover;
+    void video.play().catch(() => {});
+    return () => {
+      showMotion.current = null;
+      fail();
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [motionCover, generation]);
+  useEffect(() => {
+    if (!source || following.current || motionVideo.current) return;
     let cancelled = false;
     const engine = renderer.current;
     void engine
@@ -241,7 +312,14 @@ export const Ambience = memo(function Ambience({
       cancelled = true;
     };
   }, [source, generation]);
-  useEffect(() => resume.current?.(), [animate, reduceMotion]);
+  useEffect(() => {
+    const video = motionVideo.current;
+    if (video) {
+      if (animate && !reduceMotion) void video.play().catch(() => {});
+      else video.pause();
+    }
+    resume.current?.();
+  }, [animate, reduceMotion]);
   useEffect(() => {
     renderer.current?.setOptions({
       warpIntensity: warp,

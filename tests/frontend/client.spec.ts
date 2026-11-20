@@ -4735,6 +4735,51 @@ test("the Now playing card fades its top only once lyrics scroll", async ({
     .toMatch(/min\((1[0-9]{2}|[1-9][0-9])px/);
 });
 
+test("ambience warps the animated cover while it plays", async ({ page }) => {
+  const clip = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 64;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#c24775";
+    context.fillRect(0, 0, 64, 64);
+    const recorder = new MediaRecorder(canvas.captureStream(2));
+    const parts: Blob[] = [];
+    const blob = await new Promise<Blob>((resolve) => {
+      recorder.ondataavailable = (event) => parts.push(event.data);
+      recorder.onstop = () =>
+        resolve(new Blob(parts, { type: recorder.mimeType }));
+      recorder.start();
+      setTimeout(() => recorder.stop(), 300);
+    });
+    return [...new Uint8Array(await blob.arrayBuffer())];
+  });
+  await page.route("https://mvod.itunes.apple.com/**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "video/webm",
+      headers: { "access-control-allow-origin": "*" },
+      body: Buffer.from(clip),
+    }),
+  );
+  await page.addInitScript(() => {
+    (window as any).__presetAnswers = {
+      motion_cover: {
+        avc: "https://mvod.itunes.apple.com/itunes-assets/a/avc.mp4",
+        hevc: null,
+      },
+    };
+  });
+  await startClient(page);
+  await playLyricTrack(page);
+  const ambience = page.locator(".now-playing > .ambience canvas");
+  await expect(ambience).toHaveAttribute("data-source", "motion");
+
+  await openSettings(page, "Effects");
+  await page.getByLabel("Animated covers").uncheck();
+  await page.keyboard.press("Escape");
+  await expect(ambience).not.toHaveAttribute("data-source", "motion");
+});
+
 test("animated covers play over the artwork by default and turn off", async ({
   page,
 }) => {

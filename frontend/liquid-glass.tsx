@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Ambience } from "./ambience";
+import { useMotionCover } from "./motion-cover";
 import type { Track } from "./types";
 
 /**
@@ -12,11 +13,14 @@ export const GlassBackdrop = memo(function GlassBackdrop({
   track,
   playing,
   reduceMotion,
+  animatedCovers,
 }: {
   track?: Track;
   playing: boolean;
   reduceMotion: boolean;
+  animatedCovers: boolean;
 }) {
+  const motion = useMotionCover(track, animatedCovers && !reduceMotion);
   return (
     <div className="glass-backdrop" aria-hidden="true">
       <Ambience
@@ -28,6 +32,7 @@ export const GlassBackdrop = memo(function GlassBackdrop({
         saturation={1.5}
         shade={false}
         followCanvas="window"
+        motion={motion}
       />
       <div className="glass-backdrop-shade" />
     </div>

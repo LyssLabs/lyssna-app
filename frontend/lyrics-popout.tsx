@@ -14,6 +14,7 @@ import {
   ShuffleIcon,
 } from "./player-icons";
 import { Ambience } from "./ambience";
+import { useMotionCover } from "./motion-cover";
 import { LyricsDisplay, useLyricPosition, usePosition } from "./components";
 import { displayLyrics } from "./word-sync";
 import { romanizeFor, useRomanization } from "./romanization";
@@ -62,6 +63,10 @@ export function LyricsPopout() {
       state.settings.lyrics_word_filter,
     );
   const play = (request: PlayerRequest) => sendPlayer(state, request);
+  const motion = useMotionCover(
+    track,
+    state.settings.animated_covers !== false && !state.settings.reduce_motion,
+  );
   const year = track?.album.release_date?.slice(0, 4);
   const saved = !!(track && state.saved[track.uri]);
   const repeat = state.playback.repeat_state || "off";
@@ -92,6 +97,7 @@ export function LyricsPopout() {
     >
       <Ambience
         track={track}
+        motion={motion}
         animate={state.playback.is_playing}
         reduceMotion={state.settings.reduce_motion}
       />

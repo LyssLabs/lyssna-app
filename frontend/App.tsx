@@ -3327,6 +3327,7 @@ function App() {
           track={state.playback.item}
           playing={state.playback.is_playing}
           reduceMotion={state.settings.reduce_motion}
+          animatedCovers={state.settings.animated_covers !== false}
         />
       )}
       <header
