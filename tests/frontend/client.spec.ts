@@ -18876,6 +18876,75 @@ test("TTML Creator Sync follows the playing line", async ({ page }) => {
   ).not.toBeInViewport();
 });
 
+test("TTML Creator stays on words being worked on while the song plays", async ({
+  page,
+}) => {
+  await startClient(page);
+  await playLyricTrack(page, false);
+  await openSettings(page, "Lyrics");
+  await page.getByRole("switch", { name: "TTML Creator", exact: true }).check();
+  await page
+    .getByRole("dialog", { name: "Lyssna settings" })
+    .getByRole("button", { name: "Close settings" })
+    .click();
+  await page
+    .locator(".player-extras")
+    .getByTitle("TTML Creator", { exact: true })
+    .click();
+  const creator = page.getByRole("region", { name: "TTML Creator" });
+  const first = creator.locator('.ttml-line[data-line="0"]');
+  const play = (progress: number) =>
+    page.evaluate((progress_ms) => {
+      (window as any).__clientTest.emit({
+        type: "playback",
+        changed: false,
+        observed_at: Date.now(),
+        playback: {
+          is_playing: true,
+          progress_ms,
+          shuffle_state: false,
+          repeat_state: "track",
+          device: { name: "Lyssna (test)", id: "local-device", is_active: true },
+          item: {
+            id: "0123456789abcdefghijkl",
+            uri: "spotify:track:0123456789abcdefghijkl",
+            name: "Come & Go (with Marshmello)",
+            artists: [
+              { id: "a", name: "Juice WRLD" },
+              { id: "b", name: "Marshmello" },
+            ],
+            album: { id: "0123456789abcdefghijkl", name: "Album", images: [] },
+            duration_ms: 180000,
+          },
+        },
+      });
+    }, progress);
+
+  await first
+    .getByRole("button", { name: "lyric", exact: true })
+    .click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Word actions" })).toBeVisible();
+  await play(70_500);
+  const playing = creator.locator(".ttml-line.playing");
+  await expect(playing).toHaveAttribute("data-line", "20");
+  await page.waitForTimeout(600);
+  await expect(first).toBeInViewport();
+
+  await page.keyboard.press("Escape");
+  await first.locator(".ttml-chip-add").focus();
+  await play(75_500);
+  await expect(playing).not.toHaveAttribute("data-line", "20");
+  await page.waitForTimeout(600);
+  await expect(first).toBeInViewport();
+
+  await first.locator(".ttml-chip-add").blur();
+  const before = await playing.getAttribute("data-line");
+  await play(80_500);
+  await expect(playing).not.toHaveAttribute("data-line", before!);
+  await expect(playing).toBeInViewport();
+  await expect(first).not.toBeInViewport();
+});
+
 test("TTML Creator selects a line by its blank space and keeps it in view", async ({
   page,
 }) => {

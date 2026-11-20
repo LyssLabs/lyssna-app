@@ -886,12 +886,14 @@ export function TtmlCreator({
   const [replacing, setReplacing] = useState<Cursor | null>(null);
   const openMenu = (event: ReactMouseEvent, at: Cursor) => {
     event.preventDefault();
+    if (at.line !== cursor.line) clickedLine.current = true;
     setCursor(at);
     setMenu({ x: event.clientX, y: event.clientY, at });
   };
   const openLineMenu = (event: ReactMouseEvent, line: number) => {
     if (event.defaultPrevented) return;
     event.preventDefault();
+    if (line !== cursor.line) clickedLine.current = true;
     setCursor(clampCursor(lines, { line, unit: 0 }));
     setMenu({
       x: event.clientX,
@@ -1815,6 +1817,18 @@ export function TtmlCreator({
     if (playingLine >= 0) setCursor(cursorAt(lines, position));
   };
   const scrolledAt = useRef(0);
+  // Playback doesn't pull the list away from words being worked on.
+  const working =
+    inline !== null ||
+    menu !== null ||
+    splitting !== null ||
+    replacing !== null ||
+    picked.size > 0 ||
+    group.length > 0 ||
+    spaces.length > 0 ||
+    drag !== null;
+  const workingRef = useRef(working);
+  workingRef.current = working;
   // A double-click replays from just before a word, which can start in the
   // line above; the view stays put until playback reaches the word's line.
   const holdLine = useRef<number | null>(null);
@@ -1823,6 +1837,9 @@ export function TtmlCreator({
       playingLine < 0 ||
       touringRef.current ||
       !isPlaying ||
+      workingRef.current ||
+      (document.activeElement instanceof HTMLInputElement &&
+        !!list.current?.contains(document.activeElement)) ||
       Date.now() - scrolledAt.current < 3000
     )
       return;
