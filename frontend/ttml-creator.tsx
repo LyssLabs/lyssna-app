@@ -1946,8 +1946,11 @@ export function TtmlCreator({
       window.removeEventListener("drop", drop, true);
     };
   }, []);
+  const importPicker = useRef<HTMLInputElement>(null);
+  const pickImport = () => importPicker.current?.click();
   const importInput = (
     <input
+      ref={importPicker}
       type="file"
       hidden
       accept=".ttml,.xml,.lrc,.qrc,.yrc,.lys,.eslrc"
@@ -2202,6 +2205,13 @@ export function TtmlCreator({
           <button onClick={copy} disabled={!done} title="Copy TTML">
             <Copy size={15} />
           </button>
+          <button
+            onClick={pickImport}
+            title="Import lyrics file (TTML, LRC, QRC, YRC, Lyricify Syllable or ESLyric)"
+          >
+            <Upload size={15} />
+          </button>
+          {importInput}
           <span className="ttml-export">
             <button
               onClick={() => setExporting(!exporting)}
@@ -2335,14 +2345,13 @@ export function TtmlCreator({
                 {geniusButton}
               </>
             )}
-            <label
-              className="ttml-import"
+            <button
+              onClick={pickImport}
               title="TTML, LRC, QRC, YRC, Lyricify Syllable or ESLyric"
             >
               <Upload size={15} />
               Import file
-              {importInput}
-            </label>
+            </button>
             <div className="ttml-row">
               {lines.length > 0 && (
                 <button onClick={() => setTextMode(false)}>Cancel</button>
@@ -2468,14 +2477,6 @@ export function TtmlCreator({
                   <Type size={15} />
                   Edit as text
                 </button>
-                <label
-                  className="ttml-import"
-                  title="TTML, LRC, QRC, YRC, Lyricify Syllable or ESLyric"
-                >
-                  <Upload size={15} />
-                  Import file
-                  {importInput}
-                </label>
                 <button
                   className={wordRoman ? "active" : ""}
                   aria-pressed={wordRoman}
@@ -2594,14 +2595,6 @@ export function TtmlCreator({
                   <Type size={15} />
                   Edit as text
                 </button>
-                <label
-                  className="ttml-import"
-                  title="TTML, LRC, QRC, YRC, Lyricify Syllable or ESLyric"
-                >
-                  <Upload size={15} />
-                  Import file
-                  {importInput}
-                </label>
                 <button
                   onClick={() => void autoRomanize()}
                   disabled={romanNote === "Romanizing…"}

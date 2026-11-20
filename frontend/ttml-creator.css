@@ -1322,22 +1322,6 @@
   color: var(--muted);
   font-size: 12.5px;
 }
-.ttml-import {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  color: #f3f3f3;
-  background: #ffffff12;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.ttml-import:hover {
-  background: #ffffff21;
-}
 .ttml-export {
   position: relative;
 }
