@@ -1817,6 +1817,15 @@ export function TtmlCreator({
     if (playingLine >= 0) setCursor(cursorAt(lines, position));
   };
   const scrolledAt = useRef(0);
+  const typingInCreator = () => {
+    const box = document.activeElement;
+    return (
+      (box instanceof HTMLTextAreaElement ||
+        (box instanceof HTMLInputElement &&
+          /^(text|search|number|)$/.test(box.type))) &&
+      !!box.closest(".ttml-creator")
+    );
+  };
   // Playback doesn't pull the list away from words being worked on.
   const working =
     inline !== null ||
@@ -1838,8 +1847,7 @@ export function TtmlCreator({
       touringRef.current ||
       !isPlaying ||
       workingRef.current ||
-      (document.activeElement instanceof HTMLInputElement &&
-        !!list.current?.contains(document.activeElement)) ||
+      typingInCreator() ||
       Date.now() - scrolledAt.current < 3000
     )
       return;

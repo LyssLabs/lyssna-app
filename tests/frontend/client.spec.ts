@@ -18938,8 +18938,16 @@ test("TTML Creator stays on words being worked on while the song plays", async (
   await expect(first).toBeInViewport();
 
   await first.locator(".ttml-chip-add").blur();
-  const before = await playing.getAttribute("data-line");
+  await creator.getByLabel("Selected word", { exact: true }).focus();
+  const typed = await playing.getAttribute("data-line");
   await play(80_500);
+  await expect(playing).not.toHaveAttribute("data-line", typed!);
+  await page.waitForTimeout(600);
+  await expect(first).toBeInViewport();
+
+  await creator.getByLabel("Selected word", { exact: true }).blur();
+  const before = await playing.getAttribute("data-line");
+  await play(90_500);
   await expect(playing).not.toHaveAttribute("data-line", before!);
   await expect(playing).toBeInViewport();
   await expect(first).not.toBeInViewport();
