@@ -51,6 +51,7 @@ import {
   SkipPreviousIcon,
 } from "./fullscreen-icons";
 import { DJArtwork, DJ_COVER } from "./brand";
+import { DJVoiceRing } from "./dj-voice-ring";
 import type {
   Album,
   Artist,
@@ -1734,7 +1735,12 @@ function DJLyricsPage({
         </div>
       </div>
       <div className="lyrics-body dj-lyrics-message" role="status">
-        <h2>Lyrics aren't available while the DJ talks</h2>
+        <DJVoiceRing
+          live={state.playback.is_playing && !state.settings.reduce_motion}
+        />
+        <h2>
+          {state.playback.is_playing ? "DJ is speaking…" : "DJ is paused"}
+        </h2>
         <p>
           Your DJ is setting up what plays next. Lyrics return when the next
           song starts.

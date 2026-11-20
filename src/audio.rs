@@ -762,7 +762,7 @@ impl QueuedPacket {
         narration: bool,
         volume: Box<dyn VolumeGetter + Send>,
     ) -> Self {
-        let levels = if narration { 0 } else { band_levels(&samples) };
+        let levels = band_levels(&samples);
         let spectrum = (!narration && spectrum_wanted()).then(|| spectrum_bars(&samples));
         let mut packet = Self::new(samples, buffer.queued);
         packet.levels = levels;
@@ -1561,6 +1561,15 @@ mod tests {
         let [low, _, high, _] = band_levels(&tone(8_000.0)).to_le_bytes();
         assert!(high > 200 && low < 60, "{low} {high}");
         assert_eq!(band_levels(&[0.0; 512]), 0);
+    }
+    #[test]
+    fn dj_speech_is_measured_for_the_voice_ring() {
+        let speech: Vec<f32> = (0..2048)
+            .map(|i| 0.4 * (std::f32::consts::TAU * 600.0 * i as f32 / SAMPLE_RATE as f32).sin())
+            .collect();
+        let packet =
+            QueuedPacket::with_output(speech, AudioBuffer::default(), true, Box::new(NoOpVolume));
+        assert_ne!(packet.levels, 0);
     }
 
     #[test]

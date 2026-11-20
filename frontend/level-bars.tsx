@@ -21,7 +21,7 @@ async function poll() {
   else timer = undefined;
 }
 
-function listen(listener: Listener) {
+export function listenToLevels(listener: Listener) {
   listeners.add(listener);
   if (!timer) timer = setTimeout(poll, 0);
   return () => {
@@ -44,7 +44,7 @@ export function LevelBars({
     const targets = [0, 0, 0];
     const shown = [0, 0, 0];
     const peaks = [0.5, 0.5, 0.5];
-    const stop = listen((levels) =>
+    const stop = listenToLevels((levels) =>
       levels.forEach((level, index) => {
         // Loud, compressed songs sit near the top all the time; scale each
         // bar to its band's recent peak and stretch the upper range so beats

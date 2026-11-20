@@ -4616,10 +4616,45 @@ test("DJ lyrics show the DJ cover and explain missing lyrics", async ({
   const lyrics = page.locator(".lyrics-page.dj-view");
   await expect(lyrics.locator(".lyrics-album .dj-art img")).toBeVisible();
   await expect(lyrics.locator(".ambience")).toHaveCount(1);
-  await expect(lyrics).toContainText(
-    "Lyrics aren't available while the DJ talks",
-  );
+  await expect(lyrics).toContainText("Lyrics return when the next song starts");
   await expect(page.locator(".now-playing.dj-view .dj-art img")).toBeVisible();
+});
+
+test("DJ lyrics ring swells with the DJ's voice", async ({ page }) => {
+  await startClient(page);
+  await page.evaluate(() => {
+    const test = (window as any).__clientTest;
+    test.answers = { ...test.answers, audio_levels: [0, 0, 0] };
+    test.emit({ type: "narration", active: true });
+    test.emit({
+      type: "playback",
+      changed: false,
+      observed_at: Date.now(),
+      playback: {
+        is_playing: true,
+        progress_ms: 1000,
+        shuffle_state: false,
+        repeat_state: "off",
+        device: { name: "Lyssna (test)", id: "local-device", is_active: true },
+        item: null,
+      },
+    });
+  });
+  await page.getByTitle("Lyrics", { exact: true }).click();
+  const lyrics = page.locator(".lyrics-page.dj-view");
+  await expect(lyrics.getByRole("heading")).toHaveText("DJ is speaking…");
+  const ring = lyrics.locator(".dj-voice-ring .ring");
+  const size = () =>
+    ring.evaluate((path) => (path as SVGPathElement).getBBox().width);
+  await expect.poll(size).toBeGreaterThan(0);
+  await page.waitForTimeout(400);
+  const quiet = await size();
+  await page.evaluate(() => {
+    const test = (window as any).__clientTest;
+    test.answers = { ...test.answers, audio_levels: [160, 255, 200] };
+  });
+  await expect.poll(size).toBeGreaterThan(quiet * 1.05);
+  await expect(lyrics.locator(".dj-voice-ring .trail")).toHaveCount(3);
 });
 
 test("Now playing's header names the playlist the song plays from", async ({
