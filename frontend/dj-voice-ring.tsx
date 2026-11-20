@@ -2,35 +2,43 @@ import { useEffect, useRef } from "react";
 import { listenToLevels } from "./level-bars";
 
 const POINTS = 96;
-const TRAILS = 3;
-// Frames between each trailing ring's shape and the one in front of it.
-const TRAIL_LAG = 5;
+const RADIUS = 26;
+// Where the DJ cover draws its two rings.
+const RING = { x: 49, y: 51 };
+const ECHO = { x: 54, y: 48 };
+// Frames the echo's shape trails the green ring's.
+const ECHO_LAG = 8;
 const WAVES = [
   { k: 2, speed: 0.55, weight: 1 },
   { k: 3, speed: -0.8, weight: 0.7 },
   { k: 5, speed: 1.3, weight: 0.35 },
 ];
 
-function outline(radius: number, offsets: number[]) {
+function outline(
+  centre: { x: number; y: number },
+  radius: number,
+  offsets: number[],
+) {
   let path = "";
   for (let index = 0; index <= POINTS; index++) {
     const angle = (index / POINTS) * Math.PI * 2;
     const r = radius * (1 + offsets[index % POINTS]);
-    const x = 50 + r * Math.cos(angle);
-    const y = 50 + r * Math.sin(angle);
+    const x = centre.x + r * Math.cos(angle);
+    const y = centre.y + r * Math.sin(angle);
     path += `${index ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`;
   }
   return `${path}Z`;
 }
 
-/** A ring that bends and swells with the DJ's voice. */
+/** The DJ cover's rings, bending and swelling with the DJ's voice. */
 export function DJVoiceRing({ live }: { live: boolean }) {
-  const svg = useRef<SVGSVGElement>(null);
+  const echo = useRef<SVGPathElement>(null);
+  const ring = useRef<SVGPathElement>(null);
   useEffect(() => {
-    const paths = Array.from(svg.current?.querySelectorAll("path") ?? []);
-    const circle = outline(34, new Array(POINTS).fill(0));
+    const round = new Array(POINTS).fill(0);
     if (!live) {
-      paths.forEach((path) => path.setAttribute("d", circle));
+      echo.current?.setAttribute("d", outline(ECHO, RADIUS, round));
+      ring.current?.setAttribute("d", outline(RING, RADIUS, round));
       return;
     }
     let target = 0;
@@ -44,7 +52,7 @@ export function DJVoiceRing({ live }: { live: boolean }) {
     let level = 0;
     let time = 0;
     let last = performance.now();
-    const history: string[] = [];
+    const history: { offsets: number[]; radius: number }[] = [];
     let frame = requestAnimationFrame(function draw(now) {
       const step = Math.min(0.05, (now - last) / 1000);
       last = now;
@@ -64,15 +72,16 @@ export function DJVoiceRing({ live }: { live: boolean }) {
           2
         );
       });
-      history.unshift(outline(34 * (1 + level * 0.08), offsets));
-      history.length = Math.min(history.length, TRAILS * TRAIL_LAG + 1);
-      paths.forEach((path, index) =>
-        path.setAttribute(
-          "d",
-          history[
-            Math.min(history.length - 1, (paths.length - 1 - index) * TRAIL_LAG)
-          ],
-        ),
+      history.unshift({ offsets, radius: RADIUS * (1 + level * 0.1) });
+      history.length = Math.min(history.length, ECHO_LAG + 1);
+      const behind = history[history.length - 1];
+      ring.current?.setAttribute(
+        "d",
+        outline(RING, history[0].radius, offsets),
+      );
+      echo.current?.setAttribute(
+        "d",
+        outline(ECHO, behind.radius, behind.offsets),
       );
       frame = requestAnimationFrame(draw);
     });
@@ -82,21 +91,9 @@ export function DJVoiceRing({ live }: { live: boolean }) {
     };
   }, [live]);
   return (
-    <svg
-      ref={svg}
-      className="dj-voice-ring"
-      viewBox="0 0 100 100"
-      aria-hidden="true"
-    >
-      {Array.from({ length: TRAILS + 1 }, (_, index) => TRAILS - index).map(
-        (index) => (
-          <path
-            key={index}
-            className={index ? "trail" : "ring"}
-            style={index ? { opacity: 0.5 - index * 0.13 } : undefined}
-          />
-        ),
-      )}
+    <svg className="dj-voice-ring" viewBox="12 12 80 80" aria-hidden="true">
+      <path ref={echo} className="echo" />
+      <path ref={ring} className="ring" />
     </svg>
   );
 }

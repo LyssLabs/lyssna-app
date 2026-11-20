@@ -4605,7 +4605,7 @@ test("explicit badges centre on the capitals beside them", async ({ page }) => {
   await expect(page.locator(".now-artists .explicit-badge")).toHaveCount(0);
 });
 
-test("DJ lyrics show the DJ cover and explain missing lyrics", async ({
+test("DJ lyrics show the animated DJ rings and explain missing lyrics", async ({
   page,
 }) => {
   await startClient(page);
@@ -4614,7 +4614,8 @@ test("DJ lyrics show the DJ cover and explain missing lyrics", async ({
   );
   await page.getByTitle("Lyrics", { exact: true }).click();
   const lyrics = page.locator(".lyrics-page.dj-view");
-  await expect(lyrics.locator(".lyrics-album .dj-art img")).toBeVisible();
+  await expect(lyrics.locator(".dj-art")).toHaveCount(0);
+  await expect(lyrics.locator(".dj-voice-ring")).toBeVisible();
   await expect(lyrics.locator(".ambience")).toHaveCount(1);
   await expect(lyrics).toContainText("Lyrics return when the next song starts");
   await expect(page.locator(".now-playing.dj-view .dj-art img")).toBeVisible();
@@ -4654,7 +4655,7 @@ test("DJ lyrics ring swells with the DJ's voice", async ({ page }) => {
     test.answers = { ...test.answers, audio_levels: [160, 255, 200] };
   });
   await expect.poll(size).toBeGreaterThan(quiet * 1.05);
-  await expect(lyrics.locator(".dj-voice-ring .trail")).toHaveCount(3);
+  await expect(lyrics.locator(".dj-voice-ring .echo")).toHaveCount(1);
 });
 
 test("Now playing's header names the playlist the song plays from", async ({

@@ -521,22 +521,30 @@ small {
   color: light-dark(#000, #fff);
   text-wrap: balance;
 }
+.lyrics-page.dj-view,
+.lyrics-page.dj-view.narrow {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
+}
+.lyrics-page.dj-view .dj-lyrics-message {
+  align-items: center;
+}
 .dj-voice-ring {
-  width: clamp(140px, 22cqw, 260px);
-  margin: 0 auto 8px;
+  width: clamp(180px, 34cqw, 420px);
   overflow: visible;
 }
 .dj-voice-ring path {
   fill: none;
-  stroke: #1ed760;
-  stroke-width: 3.2;
   stroke-linejoin: round;
 }
 .dj-voice-ring .ring {
-  filter: drop-shadow(0 0 6px #1ed76080);
+  stroke: #1ed760;
+  stroke-width: 8;
 }
-.dj-voice-ring .trail {
-  stroke: #5ee2ff;
+.dj-voice-ring .echo {
+  stroke: #38c8ff;
+  stroke-opacity: 0.45;
+  stroke-width: 9;
 }
 .dj-lyrics-message p {
   max-width: 520px;
