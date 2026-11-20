@@ -18423,6 +18423,23 @@ test("TTML Creator replaces one word or every identical word", async ({
   await expect(cards.nth(1).locator(".ttml-word")).toHaveText(
     "I am just a lyric verse number 2".split(" "),
   );
+  await cards
+    .first()
+    .getByRole("button", { name: "verse", exact: true })
+    .click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "Replace word…" }).click();
+  const replaceAll = dialog.getByRole("checkbox", {
+    name: "Replace all identical words",
+  });
+  await expect(replaceAll).toBeChecked();
+  await replaceAll.uncheck();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await cards
+    .first()
+    .getByRole("button", { name: "verse", exact: true })
+    .click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "Replace word…" }).click();
+  await expect(replaceAll).toBeChecked();
 });
 
 test("TTML Creator word menu splits words and moves them to new lines", async ({

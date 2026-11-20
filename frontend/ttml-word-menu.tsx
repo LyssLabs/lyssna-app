@@ -81,18 +81,32 @@ export function WordMenu({
   );
 }
 
-const OPTIONS_KEY = "lyssna.ttml-split-options";
+const SPLIT_KEY = "lyssna.ttml-split-options";
+const REPLACE_KEY = "lyssna.ttml-replace-options";
 
-function loadOptions() {
+function loadChoices<K extends string>(
+  key: string,
+  defaults: Record<K, boolean>,
+): Record<K, boolean> {
+  const next = { ...defaults };
   try {
-    return {
-      applyAll: false,
-      remember: true,
-      ignoreCase: true,
-      ...JSON.parse(localStorage.getItem(OPTIONS_KEY) ?? "{}"),
-    };
+    const saved: unknown = JSON.parse(localStorage.getItem(key) ?? "{}");
+    if (saved && typeof saved === "object")
+      for (const name of Object.keys(defaults) as K[]) {
+        const value = (saved as Record<string, unknown>)[name];
+        if (typeof value === "boolean") next[name] = value;
+      }
   } catch {
-    return { applyAll: false, remember: true, ignoreCase: true };
+    // Unreadable choices fall back to the defaults.
+  }
+  return next;
+}
+
+function saveChoices(key: string, choices: Record<string, boolean>) {
+  try {
+    localStorage.setItem(key, JSON.stringify(choices));
+  } catch {
+    // The choice still applies this time.
   }
 }
 
@@ -119,8 +133,11 @@ export function ReplaceDialog({
   onClose: () => void;
 }) {
   const [value, setValue] = useState(word);
-  const [replaceAll, setReplaceAll] = useState(false);
-  const [matchCase, setMatchCase] = useState(false);
+  const [saved] = useState(() =>
+    loadChoices(REPLACE_KEY, { replaceAll: false, matchCase: false }),
+  );
+  const [replaceAll, setReplaceAll] = useState(saved.replaceAll);
+  const [matchCase, setMatchCase] = useState(saved.matchCase);
   const input = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => input.current?.select(), []);
   useEffect(() => {
@@ -133,7 +150,10 @@ export function ReplaceDialog({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
-  const confirm = () => onConfirm({ value, replaceAll, matchCase });
+  const confirm = () => {
+    saveChoices(REPLACE_KEY, { replaceAll, matchCase });
+    onConfirm({ value, replaceAll, matchCase });
+  };
 
   return (
     <div className="ttml-dialog-backdrop" onClick={onClose}>
@@ -203,19 +223,18 @@ export function SplitDialog({
   const [offsets, setOffsets] = useState<Set<number>>(
     () => new Set(suggestion),
   );
-  const [options, setOptions] = useState(loadOptions);
+  const [options, setOptions] = useState(() =>
+    loadChoices(SPLIT_KEY, {
+      applyAll: false,
+      remember: true,
+      ignoreCase: true,
+    }),
+  );
   const suggested =
     offsets.size === suggestion.length &&
     suggestion.every((at) => offsets.has(at));
-  const update = (patch: Partial<typeof options>) => {
-    const next = { ...options, ...patch };
-    setOptions(next);
-    try {
-      localStorage.setItem(OPTIONS_KEY, JSON.stringify(next));
-    } catch {
-      // The choice still applies to this dialog.
-    }
-  };
+  const update = (patch: Partial<typeof options>) =>
+    setOptions((current) => ({ ...current, ...patch }));
   const toggle = (at: number) =>
     setOffsets((current) => {
       const next = new Set(current);
@@ -224,6 +243,7 @@ export function SplitDialog({
     });
   const confirm = () => {
     const list = [...offsets].sort((a, b) => a - b);
+    saveChoices(SPLIT_KEY, options);
     onConfirm({
       offsets: list,
       applyAll: options.applyAll,
