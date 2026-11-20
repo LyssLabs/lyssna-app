@@ -489,26 +489,36 @@ pub fn parse_ttml(source: &str, duration_ms: u64) -> Result<Lyrics> {
             opposite,
             ..Line::default()
         };
-        let mut background = Line {
+        let blank_background = Line {
             start_ms,
             end_ms,
             background: true,
             opposite,
             ..Line::default()
         };
+        // Each `x-bg` span is its own background vocal, not one merged line.
+        let mut backgrounds: Vec<(roxmltree::NodeId, Line)> = Vec::new();
         for span in paragraph
             .descendants()
             .filter(|node| node.has_tag_name("span"))
         {
-            let in_background = span
+            let owner = span
                 .ancestors()
-                .skip(1)
                 .take_while(|parent| *parent != paragraph)
-                .any(|parent| attribute(parent, "role") == Some("x-bg"));
-            let target = if in_background {
-                &mut background
-            } else {
-                &mut line
+                .find(|parent| attribute(*parent, "role") == Some("x-bg"))
+                .map(|parent| parent.id());
+            let target = match owner {
+                Some(id) => {
+                    if !backgrounds.iter().any(|(owner, _)| *owner == id) {
+                        backgrounds.push((id, blank_background.clone()));
+                    }
+                    &mut backgrounds
+                        .iter_mut()
+                        .find(|(owner, _)| *owner == id)
+                        .expect("background just added")
+                        .1
+                }
+                None => &mut line,
             };
             let role = attribute(span, "role").unwrap_or_default();
             if role.contains("translation") {
@@ -525,7 +535,7 @@ pub fn parse_ttml(source: &str, duration_ms: u64) -> Result<Lyrics> {
                     .descendants()
                     .any(|child| child != span && attribute(child, "begin").is_some())
                 {
-                    background.text = node_text(span, true).trim().into();
+                    target.text = node_text(span, true).trim().into();
                 }
                 continue;
             }
@@ -569,7 +579,9 @@ pub fn parse_ttml(source: &str, duration_ms: u64) -> Result<Lyrics> {
                 }
             }
         }
-        for target in [&mut line, &mut background] {
+        for target in std::iter::once(&mut line)
+            .chain(backgrounds.iter_mut().map(|(_, background)| background))
+        {
             if !target.words.is_empty() {
                 target.text = target
                     .words
@@ -601,8 +613,8 @@ pub fn parse_ttml(source: &str, duration_ms: u64) -> Result<Lyrics> {
         }
         // Order by the words, not the paragraph's `begin`: some files carry a
         // `begin` of 0 on lines sung much later, which floats them to the top.
-        let group_start = [&line, &background]
-            .into_iter()
+        let group_start = std::iter::once(&line)
+            .chain(backgrounds.iter().map(|(_, background)| background))
             .filter(|part| !part.words.is_empty())
             .map(|part| part.start_ms)
             .min()
@@ -610,8 +622,10 @@ pub fn parse_ttml(source: &str, duration_ms: u64) -> Result<Lyrics> {
         if !line.text.is_empty() || !line.romanization.is_empty() {
             lines.push((group_start, line));
         }
-        if !background.text.is_empty() {
-            lines.push((group_start, background));
+        for (_, background) in backgrounds {
+            if !background.text.is_empty() {
+                lines.push((group_start, background));
+            }
         }
     }
     ensure!(
@@ -1275,6 +1289,25 @@ mod tests {
             synced: true,
             ..Lyrics::default()
         }
+    }
+
+    #[test]
+    fn ttml_keeps_separate_background_spans_as_separate_lines() {
+        let text = r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div><p begin="00:01.000" end="00:06.000"><span begin="00:01.000" end="00:02.000">Goddamn</span><span ttm:role="x-bg"><span begin="00:02.000" end="00:02.500">(No</span> <span begin="00:02.500" end="00:03.000">limit)</span></span><span ttm:role="x-bg"><span begin="00:04.000" end="00:04.500">(Rewind,</span> <span begin="00:04.500" end="00:05.000">rewind)</span></span></p></div></body></tt>"#;
+        let lyrics = parse_ttml(text, 10_000).unwrap();
+        let texts: Vec<_> = lyrics
+            .lines
+            .iter()
+            .map(|line| (line.text.as_str(), line.background))
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                ("Goddamn", false),
+                ("No limit", true),
+                ("Rewind, rewind", true)
+            ]
+        );
     }
 
     #[test]
