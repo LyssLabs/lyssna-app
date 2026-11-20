@@ -962,7 +962,13 @@ export function moveWord(
   return lines
     .map((line, index) =>
       index === to.line
-        ? { ...line, units: placed }
+        ? {
+            ...line,
+            units: placed,
+            ...(!target.units.length && source.background
+              ? { background: true }
+              : {}),
+          }
         : index === from.line
           ? { ...line, units: kept }
           : line,
@@ -1016,6 +1022,10 @@ export function moveWords(
   const at = lines[to.line].units
     .slice(0, to.unit)
     .filter((unit) => !taken.has(unit)).length;
+  // A new, empty line filled only from background lines is one too.
+  const background =
+    !lines[to.line].units.length &&
+    from.every((each) => lines[each.line]?.background);
   return lines
     .map((line, index) => {
       const units = without(line.units, taken);
@@ -1030,6 +1040,8 @@ export function moveWords(
       if (units[0]?.joined) units[0] = { ...units[0], joined: false };
       if (index === to.line) recase(line.units, units, at, moved);
       else recase(line.units, units, -1, moved);
+      if (index === to.line && background)
+        return { ...line, units, background: true };
       return units.length === line.units.length &&
         units.every((unit, position) => unit === line.units[position])
         ? line

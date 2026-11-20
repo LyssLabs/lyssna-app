@@ -109,7 +109,9 @@ describe("TTML Creator model", () => {
     const lines = timeAll("No clubs" + String.fromCharCode(10) + "No cars");
     lines[1].units.push({ text: "", start: 0, joined: true });
     const ttml = toTtml(lines, meta);
-    const second = [...ttml.matchAll(/<p begin="([^"]+)"[^>]*><span begin="([^"]+)"/g)][1];
+    const second = [
+      ...ttml.matchAll(/<p begin="([^"]+)"[^>]*><span begin="([^"]+)"/g),
+    ][1];
     expect(second[1]).toBe(second[2]);
   });
 
@@ -372,6 +374,32 @@ describe("TTML Creator card editing", () => {
     expect(words(all)).toEqual(["Oh Oh you", "Oh Oh"]);
     expect(all[0].units[1].start).toBe(lines[0].units[1].start);
     expect(words(replaceMatching(lines, "hey", "", false))).toEqual(["you"]);
+  });
+
+  it("makes a new line a background vocal when background words fill it", () => {
+    const lines = insertBlankLine(parseText("Main line\n(oh yeah)"), 1);
+    const one = moveWord(lines, { line: 1, unit: 1 }, { line: 2, unit: 0 });
+    expect(one.map((line) => line.background)).toEqual([false, true, true]);
+    const both = moveWords(
+      lines,
+      [
+        { line: 1, unit: 0 },
+        { line: 1, unit: 1 },
+      ],
+      { line: 2, unit: 0 },
+    );
+    expect(both.map((line) => line.background)).toEqual([false, true]);
+    const mixed = moveWords(
+      lines,
+      [
+        { line: 0, unit: 1 },
+        { line: 1, unit: 1 },
+      ],
+      { line: 2, unit: 0 },
+    );
+    expect(mixed.at(-1)!.background).toBe(false);
+    const onto = moveWord(lines, { line: 1, unit: 1 }, { line: 0, unit: 2 });
+    expect(onto[0].background).toBe(false);
   });
 
   it("recases words moved to or from the start of a line", () => {
@@ -703,9 +731,7 @@ describe("TTML Creator word menu", () => {
       toText(moveWord(blank, { line: 0, unit: 3 }, { line: 2, unit: 0 })),
     ).toBe("Hello there my\nNext line\nFriend");
     expect(
-      toText(
-        breakLine(parseText("hey you"), { line: 0, unit: 1 }, false),
-      ),
+      toText(breakLine(parseText("hey you"), { line: 0, unit: 1 }, false)),
     ).toBe("hey\nyou");
     expect(toText(duplicateLine(parseText("a\nb"), 0))).toBe("a\na\nb");
   });
