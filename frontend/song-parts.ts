@@ -524,12 +524,42 @@ for (const [name, aliases] of Object.entries(PARTS))
  *  or undefined for anything else. */
 export function songPart(header: string): string | undefined {
   const text = header
-    .split(":")[0]
+    .split(SINGER)[0]
     .replace(/\s*\(.*?\)\s*/g, " ")
     .replace(/\s+\d+$/, "")
     .replace(/\s+/g, " ")
     .trim();
   return NAMES.get(text.toLowerCase());
 }
+
+// Genius writes "[Verse 1: Nicki Minaj]"; "[Verse 1 - Nicki Minaj]" works too.
+const SINGER = /:| [-–—] /;
+
+export interface SongSection {
+  part: string;
+  /** Who sings it, when the song has more than one artist. */
+  singer?: string;
+}
+
+/** The section a header names, with who sings it when it says. */
+export function songSection(header: string): SongSection | undefined {
+  const part = songPart(header);
+  if (!part) return;
+  const at = header.search(SINGER);
+  const singer =
+    at < 0
+      ? ""
+      : header
+          .slice(at)
+          .replace(/^(:| [-–—] )/, "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 80);
+  return singer ? { part, singer } : { part };
+}
+
+/** How a section reads: "Verse - Nicki Minaj". */
+export const sectionLabel = (section: SongSection) =>
+  section.singer ? `${section.part} - ${section.singer}` : section.part;
 
 export const SONG_PARTS = Object.keys(PARTS);

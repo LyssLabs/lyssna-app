@@ -1,6 +1,6 @@
 import type { Line, Lyrics, Word } from "./types";
 import { repeatedPieces, symbolPieces } from "./ttml-syllables";
-import { songPart } from "./song-parts";
+import { sectionLabel, songSection, type SongSection } from "./song-parts";
 
 export interface CreatorUnit {
   text: string;
@@ -19,6 +19,8 @@ export interface CreatorLine {
   spaceAfter?: boolean;
   /** The song section starting at this line, like "Chorus". Optional. */
   part?: string;
+  /** Who sings that section, when the song has more than one artist. */
+  singer?: string;
 }
 export interface Cursor {
   line: number;
@@ -172,9 +174,16 @@ export function geniusBackgrounds(text: string): string {
  * never lyrics.
  */
 export function sectionName(text: string): string | undefined {
-  const match = /^\[([^\]]*)\]$/.exec(text.trim());
-  return match ? songPart(match[1]) : undefined;
+  return sectionOf(text)?.part;
 }
+export function sectionOf(text: string): SongSection | undefined {
+  const match = /^\[([^\]]*)\]$/.exec(text.trim());
+  return match ? songSection(match[1]) : undefined;
+}
+const sectionFrom = (line: CreatorLine): SongSection | undefined =>
+  line.part
+    ? { part: line.part, ...(line.singer && { singer: line.singer }) }
+    : undefined;
 const isSectionLine = (text: string) => /^\[[^\]]*\]$/.test(text.trim());
 
 const plain = (text: string) =>
@@ -197,11 +206,11 @@ export function applySections(
   const named = parseText(geniusBackgrounds(text)).filter(
     (line) => !line.background,
   );
-  const parts = new Map<number, string>();
+  const parts = new Map<number, SongSection>();
   let from = 0;
-  let pending: string | undefined;
+  let pending: SongSection | undefined;
   for (const line of named) {
-    pending = line.part ?? pending;
+    pending = sectionFrom(line) ?? pending;
     const want = lineWords(line);
     if (!want) continue;
     let at = -1;
@@ -219,9 +228,9 @@ export function applySections(
   }
   if (!parts.size) return;
   return lines.map((line, index) => {
-    const { part: _, ...rest } = line;
-    const part = parts.get(index);
-    return part ? { ...rest, part } : rest;
+    const { part: _, singer: __, ...rest } = line;
+    const section = parts.get(index);
+    return section ? { ...rest, ...section } : rest;
   });
 }
 
@@ -237,10 +246,10 @@ export function unknownSections(text: string): string[] {
 
 export function parseText(text: string): CreatorLine[] {
   const lines: CreatorLine[] = [];
-  let part: string | undefined;
+  let section: SongSection | undefined;
   for (const raw of text.split(/\r?\n/)) {
     if (isSectionLine(raw)) {
-      part = sectionName(raw);
+      section = sectionOf(raw);
       continue;
     }
     let body = raw.trim();
@@ -271,8 +280,8 @@ export function parseText(text: string): CreatorLine[] {
         );
     }
     if (units.length) {
-      lines.push({ units, background, opposite, ...(part && { part }) });
-      part = undefined;
+      lines.push({ units, background, opposite, ...section });
+      section = undefined;
     }
   }
   return lines;
@@ -314,7 +323,8 @@ export function toText(lines: CreatorLine[]): string {
         .join("");
       const wrapped = line.background ? `(${body})` : body;
       const text = line.opposite ? `${OPPOSITE_PREFIX} ${wrapped}` : wrapped;
-      return line.part ? `[${line.part}]\n${text}` : text;
+      const section = sectionFrom(line);
+      return section ? `[${sectionLabel(section)}]\n${text}` : text;
     })
     .join("\n");
 }
@@ -1403,6 +1413,9 @@ function extras(line: CreatorLine): string {
  * Word-timed TTML in the Apple Music style AMLL and Spicy Lyrics read.
  * Background lines nest inside the lead line sung before them.
  */
+/** Lyssna's own TTML attributes, such as who sings a section. */
+export const LYSSNA_NS = "https://lyssna.org/ns/ttml";
+
 export function toTtml(
   lines: CreatorLine[],
   meta: SongMeta,
@@ -1411,24 +1424,24 @@ export function toTtml(
   type Paragraph = {
     lead?: CreatorLine;
     backgrounds: CreatorLine[];
-    part?: string;
+    section?: SongSection;
   };
   const paragraphs: Paragraph[] = [];
-  let part: string | undefined;
+  let section: SongSection | undefined;
   for (const line of lines) {
-    if (line.part) part = line.part;
+    section = sectionFrom(line) ?? section;
     if (!lineSpan(line, true)) continue;
     const last = paragraphs.at(-1);
-    if (line.background && last && !part) last.backgrounds.push(line);
-    else if (line.background) paragraphs.push({ backgrounds: [line], part });
-    else paragraphs.push({ lead: line, backgrounds: [], part });
-    part = undefined;
+    if (line.background && last && !section) last.backgrounds.push(line);
+    else if (line.background) paragraphs.push({ backgrounds: [line], section });
+    else paragraphs.push({ lead: line, backgrounds: [], section });
+    section = undefined;
   }
   const opposite = lines.some((line) => line.opposite);
   let end = 0;
   const readings: string[] = [];
   const sections: {
-    part?: string;
+    section?: SongSection;
     begin: number;
     end: number;
     ps: string[];
@@ -1458,19 +1471,26 @@ export function toTtml(
       })
       .join("");
     const p = `<p begin="${formatTime(begin)}" end="${formatTime(finish)}" ttm:agent="${agent}" itunes:key="L${index + 1}">${lead}${backgrounds}</p>`;
-    const section = sections.at(-1);
-    if (!section || paragraph.part)
-      sections.push({ part: paragraph.part, begin, end: finish, ps: [p] });
+    const last = sections.at(-1);
+    if (!last || paragraph.section)
+      sections.push({
+        section: paragraph.section,
+        begin,
+        end: finish,
+        ps: [p],
+      });
     else {
-      section.end = Math.max(section.end, finish);
-      section.ps.push(p);
+      last.end = Math.max(last.end, finish);
+      last.ps.push(p);
     }
   });
+  // Apple's attribute is itunes:songPart. Spicy Lyrics drops every line of
+  // a section marked Instrumental, so sung lines never carry that mark.
   const body = sections.length
     ? sections
         .map(
-          (section) =>
-            `<div begin="${formatTime(section.begin)}" end="${formatTime(section.end)}"${section.part ? ` itunes:song-part="${escape(section.part)}"` : ""}>${section.ps.join("")}</div>`,
+          ({ section, begin, end, ps }) =>
+            `<div begin="${formatTime(begin)}" end="${formatTime(end)}"${section && section.part !== "Instrumental" ? ` itunes:songPart="${escape(section.part)}"` : ""}${section?.singer ? ` lyssna:singer="${escape(section.singer)}"` : ""}>${ps.join("")}</div>`,
         )
         .join("")
     : `<div begin="${formatTime(0)}" end="${formatTime(0)}"></div>`;
@@ -1507,7 +1527,7 @@ export function toTtml(
       : "",
   ].join("");
   const duration = Math.max(end, meta.durationMs ?? 0);
-  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}">${body}</body></tt>`;
+  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"${lines.some((line) => line.part && line.singer) ? ` xmlns:lyssna="${LYSSNA_NS}"` : ""} itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}">${body}</body></tt>`;
 }
 
 export function fileName(meta: SongMeta): string {

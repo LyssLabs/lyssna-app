@@ -17743,7 +17743,10 @@ test("TTML Creator names sections from Genius without touching timings", async (
   );
   await creator.getByRole("button", { name: "Genius", exact: true }).click();
   await creator.getByRole("menuitem", { name: "Sections from Genius" }).click();
-  await expect(creator.locator(".ttml-part")).toHaveText(["Verse", "Chorus"]);
+  await expect(creator.locator(".ttml-part")).toHaveText([
+    "Verse - Someone",
+    "Chorus",
+  ]);
   // Section lines, even an empty "[]", never become lyrics.
   expect(await read()).toEqual(words);
 });

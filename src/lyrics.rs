@@ -1449,6 +1449,16 @@ mod tests {
     }
 
     #[test]
+    fn ttml_reads_every_line_of_tagged_sections_with_singers() {
+        let text = r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" xmlns:lyssna="https://lyssna.org/ns/ttml" itunes:timing="Word"><body dur="00:10.000"><div begin="00:01.000" end="00:03.000" itunes:songPart="Verse" lyssna:singer="Nicki Minaj"><p begin="00:01.000" end="00:02.000" ttm:agent="v1" itunes:key="L1"><span begin="00:01.000" end="00:02.000">One</span></p><p begin="00:02.000" end="00:03.000" ttm:agent="v1" itunes:key="L2"><span begin="00:02.000" end="00:03.000">Two</span></p></div><div begin="00:04.000" end="00:05.000" itunes:song-part="Chorus"><p begin="00:04.000" end="00:05.000" ttm:agent="v2" itunes:key="L3"><span begin="00:04.000" end="00:05.000">Three</span></p></div></body></tt>"#;
+        let lyrics = parse_ttml(text, 10_000).unwrap();
+        let words: Vec<&str> = lyrics.lines.iter().map(|line| line.text.as_str()).collect();
+        assert_eq!(words, ["One", "Two", "Three"]);
+        assert_eq!(lyrics.lines[2].words[0].start_ms, 4000);
+        assert!(lyrics.lines[2].opposite);
+    }
+
+    #[test]
     fn ttml_splits_background_vocals_syllables_and_duets() {
         let text = r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div><p begin="00:01.000" end="00:06.000" ttm:agent="v1"><span begin="00:01.000" end="00:01.500">Hel</span><span begin="00:01.500" end="00:02.000">lo</span> <span begin="00:02.000" end="00:03.000">there</span><span ttm:role="x-bg"><span begin="00:04.000" end="00:04.500">(oh</span> <span begin="00:04.500" end="00:05.000">yeah)</span></span></p><p begin="00:07.000" end="00:08.000" ttm:agent="v2"><span begin="00:07.000" end="00:08.000">Duet</span></p><p begin="00:09.000" end="00:10.000" ttm:agent="v2000"><span begin="00:09.000" end="00:10.000">Both</span></p></div></body></tt>"#;
         let lyrics = parse_ttml(text, 12_000).unwrap();

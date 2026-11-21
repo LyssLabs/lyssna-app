@@ -2925,7 +2925,13 @@ export function TtmlCreator({
               );
               return (
                 <Fragment key={lineIndex}>
-                  {line.part && <p className="ttml-part">{line.part}</p>}
+                  {line.part && (
+                    <p className="ttml-part">
+                      {line.singer
+                        ? `${line.part} - ${line.singer}`
+                        : line.part}
+                    </p>
+                  )}
                   <div
                     data-line={lineIndex}
                     {...pickProps(lineIndex)}

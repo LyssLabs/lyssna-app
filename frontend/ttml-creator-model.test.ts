@@ -115,18 +115,48 @@ describe("TTML Creator model", () => {
       undefined,
     ]);
     expect(sectionName("[]")).toBeUndefined();
-    expect(toText(lines)).toBe("[Verse]\none\ntwo\n[Chorus]\n(oh)\nthree");
+    expect(toText(lines)).toBe(
+      "[Verse - Someone]\none\ntwo\n[Chorus]\n(oh)\nthree",
+    );
   });
 
   it("exports each section as its own tagged div, untagged songs as one", () => {
     const tagged = toTtml(timeAll("[Verse]\none\ntwo\n[Chorus]\nthree"), meta);
     expect(tagged.match(/<div [^>]*>/g)).toHaveLength(2);
-    expect(tagged).toContain('itunes:song-part="Verse"');
-    expect(tagged).toContain('itunes:song-part="Chorus"');
+    expect(tagged).toContain('itunes:songPart="Verse"');
+    expect(tagged).toContain('itunes:songPart="Chorus"');
     expect(tagged).not.toContain("[Chorus]");
     const plain = toTtml(timeAll("one\ntwo"), meta);
     expect(plain.match(/<div [^>]*>/g)).toHaveLength(1);
-    expect(plain).not.toContain("song-part");
+    expect(plain).not.toContain("songPart");
+  });
+
+  it("keeps who sings a section and writes it so other players ignore it", () => {
+    const lines = parseText(
+      "[Verse 1: Nicki Minaj]\none\ntwo\n[Chorus - Drake & Nicki]\nthree",
+    );
+    expect(lines.map((line) => line.singer)).toEqual([
+      "Nicki Minaj",
+      undefined,
+      "Drake & Nicki",
+    ]);
+    expect(toText(lines)).toBe(
+      "[Verse - Nicki Minaj]\none\ntwo\n[Chorus - Drake & Nicki]\nthree",
+    );
+    const ttml = toTtml(timeAll(toText(lines)), meta);
+    expect(ttml).toContain(
+      'itunes:songPart="Verse" lyssna:singer="Nicki Minaj"',
+    );
+    expect(ttml).toContain('lyssna:singer="Drake &amp; Nicki"');
+    expect(ttml).toContain('xmlns:lyssna="https://lyssna.org/ns/ttml"');
+    expect(toTtml(timeAll("[Chorus]\nthree"), meta)).not.toContain("lyssna");
+  });
+
+  it("never marks sung lines Instrumental, which Spicy Lyrics would drop", () => {
+    const ttml = toTtml(timeAll("[Instrumental]\nhum hmm\n[Chorus]\nla"), meta);
+    expect(ttml).not.toContain("Instrumental");
+    expect(ttml).toContain('itunes:songPart="Chorus"');
+    expect(ttml.match(/<p /g)).toHaveLength(2);
   });
 
   it("takes sections from Genius onto synced lines and keeps timings", () => {
