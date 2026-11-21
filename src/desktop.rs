@@ -5403,6 +5403,48 @@ fn song_page_url(song_id: &str) -> Result<url::Url> {
         "https://lyssna.org/song/{song_id}?embed&opened={opened}"
     ))?)
 }
+/// Marks a sheet navigation that should open in the browser instead.
+const OPEN_IN_BROWSER: &str = "lyssna-browser";
+/// An "Open in browser" button over the song sheet. Song pages stay in the
+/// sheet, so the button asks for the page with a marker the sheet's
+/// navigation handler sends to the browser instead.
+const SONG_SHEET_SCRIPT: &str = r#"(() => {
+  if (window.top !== window) return;
+  const add = () => {
+    if (document.getElementById("lyssna-open-browser")) return;
+    const button = document.createElement("button");
+    button.id = "lyssna-open-browser";
+    button.type = "button";
+    button.textContent = "Open in browser";
+    button.style.cssText = "position:fixed;top:16px;right:16px;z-index:2147483647;padding:8px 16px;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(18,18,20,.72);color:#fff;font:600 13px/1 inherit;cursor:pointer;backdrop-filter:blur(12px)";
+    button.addEventListener("click", () => {
+      const page = new URL(location.href);
+      page.searchParams.set("lyssna-browser", "1");
+      location.href = page.href;
+    });
+    document.body.append(button);
+  };
+  if (document.body) add();
+  else document.addEventListener("DOMContentLoaded", add);
+})();"#;
+/// The page a sheet's "Open in browser" asked for, without the sheet's own
+/// query parameters.
+fn browser_page(url: &url::Url) -> Option<url::Url> {
+    if !url.query_pairs().any(|(key, _)| key == OPEN_IN_BROWSER) {
+        return None;
+    }
+    let mut page = url.clone();
+    let kept: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(key, _)| !matches!(key.as_ref(), OPEN_IN_BROWSER | "embed" | "opened"))
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    page.set_query(None);
+    if !kept.is_empty() {
+        page.query_pairs_mut().extend_pairs(kept);
+    }
+    Some(page)
+}
 /// The song's lyrics page from lyssna.org in a sheet over the window that
 /// asked, like the creator profile sheet. Song and profile links stay in
 /// the sheet; the rest of the site and other sites open in the browser.
@@ -5432,9 +5474,16 @@ async fn open_song_page(
                 .background_color(tauri::window::Color(0x0a, 0x0a, 0x0b, 0xff))
                 .parent(&main)?
                 .additional_browser_args(BROWSER_ARGS)
+                .initialization_script(SONG_SHEET_SCRIPT)
                 .on_navigation(move |url| {
                     if let Some(uri) = listen_uri(url) {
                         let _ = listens.emit("lyssna", json!({"type":"play_uri","uri":uri}));
+                        return false;
+                    }
+                    if let Some(page) = browser_page(url) {
+                        if page.scheme() == "https" {
+                            let _ = webbrowser::open(page.as_str());
+                        }
                         return false;
                     }
                     if url.scheme() == "https"
@@ -6973,6 +7022,27 @@ mod tests {
         );
         assert!(song_page_url("../../account").is_err());
         assert!(song_page_url("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c4/").is_err());
+    }
+
+    #[test]
+    fn open_in_browser_drops_the_sheets_own_query() {
+        let asked = url::Url::parse(
+            "https://lyssna.org/song/0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44?embed&opened=12&lyssna-browser=1",
+        )
+        .unwrap();
+        assert_eq!(
+            browser_page(&asked).unwrap().as_str(),
+            "https://lyssna.org/song/0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44"
+        );
+        let profile =
+            url::Url::parse("https://lyssna.org/u/Arashii?tab=created&lyssna-browser=1").unwrap();
+        assert_eq!(
+            browser_page(&profile).unwrap().as_str(),
+            "https://lyssna.org/u/Arashii?tab=created"
+        );
+        assert!(
+            browser_page(&url::Url::parse("https://lyssna.org/song/x?embed").unwrap()).is_none()
+        );
     }
     #[test]
     fn creator_profiles_use_usernames_and_encode_path_characters() {
