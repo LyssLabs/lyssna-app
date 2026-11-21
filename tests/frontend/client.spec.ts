@@ -1046,6 +1046,7 @@ async function startClient(
           if (command === "lyssna_submit")
             return { id: "s1", song_title: args.track.name, kind: "new", status: "pending" };
           if (command === "lyssna_account") return (window as any).__lyssnaAccount ?? null;
+          if (command === "lyssna_review") return (window as any).__lyssnaReview?.(args);
           if (command === "genius_lyrics")
             return "From Genius one\nFrom Genius two";
           if (command === "search_suggestions") {
@@ -16990,6 +16991,78 @@ test("Soloist explains when this computer cannot run it", async ({ page }) => {
     "isn't available on this computer",
   );
   await expect(page.getByLabel("Soloist API key")).toHaveCount(0);
+});
+
+test("reviewers see waiting submissions and decide them from the TTML Creator", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const host = window as any;
+    host.__lyssnaAccount = { role: "reviewer" };
+    const submission = {
+      id: "0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44",
+      song_id: "1b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44",
+      song_title: "Come & Go",
+      kind: "new",
+      head_revision_id: "2b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44",
+      submitter_id: "u2",
+      submitter_name: "newcomer",
+      submitter_tier: 1,
+      status: "pending",
+      proposed_links: [
+        { platform: "spotify", external_id: "0123456789abcdefghijkl" },
+      ],
+      major_rewrite: false,
+      light_review: false,
+      priority: true,
+      submitted_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+      head_score: 0,
+      head_votes: 0,
+    };
+    host.__reviewCalls = [];
+    host.__lyssnaReview = (args: any) => {
+      host.__reviewCalls.push(args);
+      if (args.path.startsWith("/v1/queue"))
+        return args.path.includes("priority") && !host.__decided
+          ? [submission]
+          : [];
+      if (args.method === "post" && !args.path.endsWith("/comments"))
+        host.__decided = true;
+      if (args.path.endsWith("/comments")) return [];
+      if (args.path.endsWith("/ttml")) return "<tt></tt>";
+      return { ...submission, status: "approved" };
+    };
+  });
+  await startClient(page);
+  await playLyricTrack(page);
+  const button = page.getByRole("button", {
+    name: "Review submissions, 1 waiting",
+  });
+  await expect(button).toContainText("1");
+  await button.click();
+  const panel = page.getByRole("complementary", { name: "Review" });
+  await expect(panel).toContainText("Come & Go");
+  await expect(panel).toContainText("New · @newcomer · tier 1 · 3h ago");
+  await panel.getByRole("button", { name: /Come & Go/ }).click();
+  await expect(
+    panel.getByRole("button", { name: "Ask for changes" }),
+  ).toBeDisabled();
+  await expect(
+    panel.getByRole("button", { name: "Fix and approve" }),
+  ).toBeDisabled();
+  await panel.getByRole("radio", { name: "Minor fixes" }).click();
+  await panel.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(panel).toContainText("Nothing waiting here.");
+  const approved = await page.evaluate(() =>
+    (window as any).__reviewCalls.find((call: any) =>
+      call.path.endsWith("/approve"),
+    ),
+  );
+  expect(approved).toMatchObject({
+    method: "post",
+    path: "/v1/submissions/0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44/approve",
+    body: { grade: 2 },
+  });
 });
 
 test("TTML Creator times words on the playing song, slows it and saves TTML", async ({

@@ -17,6 +17,7 @@ import {
   Eye,
   EyeOff,
   History,
+  ClipboardCheck,
   Pause,
   Play,
   Plus,
@@ -35,6 +36,7 @@ import {
   Globe,
   X,
 } from "lucide-react";
+import { ReviewPanel, type ReviewOpen } from "./review-panel";
 import { Cover, usePlaybackClock } from "./components";
 import type { AppState } from "./state";
 import type { Lyrics, PlayerRequest, Track } from "./types";
@@ -269,6 +271,9 @@ export function TtmlCreator({
   barSlot,
   onShowPlayer,
   onClose,
+  reviewer = false,
+  reviewRequest = 0,
+  onReviewed,
 }: {
   state: AppState;
   onPlayer: (request: PlayerRequest) => void;
@@ -286,6 +291,12 @@ export function TtmlCreator({
   barSlot?: HTMLElement | null;
   onShowPlayer?: () => void;
   onClose?: () => void;
+  /** The signed-in Lyssna account may review submissions. */
+  reviewer?: boolean;
+  /** Bumped to open the Review panel from outside. */
+  reviewRequest?: number;
+  /** A review decision was made, so waiting counts can refresh. */
+  onReviewed?: () => void;
 }) {
   const playing = state.playback.item;
   const [track, setTrack] = useState<Track | undefined>(playing);
@@ -1882,6 +1893,95 @@ export function TtmlCreator({
     [metadata, track],
   );
   const ttml = () => (track ? toTtml(lines, meta(track), entries) : "");
+
+  const [reviewing, setReviewing] = useState(false);
+  useEffect(() => {
+    if (reviewRequest && reviewer) setReviewing(true);
+  }, [reviewRequest, reviewer]);
+  const [reviewEdit, setReviewEdit] = useState<{
+    id: string;
+    uri: string;
+    baseline?: string;
+  }>();
+  const pendingReview = useRef<ReviewOpen | undefined>(undefined);
+  const [reviewTick, setReviewTick] = useState(0);
+  const openReview = (open: ReviewOpen) => {
+    pendingReview.current = open;
+    if (playing?.uri !== open.uri) onPlayer({ command: "play", uri: open.uri });
+    setReviewTick((tick) => tick + 1);
+  };
+  // A submission opens once its song plays, so the editor holds that song;
+  // after the song's own draft loads, its lines give way to the submission's.
+  useEffect(() => {
+    const open = pendingReview.current;
+    if (!open || playing?.uri !== open.uri) return;
+    if (track?.uri !== open.uri) {
+      setTrack(playing);
+      return;
+    }
+    pendingReview.current = undefined;
+    void onParse("review.ttml", open.ttml, track.duration_ms).then(
+      (lyrics) => {
+        const loaded = fromLyrics(lyrics);
+        setLines(loaded);
+        setText(toText(loaded));
+        setCursor({ line: 0, unit: 0 });
+        setReviewEdit({ id: open.submission.id, uri: open.uri });
+        notify(
+          `Opened ${open.submission.song_title} for review. Ctrl+Z goes back to your draft.`,
+        );
+      },
+      (error) => notify(`Couldn't open the submission: ${String(error)}`, true),
+    );
+  }, [reviewTick, playing, track]);
+  // What the editor makes of the submission untouched, to tell real fixes apart.
+  useEffect(() => {
+    if (
+      reviewEdit &&
+      reviewEdit.baseline === undefined &&
+      track?.uri === reviewEdit.uri
+    )
+      setReviewEdit({ ...reviewEdit, baseline: ttml() });
+  }, [reviewEdit, lines]);
+  const submitFix = async (fixed: string) => {
+    if (!track || track.uri !== reviewEdit?.uri)
+      throw new Error("Play the submission's song to submit your fixes.");
+    await rpc<LyssnaSubmission>("lyssna_submit", { ttml: fixed, track });
+    setReviewEdit(undefined);
+  };
+  const reviewButton = reviewer && (
+    <button
+      onClick={() => setReviewing(!reviewing)}
+      title="Review submissions"
+      aria-pressed={reviewing}
+    >
+      <ClipboardCheck size={15} />
+    </button>
+  );
+  const reviewPanel = reviewer && reviewing && (
+    <ReviewPanel
+      playing={playing}
+      editing={
+        reviewEdit?.baseline !== undefined && track?.uri === reviewEdit.uri
+          ? { id: reviewEdit.id, baseline: reviewEdit.baseline }
+          : undefined
+      }
+      editorTtml={ttml}
+      onPlay={(uri) => onPlayer({ command: "play", uri })}
+      onOpen={openReview}
+      onParse={(text) =>
+        onParse(
+          "review.ttml",
+          text,
+          track?.duration_ms ?? playing?.duration_ms ?? 0,
+        )
+      }
+      onSubmitFix={submitFix}
+      onDecided={() => onReviewed?.()}
+      notify={notify}
+      onClose={() => setReviewing(false)}
+    />
+  );
   const [editingMeta, setEditingMeta] = useState(false);
   const changeMetadata = (next: MetaEntry[]) => {
     setMetadata(next);
@@ -2159,7 +2259,14 @@ export function TtmlCreator({
           <History size={15} />
           Saves
         </button>
+        {reviewer && (
+          <button onClick={() => setReviewing(true)}>
+            <ClipboardCheck size={15} />
+            Review submissions
+          </button>
+        )}
         {savesDialog}
+        {reviewPanel}
       </section>
     );
 
@@ -2204,6 +2311,7 @@ export function TtmlCreator({
           <button onClick={openSaves} title="Saves and earlier versions">
             <History size={15} />
           </button>
+          {reviewButton}
           <button onClick={() => setEditingKeys(true)} title="Controls">
             <Settings size={15} />
           </button>
@@ -3302,6 +3410,7 @@ export function TtmlCreator({
           />,
           barSlot,
         )}
+      {reviewPanel}
     </section>
   );
 }

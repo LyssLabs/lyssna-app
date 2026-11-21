@@ -8242,3 +8242,22 @@ button.contributor-avatar {
 .ttml-draft-banner button:hover {
   background: light-dark(#0000001f, #ffffff29);
 }
+.review-button {
+  position: relative;
+}
+.review-count {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: #000;
+  background: #1ed760;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}

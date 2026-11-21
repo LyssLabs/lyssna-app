@@ -2169,3 +2169,153 @@
   color: var(--muted);
   background: transparent;
 }
+.ttml-creator {
+  position: relative;
+}
+.review-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100% - 24px));
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid #ffffff17;
+  border-radius: 14px;
+  background: #1c1c1c;
+  box-shadow: 0 20px 60px #000a;
+  text-align: left;
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.review-head h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-lanes,
+.review-choice,
+.review-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ttml-creator .review-lanes button.active,
+.ttml-creator .review-choice button.active {
+  color: #000;
+  background: #f3f3f3;
+}
+.review-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ttml-creator .review-list button {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+}
+.review-list strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-list span,
+.review-meta,
+.review-empty {
+  margin: 0;
+  color: #a9a9a9;
+  font-size: 12px;
+}
+.review-list small {
+  color: #f5c451;
+  font-size: 11px;
+}
+.review-detail {
+  display: grid;
+  gap: 12px;
+}
+.review-section {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #ffffff12;
+}
+.review-section h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.review-diff,
+.review-comments {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-size: 13px;
+}
+.review-diff li {
+  padding: 3px 8px;
+  border-left: 3px solid;
+  border-radius: 4px;
+}
+.review-diff li[data-kind="added"] {
+  border-color: #1ed760;
+  background: #1ed7601a;
+}
+.review-diff li[data-kind="removed"] {
+  border-color: #f15e6c;
+  background: #f15e6c1a;
+  text-decoration: line-through;
+}
+.review-diff li[data-kind="retimed"] {
+  border-color: #f5c451;
+  background: #f5c4511a;
+}
+.review-comments p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+.review-reply {
+  display: flex;
+  gap: 6px;
+}
+.review-reply input,
+.review-decide textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid #ffffff1f;
+  border-radius: 8px;
+  color: #f3f3f3;
+  background: #ffffff0d;
+  font: inherit;
+  font-size: 13px;
+}
+.review-decide textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+.ttml-creator .review-decide button.danger {
+  color: #fff;
+  background: #c9303e;
+}

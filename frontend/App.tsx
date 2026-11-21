@@ -25,6 +25,7 @@ import {
   Heart,
   Code,
   Bell,
+  ClipboardCheck,
   Home,
   ImagePlus,
   Pencil,
@@ -249,6 +250,7 @@ import {
   markTemporaryLoad,
   reviewerSettings,
 } from "./ttml-reviewer";
+import { canReview, reviewQueue } from "./review-api";
 import { libraryTree, type LibraryEntry } from "./library-tree";
 import {
   entryAdded,
@@ -656,6 +658,38 @@ function App() {
   const [ttmlOpen, setTtmlOpen] = useState<false | "load" | "database">(false);
   // undefined while checking, null when signed out of Lyssna.
   const [lyssnaRole, setLyssnaRole] = useState<string | null | undefined>();
+  const reviewer = canReview(lyssnaRole);
+  const [reviewWaiting, setReviewWaiting] = useState(0);
+  const [reviewRequest, setReviewRequest] = useState(0);
+  const [reviewCheck, setReviewCheck] = useState(0);
+  // Lyssna sends reviewers no notice of new submissions, so the app counts
+  // the queue itself every few minutes.
+  useEffect(() => {
+    let live = true;
+    const check = () => {
+      if (document.hidden) return;
+      void rpc<{ role: string } | null>("lyssna_account")
+        .then((account) => {
+          if (!live) return;
+          setLyssnaRole(account?.role ?? null);
+          if (!canReview(account?.role)) return setReviewWaiting(0);
+          return Promise.all([
+            reviewQueue("priority", 200),
+            reviewQueue("backlog", 200),
+          ]).then(
+            ([priority, backlog]) =>
+              live && setReviewWaiting(priority.length + backlog.length),
+          );
+        })
+        .catch(() => {});
+    };
+    check();
+    const timer = setInterval(check, 5 * 60_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [reviewCheck]);
   useEffect(() => {
     if (!ttmlOpen) return;
     let live = true;
@@ -759,9 +793,11 @@ function App() {
       dispatch({ type: "notice", message, error }),
     [],
   );
+  // Reviewers reach the creator's Review panel even with the creator off.
   useEffect(() => {
-    if (center === "ttml" && !state.settings.ttml_creator) setCenter("lyrics");
-  }, [center, state.settings.ttml_creator]);
+    if (center === "ttml" && !state.settings.ttml_creator && !reviewer)
+      setCenter("lyrics");
+  }, [center, state.settings.ttml_creator, reviewer]);
   const setSpeed = useCallback(async (rate: number) => {
     const percent = await rpc<number>("playback_speed", {
       percent: Math.round(rate * 100),
@@ -3664,6 +3700,32 @@ function App() {
               onRestart={() => void call("app_update", { action: "install" })}
             />
           )}
+          {reviewer && (
+            <button
+              className="icon-button review-button"
+              title={
+                reviewWaiting
+                  ? `${reviewWaiting} submission${reviewWaiting === 1 ? "" : "s"} waiting for review`
+                  : "Review submissions"
+              }
+              aria-label={
+                reviewWaiting
+                  ? `Review submissions, ${reviewWaiting} waiting`
+                  : "Review submissions"
+              }
+              onClick={() => {
+                setCenter("ttml");
+                setReviewRequest((count) => count + 1);
+              }}
+            >
+              <ClipboardCheck size={20} />
+              {reviewWaiting > 0 && (
+                <span className="review-count">
+                  {reviewWaiting > 99 ? "99+" : reviewWaiting}
+                </span>
+              )}
+            </button>
+          )}
           <button
             className={`icon-button whats-new-button ${state.route === "whats-new" && center === "browse" ? "active" : ""}`}
             title="What's New"
@@ -3977,6 +4039,9 @@ function App() {
               barSlot={ttmlBar ? ttmlBarSlot : null}
               onShowPlayer={() => setTtmlPlayerBar(true)}
               onClose={() => setCenter("lyrics")}
+              reviewer={reviewer}
+              reviewRequest={reviewRequest}
+              onReviewed={() => setReviewCheck((count) => count + 1)}
               renderPreview={(lyrics, live) => (
                 <LyricsPage
                   state={{
