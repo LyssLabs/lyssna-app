@@ -112,6 +112,56 @@ const OPPOSITE_PREFIX = "v2:";
  * syllables; a line wrapped in parentheses is a background vocal; a `v2:`
  * prefix gives the line to the second singer.
  */
+/**
+ * Genius brackets backing vocals inside the line they echo, with ";"
+ * between separate ones. Each bracketed part moves to a background line of
+ * its own after the line, so "Who am I? (I'm a star; I'm a star)" becomes
+ * the line plus two background lines. Lines with unbalanced brackets stay.
+ */
+export function geniusBackgrounds(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .flatMap((raw) => {
+      let body = raw.trim();
+      let prefix = "";
+      if (body.toLowerCase().startsWith(OPPOSITE_PREFIX)) {
+        prefix = `${OPPOSITE_PREFIX} `;
+        body = body.slice(OPPOSITE_PREFIX.length).trim();
+      }
+      const groups: string[] = [];
+      let main = "";
+      let depth = 0;
+      let group = "";
+      for (const character of body) {
+        if (character === "(") {
+          if (depth++ > 0) group += character;
+        } else if (character === ")" && depth > 0) {
+          if (--depth > 0) group += character;
+          else {
+            groups.push(group);
+            group = "";
+            main += " ";
+          }
+        } else if (depth > 0) group += character;
+        else main += character;
+      }
+      if (depth > 0 || !groups.length) return [raw];
+      const backgrounds = groups.flatMap((inner) =>
+        inner
+          .split(";")
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .map((part) => `${prefix}(${part})`),
+      );
+      main = main
+        .replace(/\s+/g, " ")
+        .replace(/\s+([,.!?])/g, "$1")
+        .trim();
+      return [...(main ? [`${prefix}${main}`] : []), ...backgrounds];
+    })
+    .join("\n");
+}
+
 export function parseText(text: string): CreatorLine[] {
   const lines: CreatorLine[] = [];
   for (const raw of text.split(/\r?\n/)) {

@@ -75,6 +75,7 @@ import {
   fileName,
   formatTime,
   fromLyrics,
+  geniusBackgrounds,
   insertBlankLine,
   joinHyphenated,
   cursorAt,
@@ -713,7 +714,7 @@ export function TtmlCreator({
         if (geniusFor.current !== asked) return;
         // Lands in the text editor, so nothing is replaced until Done.
         editedFor.current = asked;
-        setText(found);
+        setText(geniusBackgrounds(found));
         setTextMode(true);
       })
       .catch((error) =>

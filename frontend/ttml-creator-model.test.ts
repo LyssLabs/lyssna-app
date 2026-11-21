@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  geniusBackgrounds,
   breakLine,
   clearLines,
   removeLines,
@@ -906,6 +907,34 @@ describe("TTML Creator deleting", () => {
     expect(middle.units.map((unit) => [unit.text, unit.joined])).toEqual([
       ["a", false],
       ["c", true],
+    ]);
+  });
+});
+
+describe("geniusBackgrounds", () => {
+  it("moves bracketed backing vocals to background lines, split at ;", () => {
+    expect(
+      geniusBackgrounds(
+        "Who am I? (I'm a star; I'm a star)\n(Oh; oh)\nI (yeah) want it, (now)",
+      ),
+    ).toBe(
+      "Who am I?\n(I'm a star)\n(I'm a star)\n(Oh)\n(oh)\nI want it,\n(yeah)\n(now)",
+    );
+  });
+
+  it("keeps plain, unbalanced and nested lines intact", () => {
+    expect(geniusBackgrounds("Just words\nOpen (bracket")).toBe(
+      "Just words\nOpen (bracket",
+    );
+    expect(geniusBackgrounds("Hey (la (la) la)")).toBe("Hey\n(la (la) la)");
+  });
+
+  it("keeps the second singer on both", () => {
+    expect(geniusBackgrounds("v2: Go (go)")).toBe("v2: Go\nv2: (go)");
+    expect(parseText(geniusBackgrounds("Go (a; b)"))).toMatchObject([
+      { background: false },
+      { background: true, units: [{ text: "a" }] },
+      { background: true, units: [{ text: "b" }] },
     ]);
   });
 });
