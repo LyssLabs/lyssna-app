@@ -6987,14 +6987,37 @@ input[type="range"]:hover {
 .community-credits .community-label-name {
   white-space: nowrap;
 }
-.lyric-source.community-credits.expanded:not(.lyssna-credits) > span {
+.lyric-source.community-credits.expanded:not(.lyssna-credits, .spicy-credits)
+  > span {
   display: inline;
   margin-top: 0;
 }
 /* Lyssna credits: the provider, then "Contributors:" with stacked avatars
    on a line of its own, as the Lyssna Lyrics plugin shows them. */
-.lyric-source.lyssna-credits > span.community-lead {
+.lyric-source.lyssna-credits > span.community-lead,
+.lyric-source.spicy-credits > span.community-lead {
   display: block;
+}
+/* Spicy Lyrics credits: the people on the line under the provider. */
+.lyric-source.spicy-credits > span.community-people {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2em 1.1em;
+  margin-top: 0.3em;
+}
+.credits-right .spicy-credits > .community-people {
+  justify-content: flex-end;
+}
+.spicy-credits .community-label-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  max-width: 100%;
+}
+.spicy-credits button.community-profile .community-name {
+  text-decoration: underline;
+  text-underline-offset: 0.1em;
 }
 .lyric-source.lyssna-credits > span.lyssna-contributors {
   display: flex;

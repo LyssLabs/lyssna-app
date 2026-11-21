@@ -3427,6 +3427,49 @@ test("Lyssna lyrics list their contributors with stacked avatars", async ({
   const lead = (await credits.locator(".community-lead").boundingBox())!;
   const row = (await contributors.boundingBox())!;
   expect(row.y).toBeGreaterThanOrEqual(lead.y + lead.height - 1);
+  // Up to five avatars and two names, named only above 30%.
+  const people = (shares: number[]) =>
+    page.evaluate(
+      ({ uri, shares }) =>
+        (window as any).__clientTest.emit({
+          type: "lyrics",
+          uri,
+          lyrics: {
+            source: "lyssna",
+            synced: true,
+            instrumental: false,
+            credits: shares.map((share, index) => ({
+              user_id: `u${index}`,
+              username: `person${index}`,
+              share,
+              text_share: share,
+              timing_share: share,
+              original: index === 0,
+            })),
+            lines: [
+              {
+                text: "Only line",
+                start_ms: 1000,
+                end_ms: 3000,
+                background: false,
+                opposite: false,
+                words: [],
+                translation: "",
+                romanization: "",
+              },
+            ],
+          },
+        }),
+      { uri: track.uri, shares },
+    );
+  await people([10, 40, 35, 5, 5, 5]);
+  await expect(contributors.locator(".contributor-avatar")).toHaveCount(5);
+  await expect(contributors.locator(".contributor-names")).toHaveText(
+    "person1,person2",
+  );
+  await people([25, 25, 25, 25]);
+  await expect(contributors.locator(".contributor-avatar")).toHaveCount(4);
+  await expect(contributors.locator(".contributor-names")).toHaveCount(0);
 });
 
 test("community credits show the Discord username looked up by ID", async ({
@@ -3479,6 +3522,14 @@ test("community credits show the Discord username looked up by ID", async ({
   await show("155149108183695360");
   const credits = page.locator(".lyrics-page .lyric-source.expanded");
   await expect(credits).toContainText("Uploaded by @real_uploader");
+  // The people sit on their own line under the provider.
+  const spicyLead = (await credits.locator(".community-lead").boundingBox())!;
+  const spicyPeople = (await credits
+    .locator(".community-people")
+    .boundingBox())!;
+  expect(spicyPeople.y).toBeGreaterThanOrEqual(
+    spicyLead.y + spicyLead.height - 1,
+  );
   // No name and no lookable ID falls back to the ID itself.
   await expect(credits).toContainText("Made by @2");
   const asked = await page.evaluate(() =>

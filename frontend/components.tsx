@@ -1267,10 +1267,10 @@ function ContributorAvatar({
 }
 
 /** "Contributors:" with up to five stacked avatars, largest share first, and
- *  the top contributor named; a second is named too with 30% or more. */
+ *  up to two of them named: only those with more than 30% of the lyrics. */
 function LyssnaContributors({ credits }: { credits: LyssnaCredit[] }) {
   const shown = [...credits].sort((a, b) => b.share - a.share).slice(0, 5);
-  const named = shown.slice(0, (shown[1]?.share ?? 0) >= 30 ? 2 : 1);
+  const named = shown.filter((person) => person.share > 30).slice(0, 2);
   return (
     <span className="lyssna-contributors">
       <span>Contributors:</span>
@@ -1283,25 +1283,27 @@ function LyssnaContributors({ credits }: { credits: LyssnaCredit[] }) {
           />
         ))}
       </span>
-      <span className="contributor-names">
-        {named.map((person, index) => (
-          <span key={person.user_id ?? `deleted-${index}`}>
-            {person.username ? (
-              <button
-                className="contributor-name"
-                onClick={() => openLyssnaProfile(person.username!)}
-              >
-                <Marquee text={person.username} className="community-name">
-                  {person.username}
-                </Marquee>
-              </button>
-            ) : (
-              "Deleted user"
-            )}
-            {index < named.length - 1 && ","}
-          </span>
-        ))}
-      </span>
+      {named.length > 0 && (
+        <span className="contributor-names">
+          {named.map((person, index) => (
+            <span key={person.user_id ?? `deleted-${index}`}>
+              {person.username ? (
+                <button
+                  className="contributor-name"
+                  onClick={() => openLyssnaProfile(person.username!)}
+                >
+                  <Marquee text={person.username} className="community-name">
+                    {person.username}
+                  </Marquee>
+                </button>
+              ) : (
+                "Deleted user"
+              )}
+              {index < named.length - 1 && ","}
+            </span>
+          ))}
+        </span>
+      )}
     </span>
   );
 }
@@ -1393,49 +1395,50 @@ const LyricCredits = memo(function LyricCredits({
           return person?.username || person?.id ? [{ role, person }] : [];
         })
       : [];
-  // "Lyrics provided by: Spicy Lyrics · Made by (avatar) @name", as Spicy
-  // Lyrics asks to be credited.
+  // "Lyrics provided by: Spicy Lyrics", then "Made by (avatar) @name" on a
+  // line of its own, as Spicy Lyrics asks to be credited.
   if (community.length)
     return (
       <div
-        className={`lyric-source community-credits ${expanded ? "expanded" : ""}`}
+        className={`lyric-source community-credits spicy-credits ${expanded ? "expanded" : ""}`}
       >
         <span className="community-lead">Lyrics provided by: Spicy Lyrics</span>
-        {community.map(({ role, person }) => {
-          const url = profileUrl(person.url);
-          const label =
-            role === "uploader" && community[0].role === "maker"
-              ? "Uploaded by"
-              : "Made by";
-          const name = (
-            <>
-              {person.avatar?.startsWith("https://") && (
-                <img src={person.avatar} alt="" />
-              )}
-              <Marquee text={`@${nameOf(person)}`} className="community-name">
-                @{nameOf(person)}
-              </Marquee>
-            </>
-          );
-          return (
-            <span key={role} className="community-person">
-              <span className="community-dot"> · </span>
-              <span className="community-label-name">
-                {label}{" "}
-                {linkOf(person, url) ? (
-                  <button
-                    className="community-profile"
-                    onClick={linkOf(person, url)}
-                  >
-                    {name}
-                  </button>
-                ) : (
-                  <span className="community-profile">{name}</span>
+        <span className="community-people">
+          {community.map(({ role, person }) => {
+            const url = profileUrl(person.url);
+            const label =
+              role === "uploader" && community[0].role === "maker"
+                ? "Uploaded by"
+                : "Made by";
+            const name = (
+              <>
+                {person.avatar?.startsWith("https://") && (
+                  <img src={person.avatar} alt="" />
                 )}
+                <Marquee text={`@${nameOf(person)}`} className="community-name">
+                  @{nameOf(person)}
+                </Marquee>
+              </>
+            );
+            return (
+              <span key={role} className="community-person">
+                <span className="community-label-name">
+                  {label}{" "}
+                  {linkOf(person, url) ? (
+                    <button
+                      className="community-profile"
+                      onClick={linkOf(person, url)}
+                    >
+                      {name}
+                    </button>
+                  ) : (
+                    <span className="community-profile">{name}</span>
+                  )}
+                </span>
               </span>
-            </span>
-          );
-        })}
+            );
+          })}
+        </span>
       </div>
     );
   return (
