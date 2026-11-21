@@ -2363,3 +2363,52 @@
 .review-detail[hidden] {
   display: none;
 }
+.player-bar.creator-mode .player-transport {
+  position: relative;
+  max-width: none;
+}
+.player-bar.creator-mode .transport-buttons {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  z-index: 20;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid #ffffff14;
+  border-radius: 999px;
+  background: #181818f2;
+  box-shadow: 0 8px 24px #0008;
+  transform: translateX(-50%);
+}
+.creator-wave-slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.creator-wave-slot .ttml-bar-wave {
+  height: 44px;
+}
+.creator-speed-slot {
+  flex-shrink: 0;
+}
+.creator-speed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.creator-speed input {
+  width: 88px;
+}
+.creator-speed output {
+  min-width: 38px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.creator-extras-slot {
+  display: contents;
+}
+.creator-play-slot {
+  display: contents;
+}

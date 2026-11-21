@@ -33,7 +33,6 @@ import {
   LoaderCircle,
   Maximize2,
   PanelRight,
-  AudioWaveform,
   CirclePlus,
   CircleCheck,
   Mic2,
@@ -651,9 +650,15 @@ function App() {
   const [coverView, setCoverView] = useState(false);
   // The TTML Creator swaps the player bar for its waveform bar, unless asked
   // to show the player bar instead.
-  const [ttmlPlayerBar, setTtmlPlayerBar] = useState(false);
+  // The creator works in the player bar, like the Spicetify plugin; only
+  // its spectrogram needs a bar of its own.
+  const [ttmlSpectral, setTtmlSpectral] = useState(false);
   const [ttmlBarSlot, setTtmlBarSlot] = useState<HTMLElement | null>(null);
-  const ttmlBar = center === "ttml" && !ttmlPlayerBar;
+  const ttmlBar = center === "ttml" && ttmlSpectral;
+  const [creatorWave, setCreatorWave] = useState<HTMLElement | null>(null);
+  const [creatorSpeed, setCreatorSpeed] = useState<HTMLElement | null>(null);
+  const [creatorExtras, setCreatorExtras] = useState<HTMLElement | null>(null);
+  const [creatorPlay, setCreatorPlay] = useState<HTMLElement | null>(null);
   const closeCoverView = useCallback(() => setCoverView(false), []);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [ttmlOpen, setTtmlOpen] = useState<false | "load" | "database">(false);
@@ -4035,7 +4040,17 @@ function App() {
               onToggle={toggle}
               onSpeed={setSpeed}
               barSlot={ttmlBar ? ttmlBarSlot : null}
-              onShowPlayer={() => setTtmlPlayerBar(true)}
+              playbar={
+                center === "ttml" && !ttmlBar
+                  ? {
+                      wave: creatorWave,
+                      speed: creatorSpeed,
+                      extras: creatorExtras,
+                      play: creatorPlay,
+                    }
+                  : undefined
+              }
+              onSpectrogramBar={setTtmlSpectral}
               onClose={() => setCenter("lyrics")}
               reviewer={reviewer}
               reviewPick={reviewPick}
@@ -5631,8 +5646,15 @@ function App() {
           state={state}
           onPlayer={play}
           onDJRequest={() => setDJRequest(true)}
-          onTtmlBar={
-            center === "ttml" ? () => setTtmlPlayerBar(false) : undefined
+          creatorSlots={
+            center === "ttml"
+              ? {
+                  wave: setCreatorWave,
+                  speed: setCreatorSpeed,
+                  extras: setCreatorExtras,
+                  play: setCreatorPlay,
+                }
+              : undefined
           }
           onToggle={toggle}
           onAlbum={openAlbum}
@@ -6855,7 +6877,7 @@ function PlayerBar({
   state,
   onPlayer,
   onDJRequest,
-  onTtmlBar,
+  creatorSlots,
   onToggle,
   onAlbum,
   onArtist,
@@ -6875,7 +6897,10 @@ function PlayerBar({
   state: AppState;
   onPlayer: (request: PlayerRequest) => void;
   onDJRequest: () => void;
-  onTtmlBar?: () => void;
+  creatorSlots?: Record<
+    "wave" | "speed" | "extras" | "play",
+    (slot: HTMLElement | null) => void
+  >;
   onToggle: () => void;
   onAlbum: (album: Album) => void;
   onArtist: (artist: Artist) => void;
@@ -6938,7 +6963,7 @@ function PlayerBar({
   ]);
   return (
     <footer
-      className={`player-bar ${elsewhere ? "has-elsewhere" : ""}`}
+      className={`player-bar ${elsewhere ? "has-elsewhere" : ""}${creatorSlots ? " creator-mode" : ""}`}
       inert={!state.profile}
     >
       <div className="player-song">
@@ -6981,6 +7006,9 @@ function PlayerBar({
                 <CirclePlus size={20} />
               )}
             </button>
+            {creatorSlots && (
+              <div className="creator-speed-slot" ref={creatorSlots.speed} />
+            )}
           </>
         ) : (
           <div className="player-placeholder">
@@ -7009,21 +7037,26 @@ function PlayerBar({
           >
             <PreviousIcon size={16.5} />
           </button>
-          <button
-            className="play-toggle"
-            aria-label={state.playback.is_playing ? "Pause" : "Play"}
-            title="Play / pause · Space"
-            onClick={onToggle}
-            disabled={!track}
-          >
-            {state.pending ? (
-              <LoaderCircle className="spin" size={18} />
-            ) : state.playback.is_playing ? (
-              <PauseIcon size={18} />
-            ) : (
-              <PlayIcon size={18} />
-            )}
-          </button>
+          {creatorSlots ? (
+            // The creator may play the song itself; its button shows that.
+            <span className="creator-play-slot" ref={creatorSlots.play} />
+          ) : (
+            <button
+              className="play-toggle"
+              aria-label={state.playback.is_playing ? "Pause" : "Play"}
+              title="Play / pause · Space"
+              onClick={onToggle}
+              disabled={!track}
+            >
+              {state.pending ? (
+                <LoaderCircle className="spin" size={18} />
+              ) : state.playback.is_playing ? (
+                <PauseIcon size={18} />
+              ) : (
+                <PlayIcon size={18} />
+              )}
+            </button>
+          )}
           <button
             className="icon-button"
             title="Next song"
@@ -7054,7 +7087,11 @@ function PlayerBar({
             )}
           </button>
         </div>
-        <SeekRow state={state} onPlayer={onPlayer} />
+        {creatorSlots ? (
+          <div className="creator-wave-slot" ref={creatorSlots.wave} />
+        ) : (
+          <SeekRow state={state} onPlayer={onPlayer} />
+        )}
       </div>
       <div className="player-extras">
         {(state.dj_context || state.narrating || state.dj_pending) && (
@@ -7063,14 +7100,8 @@ function PlayerBar({
             onHold={onDJRequest}
           />
         )}
-        {onTtmlBar && (
-          <button
-            className="icon-button"
-            title="Show the TTML bar"
-            onClick={onTtmlBar}
-          >
-            <AudioWaveform size={19} />
-          </button>
+        {creatorSlots && (
+          <span className="creator-extras-slot" ref={creatorSlots.extras} />
         )}
         <button
           className="icon-button"

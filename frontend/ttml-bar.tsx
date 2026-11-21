@@ -8,6 +8,7 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  Gauge,
   PanelBottom,
   FilePenLine,
   Music2,
@@ -122,6 +123,149 @@ export function TtmlBar({
   const fill = (value: number, min: number, max: number) => ({
     ["--fill" as string]: `${((value - min) / (max - min)) * 100}%`,
   });
+  return (
+    <div className={`ttml-bar${spectrogram ? " spectral" : ""}`} ref={root}>
+      {panelShown && (
+        <div
+          className="ttml-bar-panel"
+          role="dialog"
+          aria-label="Playback controls"
+          {...hoverProps}
+          onPointerDown={() => (pressing.current = true)}
+        >
+          <div className="ttml-bar-panel-row">
+            <strong>Playback speed</strong>
+            <output>{speed.toFixed(2)}×</output>
+          </div>
+          <div className="ttml-bar-presets">
+            {[0.5, 0.75, 1, 1.25].map((preset) => (
+              <button
+                key={preset}
+                className={Math.abs(speed - preset) < 0.001 ? "active" : ""}
+                disabled={!speedEnabled}
+                onClick={() => onSpeed(preset)}
+              >
+                {preset}×
+              </button>
+            ))}
+          </div>
+          <input
+            type="range"
+            aria-label="Playback speed"
+            min={minSpeed}
+            max={maxSpeed}
+            step={0.05}
+            value={speed}
+            disabled={!speedEnabled}
+            style={fill(speed, minSpeed, maxSpeed)}
+            onChange={(event) => onSpeed(Number(event.target.value))}
+          />
+          {!speedEnabled && (
+            <small>Speed works when Lyssna plays the song.</small>
+          )}
+          <div className="ttml-bar-panel-row">
+            <strong>Volume</strong>
+            <output>{Math.round(volume)}%</output>
+          </div>
+          <input
+            type="range"
+            aria-label="Volume"
+            min={0}
+            max={100}
+            step={1}
+            value={volume}
+            style={fill(volume, 0, 100)}
+            onChange={(event) => onVolume(Number(event.target.value))}
+          />
+          <div className="ttml-bar-song">{song}</div>
+        </div>
+      )}
+      <button
+        className={`ttml-bar-round${panelShown ? " active" : ""}`}
+        aria-label="Playback controls"
+        aria-expanded={panelShown}
+        title="Speed and volume"
+        {...hoverProps}
+        onClick={() => {
+          setHovered(false);
+          setPanel(!panel);
+        }}
+      >
+        <Music2 size={16} />
+      </button>
+      <button
+        className="ttml-bar-play"
+        onClick={onToggle}
+        aria-label={playing ? "Pause" : "Play"}
+      >
+        {playing ? (
+          <Pause size={16} fill="currentColor" />
+        ) : (
+          <Play size={16} fill="currentColor" />
+        )}
+      </button>
+      {spectrogram ? (
+        <>
+          <span className="ttml-bar-time">{formatTime(position)}</span>
+          {spectrum}
+          <span className="ttml-bar-time">{formatTime(duration)}</span>
+        </>
+      ) : (
+        <TtmlWave
+          position={position}
+          duration={duration}
+          peaks={peaks}
+          spans={spans}
+          onSeek={onSeek}
+        />
+      )}
+      <div className="player-extras ttml-bar-extras">
+        <button
+          className="icon-button"
+          onClick={onShowPlayer}
+          title="Show the player bar"
+          aria-label="Show the player bar"
+        >
+          <PanelBottom size={18} />
+        </button>
+        {onClose && (
+          <button
+            className="icon-button ttml-button active"
+            title="TTML Creator"
+            onClick={onClose}
+          >
+            <FilePenLine size={19} />
+          </button>
+        )}
+        <button
+          className="icon-button"
+          aria-label="Spectrogram"
+          aria-pressed={spectrogram}
+          title={spectrogram ? "Hide the spectrogram" : "Show the spectrogram"}
+          onClick={() => onSpectrogram(!spectrogram)}
+        >
+          {spectrogram ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The song's loudness with the played part and the picked lines shaded;
+ *  click or drag to seek. */
+export function TtmlWave({
+  position,
+  duration,
+  peaks,
+  spans,
+  onSeek,
+}: {
+  position: number;
+  duration: number;
+  peaks: Uint8Array | null;
+  spans: BarSpan[];
+  onSeek: (ms: number) => void;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -134,7 +278,7 @@ export function TtmlBar({
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [spectrogram]);
+  }, []);
   const shown = dragging ?? position;
   useEffect(() => {
     const element = canvas.current;
@@ -221,7 +365,7 @@ export function TtmlBar({
     }
     context.fillStyle = "#1ed760";
     context.fillRect(Math.round(played) - 1, 0, 2, height);
-  }, [width, peaks, spans, shown, duration, spectrogram, hover, dragging]);
+  }, [width, peaks, spans, shown, duration, hover, dragging]);
 
   const timeAt = (clientX: number) => {
     const box = canvas.current!.getBoundingClientRect();
@@ -231,153 +375,85 @@ export function TtmlBar({
     );
   };
   return (
-    <div className={`ttml-bar${spectrogram ? " spectral" : ""}`} ref={root}>
-      {panelShown && (
-        <div
-          className="ttml-bar-panel"
-          role="dialog"
-          aria-label="Playback controls"
-          {...hoverProps}
-          onPointerDown={() => (pressing.current = true)}
-        >
-          <div className="ttml-bar-panel-row">
-            <strong>Playback speed</strong>
-            <output>{speed.toFixed(2)}×</output>
-          </div>
-          <div className="ttml-bar-presets">
-            {[0.5, 0.75, 1, 1.25].map((preset) => (
-              <button
-                key={preset}
-                className={Math.abs(speed - preset) < 0.001 ? "active" : ""}
-                disabled={!speedEnabled}
-                onClick={() => onSpeed(preset)}
-              >
-                {preset}×
-              </button>
-            ))}
-          </div>
-          <input
-            type="range"
-            aria-label="Playback speed"
-            min={minSpeed}
-            max={maxSpeed}
-            step={0.05}
-            value={speed}
-            disabled={!speedEnabled}
-            style={fill(speed, minSpeed, maxSpeed)}
-            onChange={(event) => onSpeed(Number(event.target.value))}
-          />
-          {!speedEnabled && (
-            <small>Speed works when Lyssna plays the song.</small>
-          )}
-          <div className="ttml-bar-panel-row">
-            <strong>Volume</strong>
-            <output>{Math.round(volume)}%</output>
-          </div>
-          <input
-            type="range"
-            aria-label="Volume"
-            min={0}
-            max={100}
-            step={1}
-            value={volume}
-            style={fill(volume, 0, 100)}
-            onChange={(event) => onVolume(Number(event.target.value))}
-          />
-          <div className="ttml-bar-song">{song}</div>
-        </div>
-      )}
-      <button
-        className={`ttml-bar-round${panelShown ? " active" : ""}`}
-        aria-label="Playback controls"
-        aria-expanded={panelShown}
-        title="Speed and volume"
-        {...hoverProps}
-        onClick={() => {
-          setHovered(false);
-          setPanel(!panel);
-        }}
-      >
-        <Music2 size={16} />
-      </button>
-      <button
-        className="ttml-bar-play"
-        onClick={onToggle}
-        aria-label={playing ? "Pause" : "Play"}
-      >
-        {playing ? (
-          <Pause size={16} fill="currentColor" />
-        ) : (
-          <Play size={16} fill="currentColor" />
-        )}
-      </button>
+    <>
       <span className="ttml-bar-time">{formatTime(shown)}</span>
-      {spectrogram ? (
-        spectrum
-      ) : (
-        <canvas
-          ref={canvas}
-          className={`ttml-bar-wave${peaks ? "" : " loading"}`}
-          role="slider"
-          aria-label="Song position"
-          aria-valuemin={0}
-          aria-valuemax={duration}
-          aria-valuenow={Math.round(shown)}
-          tabIndex={0}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            setDragging(timeAt(event.clientX));
-          }}
-          onPointerMove={(event) => {
-            setHover(
-              event.clientX - event.currentTarget.getBoundingClientRect().left,
-            );
-            if (dragging !== null) setDragging(timeAt(event.clientX));
-          }}
-          onPointerLeave={() => setHover(null)}
-          onPointerUp={(event) => {
-            if (dragging === null) return;
-            onSeek(timeAt(event.clientX));
-            setDragging(null);
-          }}
-          onPointerCancel={() => setDragging(null)}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-            event.preventDefault();
-            event.stopPropagation();
-            onSeek(position + (event.key === "ArrowLeft" ? -3000 : 3000));
-          }}
-        />
-      )}
+      <canvas
+        ref={canvas}
+        className={`ttml-bar-wave${peaks ? "" : " loading"}`}
+        role="slider"
+        aria-label="Song position"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={Math.round(shown)}
+        tabIndex={0}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDragging(timeAt(event.clientX));
+        }}
+        onPointerMove={(event) => {
+          setHover(
+            event.clientX - event.currentTarget.getBoundingClientRect().left,
+          );
+          if (dragging !== null) setDragging(timeAt(event.clientX));
+        }}
+        onPointerLeave={() => setHover(null)}
+        onPointerUp={(event) => {
+          if (dragging === null) return;
+          onSeek(timeAt(event.clientX));
+          setDragging(null);
+        }}
+        onPointerCancel={() => setDragging(null)}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onSeek(position + (event.key === "ArrowLeft" ? -3000 : 3000));
+        }}
+      />
       <span className="ttml-bar-time">{formatTime(duration)}</span>
-      <div className="player-extras ttml-bar-extras">
-        <button
-          className="icon-button"
-          onClick={onShowPlayer}
-          title="Show the player bar"
-          aria-label="Show the player bar"
-        >
-          <PanelBottom size={18} />
-        </button>
-        {onClose && (
-          <button
-            className="icon-button ttml-button active"
-            title="TTML Creator"
-            onClick={onClose}
-          >
-            <FilePenLine size={19} />
-          </button>
-        )}
-        <button
-          className="icon-button"
-          aria-label="Spectrogram"
-          aria-pressed={spectrogram}
-          title={spectrogram ? "Hide the spectrogram" : "Show the spectrogram"}
-          onClick={() => onSpectrogram(!spectrogram)}
-        >
-          {spectrogram ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-        </button>
-      </div>
+    </>
+  );
+}
+
+/** Playback speed beside the song in the player bar while the creator is open. */
+export function CreatorSpeed({
+  speed,
+  min,
+  max,
+  enabled,
+  onSpeed,
+}: {
+  speed: number;
+  min: number;
+  max: number;
+  enabled: boolean;
+  onSpeed: (speed: number) => void;
+}) {
+  return (
+    <div
+      className="creator-speed"
+      title={
+        enabled ? "Playback speed" : "Speed works when Lyssna plays the song"
+      }
+    >
+      <Gauge size={16} />
+      <input
+        type="range"
+        aria-label="Playback speed"
+        min={min}
+        max={max}
+        step={0.05}
+        value={speed}
+        disabled={!enabled}
+        style={{
+          ["--range" as string]: `${((speed - min) / (max - min)) * 100}%`,
+        }}
+        onChange={(event) => onSpeed(Number(event.target.value))}
+        onDoubleClick={() => onSpeed(1)}
+        // Focus left here would swallow the creator's keyboard shortcuts.
+        onPointerUp={(event) => event.currentTarget.blur()}
+      />
+      <output>{speed.toFixed(2)}×</output>
     </div>
   );
 }

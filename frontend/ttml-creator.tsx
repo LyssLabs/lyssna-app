@@ -18,6 +18,7 @@ import {
   EyeOff,
   History,
   ClipboardCheck,
+  AudioWaveform,
   Pause,
   Play,
   Plus,
@@ -111,7 +112,8 @@ import {
 } from "./ttml-creator-model";
 import { romanizeAway } from "./romanization";
 import { MetadataDialog } from "./ttml-metadata";
-import { TtmlBar } from "./ttml-bar";
+import { CreatorSpeed, TtmlBar, TtmlWave } from "./ttml-bar";
+import { PauseIcon, PlayIcon } from "./player-icons";
 import { TtmlSpectrogram } from "./ttml-spectrogram";
 import { createPortal } from "react-dom";
 import { rpc } from "./bridge";
@@ -270,7 +272,8 @@ export function TtmlCreator({
   notify,
   renderPreview,
   barSlot,
-  onShowPlayer,
+  playbar,
+  onSpectrogramBar,
   onClose,
   reviewer = false,
   reviewPick,
@@ -290,7 +293,11 @@ export function TtmlCreator({
   renderPreview?: (lyrics: Lyrics, live?: Partial<AppState>) => ReactNode;
   /** Where the creator's own bar replaces the player bar. */
   barSlot?: HTMLElement | null;
-  onShowPlayer?: () => void;
+  /** Slots in the app's player bar for the waveform, speed and spectrogram
+   *  button, while the spectrogram is hidden. */
+  playbar?: Record<"wave" | "speed" | "extras" | "play", HTMLElement | null>;
+  /** The spectrogram needs the creator's own full-width bar. */
+  onSpectrogramBar?: (on: boolean) => void;
   onClose?: () => void;
   /** The signed-in Lyssna account may review submissions. */
   reviewer?: boolean;
@@ -1792,7 +1799,8 @@ export function TtmlCreator({
     writeStorage(SPECTROGRAM_KEY, on ? "1" : null);
   };
   useEffect(() => {
-    if (!barSlot || !trackUri || peaks?.uri === trackUri) return;
+    if (!(barSlot || playbar?.wave) || !trackUri || peaks?.uri === trackUri)
+      return;
     let current = true;
     rpc<number[]>("track_waveform", { uri: trackUri, buckets: 2400 })
       .then(
@@ -1805,7 +1813,12 @@ export function TtmlCreator({
     return () => {
       current = false;
     };
-  }, [barSlot, trackUri, peaks?.uri]);
+  }, [barSlot, playbar?.wave, trackUri, peaks?.uri]);
+  const spectral = spectrogram && !!track;
+  useEffect(() => {
+    onSpectrogramBar?.(spectral);
+  }, [spectral, onSpectrogramBar]);
+  useEffect(() => () => onSpectrogramBar?.(false), [onSpectrogramBar]);
   const barSpans = useMemo(
     () =>
       lines.flatMap((line, index) => {
@@ -3396,7 +3409,7 @@ export function TtmlCreator({
             spans={barSpans}
             onToggle={onToggle}
             onSeek={seek}
-            onShowPlayer={() => onShowPlayer?.()}
+            onShowPlayer={() => showSpectrogram(false)}
             onClose={onClose}
             speed={shownSpeed}
             minSpeed={MIN_SPEED}
@@ -3418,6 +3431,53 @@ export function TtmlCreator({
             }
           />,
           barSlot,
+        )}
+      {playbar?.wave &&
+        createPortal(
+          <TtmlWave
+            position={shownPosition}
+            duration={track.duration_ms}
+            peaks={peaks?.uri === track.uri ? peaks.values : null}
+            spans={barSpans}
+            onSeek={seek}
+          />,
+          playbar.wave,
+        )}
+      {playbar?.speed &&
+        createPortal(
+          <CreatorSpeed
+            speed={shownSpeed}
+            min={MIN_SPEED}
+            max={MAX_SPEED}
+            enabled={native || local}
+            onSpeed={(value) => slideSpeed(clampSpeed(value))}
+          />,
+          playbar.speed,
+        )}
+      {playbar?.play &&
+        createPortal(
+          <button
+            className="play-toggle"
+            aria-label={isPlaying ? "Pause" : "Play"}
+            title="Play / pause · Space"
+            onClick={onToggle}
+          >
+            {isPlaying ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
+          </button>,
+          playbar.play,
+        )}
+      {playbar?.extras &&
+        createPortal(
+          <button
+            className="icon-button"
+            aria-label="Spectrogram"
+            aria-pressed={false}
+            title="Show the spectrogram"
+            onClick={() => showSpectrogram(true)}
+          >
+            <AudioWaveform size={19} />
+          </button>,
+          playbar.extras,
         )}
       {reviewPanel}
     </section>

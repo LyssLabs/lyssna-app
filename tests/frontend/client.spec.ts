@@ -17235,29 +17235,16 @@ test("TTML Creator times words on the playing song, slows it and saves TTML", as
           .at(-1)?.args,
       command,
     );
-  await page.getByRole("button", { name: "Playback controls" }).click();
-  const controls = page.getByRole("dialog", { name: "Playback controls" });
-  await controls.getByLabel("Playback speed").fill("0.5");
+  const speed = page
+    .locator(".player-song")
+    .getByRole("slider", { name: "Playback speed" });
+  await speed.fill("0.5");
   await expect.poll(() => last("playback_speed")).toEqual({ percent: 50 });
-  await expect(controls.getByLabel("Playback speed")).toHaveValue("0.5");
-  await expect(controls.locator("output").first()).toHaveText("0.50×");
-  await page.getByRole("button", { name: "Playback controls" }).click();
-  await expect(controls).toHaveCount(0);
-  await page.mouse.move(5, 5);
-  await page.getByRole("button", { name: "Playback controls" }).hover();
-  await expect(controls).toBeVisible();
-  const panelBox = (await controls.boundingBox())!;
-  await page.mouse.move(
-    panelBox.x + panelBox.width / 2,
-    panelBox.y + panelBox.height / 2,
-    { steps: 8 },
-  );
-  await page.waitForTimeout(400);
-  await expect(controls).toBeVisible();
-  await controls.getByRole("button", { name: "1.25×" }).click();
+  await expect(speed).toHaveValue("0.5");
+  await expect(page.locator(".creator-speed output")).toHaveText("0.50×");
+  await speed.fill("1.25");
   await expect.poll(() => last("playback_speed")).toEqual({ percent: 125 });
-  await page.mouse.move(5, 5);
-  await expect(controls).toHaveCount(0);
+  await speed.blur();
 
   const requests = () =>
     page.evaluate(() =>
@@ -17351,7 +17338,6 @@ test("TTML Creator times words on the playing song, slows it and saves TTML", as
     '<span ttm:role="x-bg" begin="00:04.600" end="00:05.000"><span begin="00:04.600" end="00:05.000">ooh</span></span>',
   );
 
-  await page.getByRole("button", { name: "Show the player bar" }).click();
   await bar.getByTitle("Lyrics", { exact: true }).click();
   await expect(creator).toHaveCount(0);
   expect((await requests()).at(-1)).toEqual({
@@ -17388,7 +17374,6 @@ test("TTML Creator previews an untouched draft until Show preview is off", async
   await expect(tools.nth(0)).toHaveText("Show preview");
   await expect(tools.nth(1)).toHaveText("Start from current lyrics");
 
-  await page.getByRole("button", { name: "Show the player bar" }).click();
   await bar.getByTitle("Lyrics", { exact: true }).click();
   const banner = page.locator(".ttml-draft-banner");
   await expect(banner).toContainText("Showing your TTML draft");
@@ -17468,14 +17453,11 @@ test("TTML Creator spectrogram zooms, scrolls, reads out and seeks", async ({
     );
   const wave = page.getByRole("slider", { name: "Song position" });
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(toggle.locator(".lucide-chevron-up")).toHaveCount(1);
-  await expect(page.locator(".ttml-bar-extras button").last()).toHaveAttribute(
+  await expect(toggle.locator(".lucide-audio-waveform")).toHaveCount(1);
+  await expect(page.locator(".creator-extras-slot button")).toHaveAttribute(
     "aria-label",
     "Spectrogram",
   );
-  await expect(
-    page.locator(".ttml-bar-extras .lucide-audio-lines"),
-  ).toHaveCount(0);
   await expect(panel).toHaveCount(0);
   await expect(wave).toBeVisible();
   await toggle.click();
@@ -17652,7 +17634,7 @@ test("a lyric file dropped on the TTML Creator loads into it with word timings",
       },
     };
   });
-  for (const target of [".ttml-lines", ".ttml-player-bar"]) {
+  for (const target of [".ttml-lines", ".player-bar.creator-mode"]) {
     await page.evaluate((selector) => {
       const transfer = new DataTransfer();
       transfer.items.add(
@@ -18136,7 +18118,7 @@ test("TTML Creator plays a paused song itself when Soloist would play it", async
     .getByTitle("TTML Creator", { exact: true })
     .click();
   await expect.poll(() => calls("creator_prepare")).not.toHaveLength(0);
-  const bar = page.locator(".ttml-bar");
+  const bar = page.locator(".player-bar");
   await bar.getByRole("button", { name: "Play", exact: true }).click();
   await expect(
     bar.getByRole("button", { name: "Pause", exact: true }),
@@ -18220,7 +18202,7 @@ test("TTML Creator plays the song itself, slowed, while Spotify Soloist plays", 
   // Soloist's song kept playing while the creator opened.
   expect(first.fromMs).toBeGreaterThanOrEqual(3000);
   expect(first.fromMs).toBeLessThan(20000);
-  const bar = page.locator(".ttml-bar");
+  const bar = page.locator(".player-bar");
   await expect(
     bar.getByRole("button", { name: "Pause", exact: true }),
   ).toBeVisible();
@@ -18249,13 +18231,9 @@ test("TTML Creator plays the song itself, slowed, while Spotify Soloist plays", 
   expect(await calls("creator_play")).toHaveLength(1);
 
   // Speed works: the slider is on and restarts Lyssna's playback slower.
-  await page.getByRole("button", { name: "Playback controls" }).click();
-  const controls = page.getByRole("dialog", { name: "Playback controls" });
-  await expect(controls.getByLabel("Playback speed")).toBeEnabled();
-  await expect(
-    controls.getByText("Speed works when Lyssna plays the song."),
-  ).toHaveCount(0);
-  await controls.getByLabel("Playback speed").fill("0.5");
+  const speed = bar.getByRole("slider", { name: "Playback speed" });
+  await expect(speed).toBeEnabled();
+  await speed.fill("0.5");
   await expect
     .poll(async () => (await calls("creator_play")).at(-1)?.speed)
     .toBe(50);
@@ -18263,7 +18241,6 @@ test("TTML Creator plays the song itself, slowed, while Spotify Soloist plays", 
   expect(
     (await calls("playback_speed")).filter((args: any) => args.percent !== 100),
   ).toEqual([]);
-  await page.getByRole("button", { name: "Playback controls" }).click();
 
   // Pausing and seeking stay with Lyssna; Soloist hears none of it.
   const quiet = (await requests()).length;
@@ -18272,7 +18249,7 @@ test("TTML Creator plays the song itself, slowed, while Spotify Soloist plays", 
     bar.getByRole("button", { name: "Play", exact: true }),
   ).toBeVisible();
   await expect.poll(() => calls("stop_clip")).not.toHaveLength(0);
-  const time = bar.locator(".ttml-bar-time").first();
+  const time = bar.locator(".creator-wave-slot .ttml-bar-time").first();
   const paused = await time.textContent();
   await page.waitForTimeout(400);
   await expect(time).toHaveText(paused!);
@@ -18293,7 +18270,7 @@ test("TTML Creator plays the song itself, slowed, while Spotify Soloist plays", 
     .toEqual(["seek", "play"]);
 });
 
-test("TTML Creator swaps the player bar for a waveform bar", async ({
+test("TTML Creator puts a waveform and speed in the player bar", async ({
   page,
 }) => {
   await startClient(page);
@@ -18310,7 +18287,13 @@ test("TTML Creator swaps the player bar for a waveform bar", async ({
     .click();
   const wave = page.getByRole("slider", { name: "Song position" });
   await expect(wave).toBeVisible();
-  await expect(page.locator(".player-song")).toHaveCount(0);
+  await expect(page.locator(".player-song")).toHaveCount(1);
+  await expect(page.locator(".player-transport .creator-wave-slot")).toContainText(
+    "03:00",
+  );
+  await expect(
+    page.locator(".player-bar.creator-mode .transport-buttons"),
+  ).toBeVisible();
   await expect(wave).not.toHaveClass(/loading/);
   expect(
     await page.evaluate(
@@ -18339,10 +18322,10 @@ test("TTML Creator swaps the player bar for a waveform bar", async ({
         .at(-1).args.request.positionMs,
   );
   expect(Math.abs(sought - 90_000)).toBeLessThan(1000);
-  await page.getByRole("button", { name: "Playback controls" }).click();
-  const controls = page.getByRole("dialog", { name: "Playback controls" });
-  await expect(controls).toContainText("Come & Go (with Marshmello)");
-  await controls.getByRole("button", { name: "0.75×" }).click();
+  await page
+    .locator(".player-song")
+    .getByRole("slider", { name: "Playback speed" })
+    .fill("0.75");
   await expect
     .poll(() =>
       page.evaluate(
@@ -18353,24 +18336,6 @@ test("TTML Creator swaps the player bar for a waveform bar", async ({
       ),
     )
     .toEqual({ percent: 75 });
-  await controls.getByRole("slider", { name: "Volume" }).fill("30");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (window as any).__clientTest.commands
-            .filter((entry: any) => entry.command === "player")
-            .at(-1)?.args.request,
-      ),
-    )
-    .toEqual({ command: "volume", volume: 30 });
-  await page.keyboard.press("Escape");
-  await expect(controls).toHaveCount(0);
-  const pen = page.locator(".ttml-bar-extras").getByTitle("TTML Creator", {
-    exact: true,
-  });
-  const inBar = (await pen.boundingBox())!;
-  await page.getByRole("button", { name: "Show the player bar" }).click();
   await expect(page.locator(".player-song")).toHaveCount(1);
   const extras = page.locator(".player-extras button");
   const titles = await extras.evaluateAll((buttons) =>
@@ -18378,16 +18343,6 @@ test("TTML Creator swaps the player bar for a waveform bar", async ({
   );
   expect(titles.slice(-2)).toEqual(["TTML Creator", "Full screen lyrics"]);
   expect(titles.indexOf("Lyrics popout")).toBe(titles.indexOf("Lyrics") - 1);
-  const inPlayer = (await page
-    .locator(".player-extras")
-    .getByTitle("TTML Creator", { exact: true })
-    .boundingBox())!;
-  expect(Math.abs(inPlayer.x - inBar.x)).toBeLessThan(6);
-  await page
-    .locator(".player-extras")
-    .getByTitle("Show the TTML bar", { exact: true })
-    .click();
-  await expect(wave).toBeVisible();
   await page
     .locator(".player-extras")
     .getByTitle("TTML Creator", { exact: true })
@@ -18396,6 +18351,7 @@ test("TTML Creator swaps the player bar for a waveform bar", async ({
     0,
   );
   await expect(page.locator(".player-song")).toHaveCount(1);
+  await expect(wave).toHaveCount(0);
 });
 
 test("TTML Creator can bring back separate Lyrics, Sync and Preview tabs", async ({
@@ -19157,7 +19113,6 @@ test("Now playing lyrics card folds while the TTML Creator is open", async ({
   // The creator closes Now playing and compacts the library.
   await expect(page.locator(".now-playing")).toHaveCount(0);
   await expect(page.locator(".library-panel")).toHaveClass(/compact-library/);
-  await page.getByRole("button", { name: "Show the player bar" }).click();
   await npvButton.click();
   await expect(card).toHaveClass(/\bcollapsed\b/);
   await card.getByTitle("Show lyrics").click();
@@ -19199,7 +19154,6 @@ test("TTML Creator holds crossfade so its repeat never fades into itself", async
     );
   await creator.click();
   await expect.poll(holds).toBe(true);
-  await page.getByRole("button", { name: "Show the player bar" }).click();
   await creator.click();
   await expect.poll(holds).toBe(false);
 });
@@ -20086,7 +20040,7 @@ test("TTML Creator reopens at the paused song position", async ({ page }) => {
     "data-line",
     "2",
   );
-  await page.getByRole("button", { name: "Show the TTML bar" }).click();
+  await page.getByRole("button", { name: "Spectrogram", exact: true }).click();
   await expect(panel).toBeVisible();
   await expect
     .poll(() =>
