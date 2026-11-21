@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Check, Plus, Search, Users } from "lucide-react";
+import { clippedTitle } from "./clipped-title";
 import { Cover } from "./components";
 import type { Playlist } from "./types";
 
@@ -68,11 +69,10 @@ export function PlaylistFlyout({
           <button
             role="menuitem"
             key={playlist.id}
-            title={playlist.name}
             onClick={() => onPick(playlist)}
           >
             <Cover images={playlist.images} />
-            <span>{playlist.name}</span>
+            <span onMouseEnter={clippedTitle}>{playlist.name}</span>
             {playlist.collaborative && (
               <Users size={17} aria-label="Collaborative playlist" />
             )}

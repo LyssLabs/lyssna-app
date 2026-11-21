@@ -1,3 +1,4 @@
+import { clippedTitle } from "./clipped-title";
 import {
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -2326,7 +2327,7 @@ export function TtmlCreator({
       <header className="ttml-head">
         <div className="ttml-song">
           <small>TTML Creator</small>
-          <strong title={track.name}>{track.name}</strong>
+          <strong onMouseEnter={clippedTitle}>{track.name}</strong>
           <span>{track.artists.map((artist) => artist.name).join(", ")}</span>
         </div>
         {classic && (
@@ -3451,7 +3452,7 @@ export function TtmlCreator({
               <>
                 <Cover images={track.album.images} />
                 <span>
-                  <strong title={track.name}>{track.name}</strong>
+                  <strong onMouseEnter={clippedTitle}>{track.name}</strong>
                   <small>
                     {formatTime(track.duration_ms).replace(/\.\d+$/, "")}
                   </small>

@@ -1,3 +1,4 @@
+import { clippedTitle } from "./clipped-title";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -405,7 +406,7 @@ function ReviewDetail({
         <button onClick={onBack} aria-label="Back to the queue">
           <ArrowLeft size={16} />
         </button>
-        <h3 title={submission.song_title}>{submission.song_title}</h3>
+        <h3 onMouseEnter={clippedTitle}>{submission.song_title}</h3>
         <button
           onClick={onMinimise}
           title="Minimise, to work on the lyrics"

@@ -10687,6 +10687,33 @@ test("custom header fonts retain italic overhang and artist descenders", async (
   });
 });
 
+test("names that fit show no tooltip repeating them; cut-off names do", async ({
+  page,
+}) => {
+  await startClient(page);
+  const emit = (name: string) =>
+    page.evaluate(
+      ({ base, track, name }) =>
+        (window as any).__clientTest.emit({
+          type: "playback",
+          playback: { ...base, item: { ...track, name } },
+          observed_at: Date.now(),
+          changed: true,
+        }),
+      { base: emptyState.playback, track, name },
+    );
+  await emit("Fairy");
+  const title = page.locator(".now-playing .marquee").first();
+  await expect(title).toContainText("Fairy");
+  await expect(title).not.toHaveAttribute("title");
+  const long =
+    "High Forever - Marlon Hoffstadt Remix (Extended Edition) - Original Mix";
+  await emit(long);
+  await expect(
+    page.locator(".now-playing .marquee.scrolling").first(),
+  ).toHaveAttribute("title", long);
+});
+
 test("long song titles fade at both edges while they scroll", async ({
   page,
 }) => {

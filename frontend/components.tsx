@@ -327,7 +327,7 @@ export function Marquee({
     <div
       className={`marquee ${overflow > 2 && !reduceMotion ? "scrolling" : ""} ${className}`}
       ref={box}
-      title={text}
+      title={overflow > 2 ? text : undefined}
       style={
         {
           "--travel": `${overflow}px`,

@@ -1,3 +1,4 @@
+import { clippedTitle } from "./clipped-title";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BulkTtml, type BulkFile, type BulkLyric } from "./bulk-ttml";
 import type { Track } from "./types";
@@ -380,7 +381,7 @@ export function LoadTtml({
                         </span>
                       )}
                       <span className="load-ttml-song">
-                        <strong title={name}>{name}</strong>
+                        <strong onMouseEnter={clippedTitle}>{name}</strong>
                         {item.artists && (
                           <small title={item.artists}>{item.artists}</small>
                         )}

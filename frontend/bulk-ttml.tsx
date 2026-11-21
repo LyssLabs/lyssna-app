@@ -1,3 +1,4 @@
+import { clippedTitle } from "./clipped-title";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Check,
@@ -236,7 +237,9 @@ export function BulkTtml({
                 <div className="bulk-ttml-head">
                   <Art song={list[0] ?? null} size={18} />
                   <span className="load-ttml-song">
-                    <strong title={result.filename}>{result.filename}</strong>
+                    <strong onMouseEnter={clippedTitle}>
+                      {result.filename}
+                    </strong>
                     <small>
                       {list.length ? (
                         <>
@@ -280,7 +283,7 @@ export function BulkTtml({
         <div className="bulk-ttml-head">
           <Art song={songs[current][0] ?? null} size={18} />
           <span className="load-ttml-song">
-            <strong title={file.filename}>{file.filename}</strong>
+            <strong onMouseEnter={clippedTitle}>{file.filename}</strong>
             <small>
               {songs[current].length
                 ? `Saved for ${songList(songs[current])}`
