@@ -13,7 +13,7 @@ import {
   RepeatIcon,
   ShuffleIcon,
 } from "./player-icons";
-import { Ambience } from "./ambience";
+import { Ambience, useBackgroundBrightness } from "./ambience";
 import { useMotionCover } from "./motion-cover";
 import { LyricsDisplay, useLyricPosition, usePosition } from "./components";
 import { displayLyrics } from "./word-sync";
@@ -32,6 +32,7 @@ export const POPOUT_VIEW = "lyrics-popout";
 export function LyricsPopout() {
   const [state, dispatch] = useDesktopState();
   const fonts = useAppFonts(state.settings);
+  useBackgroundBrightness(state.settings.lyrics_background_brightness);
   // Controls wake on pointer movement and fade a moment after it stops.
   const [awake, setAwake] = useState(false);
   const sleep = useRef<ReturnType<typeof setTimeout>>(undefined),

@@ -1,3 +1,4 @@
+import { MAX_BACKGROUND_BRIGHTNESS } from "./ambience";
 import {
   useEffect,
   useLayoutEffect,
@@ -1113,6 +1114,15 @@ export function SettingsWindow({
             <option value="none">None</option>
           </select>
         </SettingRow>,
+        range(
+          "lyrics_background_brightness",
+          "Dynamic background brightness",
+          "Brighten or dim the animated and still artwork backgrounds.",
+          "background brightness ambience dynamic animated artwork dim",
+          [0, MAX_BACKGROUND_BRIGHTNESS, 1],
+          100,
+          "%",
+        ),
         range(
           "lyrics_background_blur",
           "Background blur",

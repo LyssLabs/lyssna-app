@@ -321,6 +321,8 @@ pub struct Settings {
     pub lyrics_background: String,
     /// Blur over the Cover art and Artist header backgrounds, 0 to 48 px.
     pub lyrics_background_blur: u8,
+    /// Percentage of the default artwork background lighting, 0 to 150.
+    pub lyrics_background_brightness: u8,
     pub lyrics_pinned_footer: PinnedLyricsFooter,
     pub fullscreen_always_show: FullscreenAlwaysShow,
     pub fullscreen_volume: FullscreenVolume,
@@ -476,6 +478,7 @@ impl Default for Settings {
             lyrics_hide_npv_empty: false,
             lyrics_background: "animated".into(),
             lyrics_background_blur: 0,
+            lyrics_background_brightness: 100,
             lyrics_pinned_footer: PinnedLyricsFooter::Off,
             fullscreen_always_show: FullscreenAlwaysShow::None,
             fullscreen_volume: FullscreenVolume::Off,
@@ -586,6 +589,7 @@ impl Settings {
         self.lyrics_early_scroll_ms = self.lyrics_early_scroll_ms.min(800);
         self.lyrics_visualiser_opacity = self.lyrics_visualiser_opacity.clamp(5, 100);
         self.lyrics_background_blur = self.lyrics_background_blur.min(48);
+        self.lyrics_background_brightness = self.lyrics_background_brightness.min(150);
         self.animation_fps_cap = self.animation_fps_cap.clamp(15, 240);
         self.gravity_link_width = self.gravity_link_width.clamp(10, 100);
         let mut seen = std::collections::HashSet::new();
@@ -875,11 +879,14 @@ mod tests {
             assert_eq!(marker.lyrics_highlighter_color, kept);
         }
         let mut background: Settings =
-            serde_json::from_str(r#"{"lyrics_background":"legacy","lyrics_background_blur":200}"#)
+            serde_json::from_str(r#"{"lyrics_background":"legacy","lyrics_background_blur":200,"lyrics_background_brightness":200}"#)
                 .unwrap();
         background.clean_lyrics_options();
         assert_eq!(background.lyrics_background, "animated");
         assert_eq!(background.lyrics_background_blur, 48);
+        assert_eq!(background.lyrics_background_brightness, 150);
+        let older: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(older.lyrics_background_brightness, 100);
         let mut fps: Settings = serde_json::from_str(r#"{"animation_fps_cap":5}"#).unwrap();
         fps.clean_lyrics_options();
         assert_eq!(fps.animation_fps_cap, 15);

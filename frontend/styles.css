@@ -3223,11 +3223,30 @@ small {
   position: absolute;
   inset: 0;
   /* Spicy Lyrics' brightness(0.65), as a flat layer instead of a filter. */
-  background: #00000059;
+  --ambient-base-light: calc(166 / 255);
+  background: rgb(
+    0 0 0 /
+      clamp(
+        0,
+        calc(1 - var(--ambient-base-light) * var(--ambience-brightness, 1)),
+        1
+      )
+  );
 }
 .now-playing .ambient-shade {
   /* Its side panel's brightness(0.6). */
-  background: light-dark(#fff6, #0006);
+  --ambient-base-light: 0.6;
+  background: light-dark(
+    #fff6,
+    rgb(
+      0 0 0 /
+        clamp(
+          0,
+          calc(1 - var(--ambient-base-light) * var(--ambience-brightness, 1)),
+          1
+        )
+    )
+  );
 }
 .lyrics-page {
   container-type: inline-size;

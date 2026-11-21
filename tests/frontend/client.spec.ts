@@ -14079,6 +14079,32 @@ test("songs without lyrics can show only the song", async ({ page }) => {
   await expect(heading).toBeVisible();
 });
 
+test("background brightness lightens or darkens the artwork shade", async ({
+  page,
+}) => {
+  await startClient(page);
+  await showLyrics(page);
+  const shade = page.locator(".lyrics-page .ambient-shade");
+  const alpha = () =>
+    shade.evaluate((element) =>
+      Number(
+        getComputedStyle(element).backgroundColor.match(/[\d.]+(?=\))/)?.[0],
+      ),
+    );
+  const normal = await alpha();
+  expect(normal).toBeCloseTo(89 / 255, 2);
+  await openSettings(page, "Lyrics");
+  const brightness = page.getByLabel("Dynamic background brightness", {
+    exact: true,
+  });
+  await brightness.fill("50");
+  await page.getByRole("button", { name: "Close settings" }).click();
+  expect(await alpha()).toBeGreaterThan(normal);
+  await openSettings(page, "Lyrics");
+  await brightness.fill("150");
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await expect.poll(alpha).toBeLessThan(0.05);
+});
 test("lyrics can sit over the cover, the artist's header or nothing", async ({
   page,
 }) => {

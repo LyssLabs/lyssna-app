@@ -7,6 +7,16 @@ import {
   onWindowActivity,
   windowActivity,
 } from "./window-activity";
+export const MAX_BACKGROUND_BRIGHTNESS = 150;
+/** Every artwork background's shade in this window follows the setting. */
+export function useBackgroundBrightness(percent = 100) {
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--ambience-brightness",
+      String(percent / 100),
+    );
+  }, [percent]);
+}
 export const Ambience = memo(function Ambience({
   track,
   image,

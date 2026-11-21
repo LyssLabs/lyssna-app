@@ -1,4 +1,5 @@
 import { IS_MAC, MODIFIER } from "./platform";
+import { useBackgroundBrightness } from "./ambience";
 import { useMacMenu } from "./mac-menu";
 import {
   useCallback,
@@ -1029,6 +1030,7 @@ function App() {
     state.settings.animation_fps_cap_enabled,
     state.settings.animation_fps_cap,
   ]);
+  useBackgroundBrightness(state.settings.lyrics_background_brightness);
   const animatorPreset = presetOf(state.settings.lyrics_animator);
   useEffect(() => {
     document.documentElement.dataset.animator = animatorPreset;

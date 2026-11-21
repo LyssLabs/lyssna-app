@@ -212,6 +212,7 @@ export interface Settings {
   lyrics_background?:
     "animated" | "static" | "cover" | "artist" | "color" | "none";
   lyrics_background_blur?: number;
+  lyrics_background_brightness?: number;
   lyrics_pinned_footer?: "off" | "no_writers" | "full";
   /** Full screen parts kept visible while the rest hides on idle. */
   fullscreen_always_show?: "none" | "controls" | "time" | "both";
