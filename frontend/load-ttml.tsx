@@ -102,6 +102,7 @@ export function LoadTtml({
   const [bulkResults, setBulkResults] = useState<BulkLyric[] | null>(null);
   const many = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [reviewerInfo, setReviewerInfo] = useState(false);
   const [saved, setSaved] = useState<SavedLyrics[] | null>(null);
   const [filter, setFilter] = useState("");
   const shown = useMemo(() => {
@@ -230,27 +231,58 @@ export function LoadTtml({
                 </span>
               </button>
             </div>
-            <label className="load-ttml-reviewer">
-              <span>
-                <strong>TTML Reviewer</strong>
-                <small>
-                  Show loaded lyrics with default timing and effects while you
-                  check them.
-                </small>
-              </span>
-              <select
-                className="settings-select"
-                value={reviewer}
-                disabled={busy}
-                onChange={(event) =>
-                  onReviewer(event.currentTarget.value as ReviewerMode)
-                }
-              >
-                <option value="off">Off</option>
-                <option value="temporary">Temporary loads</option>
-                <option value="always">All loaded TTML</option>
-              </select>
-            </label>
+            <section
+              className="load-ttml-reviewer"
+              aria-labelledby="ttml-reviewer-title"
+            >
+              <div className="load-ttml-reviewer-row">
+                <span>
+                  <strong id="ttml-reviewer-title">TTML Reviewer</strong>
+                  <small>
+                    Apply a consistent review profile, then restore your
+                    settings when it stops.
+                  </small>
+                </span>
+                <button
+                  className="load-ttml-reviewer-info"
+                  aria-expanded={reviewerInfo}
+                  aria-controls="ttml-reviewer-changes"
+                  onClick={() => setReviewerInfo((open) => !open)}
+                >
+                  What does it change?
+                </button>
+                <select
+                  className="settings-select"
+                  aria-label="TTML Reviewer"
+                  value={reviewer}
+                  disabled={busy}
+                  onChange={(event) =>
+                    onReviewer(event.currentTarget.value as ReviewerMode)
+                  }
+                >
+                  <option value="off">Off</option>
+                  <option value="temporary">Temporary loads</option>
+                  <option value="always">All loaded TTML</option>
+                </select>
+              </div>
+              {reviewerInfo && (
+                <ul id="ttml-reviewer-changes">
+                  <li>
+                    Lyric size, font and timing offsets go back to default
+                  </li>
+                  <li>
+                    Early and smooth scrolling, simple and minimal lyrics use
+                    their defaults
+                  </li>
+                  <li>
+                    Space Gravity, Highlighter, romanization, translations and
+                    word sync turn off
+                  </li>
+                  <li>Up next and the visualiser are hidden</li>
+                  <li>Your own settings stay saved and come back after</li>
+                </ul>
+              )}
+            </section>
             <input
               ref={submitInput}
               type="file"

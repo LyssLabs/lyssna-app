@@ -9143,6 +9143,12 @@ test("Load TTML offers Spicy Lyrics' load modes, reset and saved lyrics", async 
   await expect(reviewer).toHaveValue("off");
   await reviewer.selectOption("temporary");
   await expect(reviewer).toHaveValue("temporary");
+  const changes = dialog.getByRole("button", { name: "What does it change?" });
+  await changes.click();
+  await expect(changes).toHaveAttribute("aria-expanded", "true");
+  await expect(dialog.locator("#ttml-reviewer-changes")).toContainText(
+    "Space Gravity",
+  );
   // Shown to everyone, but only Uploaders and above can use it.
   const submit = dialog.getByRole("button", { name: /Submit to Lyssna/ });
   await expect(submit).toBeDisabled();
