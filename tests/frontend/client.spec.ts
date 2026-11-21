@@ -8204,6 +8204,73 @@ test("playlist artwork loads near the viewport and still loads after scrolling",
   await expect(last.locator(".track-number > span")).toHaveText(String(count));
 });
 
+test("a lyric clicked while paused waits unsung until playback resumes", async ({
+  page,
+}) => {
+  await startClient(page);
+  await page.getByTitle("Lyrics", { exact: true }).click();
+  const emitPlayback = (progress: number, playing: boolean) =>
+    page.evaluate(
+      ({ track, playback, progress, playing }) =>
+        (window as any).__clientTest.emit({
+          type: "playback",
+          playback: {
+            ...playback,
+            item: track,
+            is_playing: playing,
+            progress_ms: progress,
+          },
+          observed_at: Date.now(),
+          changed: false,
+        }),
+      { track, playback: emptyState.playback, progress, playing },
+    );
+  await emitPlayback(1000, false);
+  await page.evaluate(
+    ({ track }) =>
+      (window as any).__clientTest.emit({
+        type: "lyrics",
+        uri: track.uri,
+        lyrics: {
+          synced: true,
+          instrumental: false,
+          source: "spicy_lyrics",
+          lines: Array.from({ length: 6 }, (_, index) => ({
+            start_ms: index * 20_000 + (index ? 1000 : 0),
+            end_ms: (index + 1) * 20_000,
+            text: `Line ${index + 1}`,
+            words: [
+              {
+                start_ms: index * 20_000 + (index ? 1000 : 0),
+                end_ms: (index + 1) * 20_000,
+                text: `Line ${index + 1}`,
+              },
+            ],
+          })),
+        },
+      }),
+    { track },
+  );
+  const lines = page.locator(".lyrics-page .lyric-line");
+  await expect(lines).toHaveCount(6);
+  await lines.nth(2).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__clientTest.commands
+            .filter((entry: any) => entry.command === "player")
+            .at(-1)?.args.request,
+      ),
+    )
+    .toMatchObject({ command: "seek", positionMs: 41_000 });
+  await emitPlayback(41_000, false);
+  await page.waitForTimeout(200);
+  await expect(lines.nth(2)).not.toHaveClass(/\bactive\b/);
+  await expect(lines.nth(2)).not.toHaveClass(/\bpast\b/);
+  await emitPlayback(41_200, true);
+  await expect(lines.nth(2)).toHaveClass(/\bactive\b/);
+});
 test("lyric clock frames reuse click handlers and keep seeking functional", async ({
   page,
 }) => {

@@ -613,6 +613,7 @@ const BROWSE_COOLDOWN_MS = 750;
 export function LyricsDisplay({
   lyrics,
   positionMs,
+  playing = true,
   settings,
   onSeek,
   compact = false,
@@ -621,6 +622,7 @@ export function LyricsDisplay({
 }: {
   lyrics: Lyrics;
   positionMs: number;
+  playing?: boolean;
   settings: Settings;
   onSeek: (ms: number) => void;
   compact?: boolean;
@@ -653,6 +655,28 @@ export function LyricsDisplay({
   useLayoutEffect(() => {
     seek.current = onSeek;
   }, [onSeek]);
+  // A line clicked while paused stays the current line, unsung, until play
+  // resumes or the song moves elsewhere.
+  const [pausedLine, setPausedLine] = useState<{
+    line: Line;
+    index: number;
+    from: number;
+  }>();
+  const transport = useRef({ playing, positionMs });
+  transport.current = { playing, positionMs };
+  const selected =
+    !playing &&
+    pausedLine &&
+    lyrics.lines[pausedLine.index] === pausedLine.line &&
+    (positionMs === pausedLine.from ||
+      Math.abs(positionMs - pausedLine.line.start_ms) <= 25)
+      ? pausedLine.index
+      : undefined;
+  const cueLine = selected === undefined ? undefined : lyrics.lines[selected];
+  const lyricTime = cueLine ? cueLine.start_ms - 1 : positionMs;
+  useEffect(() => {
+    if (pausedLine && selected === undefined) setPausedLine(undefined);
+  }, [pausedLine, selected]);
   // Clock frames must not replace each button's native click listener or ref.
   const lineActions = useMemo(
     () =>
@@ -663,6 +687,8 @@ export function LyricsDisplay({
         click: () => {
           if (lyrics.synced) {
             seek.current(line.start_ms);
+            const { playing, positionMs } = transport.current;
+            if (!playing) setPausedLine({ line, index, from: positionMs });
             setFollowing(true);
           }
         },
@@ -706,7 +732,10 @@ export function LyricsDisplay({
     };
   };
   const waiting = useRef<HTMLDivElement>(null);
-  const gap = lyrics.synced ? vocalGap(lyrics.lines, positionMs) : undefined;
+  const gap =
+    lyrics.synced && selected === undefined
+      ? vocalGap(lyrics.lines, positionMs)
+      : undefined;
   const gaps = useMemo(
     () => new Map(vocalGaps(lyrics.lines).map((item) => [item.after, item])),
     [lyrics],
@@ -732,12 +761,13 @@ export function LyricsDisplay({
   // Early scroll follows the line about to be sung; highlighting still
   // follows the real song time.
   const scrollTime =
-    positionMs +
-    (settings.lyrics_early_scroll
+    lyricTime +
+    (cueLine === undefined && settings.lyrics_early_scroll
       ? (settings.lyrics_early_scroll_ms ?? 200)
       : 0);
   const active = activeLines(lyrics.lines, scrollTime);
   const primary =
+    selected ??
     active.find((index) => !lyrics.lines[index].background) ??
     lyrics.lines.reduce(
       (last, line, index) =>
@@ -749,11 +779,11 @@ export function LyricsDisplay({
   }, [lyrics]);
   // A restart, Previous or seek moves song time far in one step. Lyrics then
   // slide straight there instead of springing through the whole song.
-  const lastPosition = useRef(positionMs),
+  const lastPosition = useRef(lyricTime),
     jumped = useRef(false);
-  const positionJumped = Math.abs(positionMs - lastPosition.current) > 1500;
+  const positionJumped = Math.abs(lyricTime - lastPosition.current) > 1500;
   if (positionJumped) jumped.current = true;
-  lastPosition.current = positionMs;
+  lastPosition.current = lyricTime;
   const animator = useRef<LyricAnimator>(undefined);
   // New springs pick up the animator preset's curves and tuning.
   const tuning = JSON.stringify(settings.lyrics_animator ?? {});
@@ -770,9 +800,9 @@ export function LyricsDisplay({
   }, [lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);
   useLayoutEffect(() => {
     if (!lyrics.synced) return;
-    if (positionJumped) animator.current?.reset();
-    animator.current?.update(positionMs);
-  }, [positionMs, lyrics, settings.reduce_motion]);
+    if (positionJumped || cueLine) animator.current?.reset();
+    animator.current?.update(lyricTime);
+  }, [lyricTime, cueLine, lyrics, settings.reduce_motion]);
   // Romanization, translations or a word filter change only the words: the
   // view stays on the current line instead of sliding to where it rewraps.
   const timing = useMemo(
@@ -1034,7 +1064,7 @@ export function LyricsDisplay({
     );
   return (
     <div
-      className={`lyrics-display ${compact ? "compact" : ""} ${footerMode !== "off" ? "has-pinned-footer" : ""} ${!lyrics.synced ? "static-lyrics" : ""} ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.lyrics_simple ? "simple-lyrics" : ""} ${settings.lyrics_right_align ? "lyrics-right" : ""} ${settings.lyrics_flip_duet ? "lyrics-flip-duet" : ""} ${settings.lyrics_wide_duet === false ? "" : "lyrics-wide-duet"} ${settings.lyrics_line_hover ? "lyrics-line-hover" : ""} ${lyrics.lines.some((line) => line.opposite) ? "has-duet" : ""} ${settings.lyrics_minimal && !compact ? "minimal" : ""} ${highlighter ? "highlighter" : ""} ${settings.lyrics_keep_overlaps !== false ? "keep-overlaps" : ""} ${lyrics.synced && lyrics.lines.length && positionMs >= Math.max(...lyrics.lines.map(vocalEnd)) ? "all-sung" : ""} ${settings.lyrics_credits_follow && endsOnRight(lyrics.lines, !!(settings.lyrics_flip_duet || settings.lyrics_right_align)) ? "credits-right" : ""}`}
+      className={`lyrics-display ${compact ? "compact" : ""} ${footerMode !== "off" ? "has-pinned-footer" : ""} ${!lyrics.synced ? "static-lyrics" : ""} ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.lyrics_simple ? "simple-lyrics" : ""} ${settings.lyrics_right_align ? "lyrics-right" : ""} ${settings.lyrics_flip_duet ? "lyrics-flip-duet" : ""} ${settings.lyrics_wide_duet === false ? "" : "lyrics-wide-duet"} ${settings.lyrics_line_hover ? "lyrics-line-hover" : ""} ${lyrics.lines.some((line) => line.opposite) ? "has-duet" : ""} ${settings.lyrics_minimal && !compact ? "minimal" : ""} ${highlighter ? "highlighter" : ""} ${settings.lyrics_keep_overlaps !== false ? "keep-overlaps" : ""} ${lyrics.synced && lyrics.lines.length && lyricTime >= Math.max(...lyrics.lines.map(vocalEnd)) ? "all-sung" : ""} ${settings.lyrics_credits_follow && endsOnRight(lyrics.lines, !!(settings.lyrics_flip_duet || settings.lyrics_right_align)) ? "credits-right" : ""}`}
       data-following={following}
       style={
         {
@@ -1116,10 +1146,10 @@ export function LyricsDisplay({
                   !highlighter
                     ? 0
                     : playing ||
-                        (positionMs >= line.start_ms &&
-                          positionMs < vocalEnd(line))
-                      ? positionMs
-                      : positionMs >= line.start_ms
+                        (lyricTime >= line.start_ms &&
+                          lyricTime < vocalEnd(line))
+                      ? lyricTime
+                      : lyricTime >= line.start_ms
                         ? Infinity
                         : -Infinity
                 }
@@ -1565,6 +1595,7 @@ function TimedLyricsPreview({
       lyrics={lyrics}
       writers={state.playback.item?.songwriters}
       positionMs={current}
+      playing={state.playback.is_playing}
       settings={state.settings}
       compact
       onSeek={(ms) => onPlayer({ command: "seek", positionMs: ms })}
@@ -2383,6 +2414,7 @@ function SongLyricsPage({
                 lyrics={lyrics}
                 writers={state.playback.item?.songwriters}
                 positionMs={current}
+                playing={state.playback.is_playing}
                 settings={state.settings}
                 upNext={upNextCard}
                 onSeek={(ms) => onPlayer({ command: "seek", positionMs: ms })}

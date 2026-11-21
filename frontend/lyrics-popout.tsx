@@ -238,6 +238,7 @@ function PopoutLyrics({
       lyrics={lyrics}
       writers={state.playback.item?.songwriters}
       positionMs={current}
+      playing={state.playback.is_playing}
       settings={state.settings}
       onSeek={onSeek}
     />
