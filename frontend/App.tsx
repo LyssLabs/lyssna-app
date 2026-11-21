@@ -237,6 +237,7 @@ import {
 } from "./album-type";
 import { DEFAULT_ZOOM, useAppZoom } from "./app-zoom";
 import { PlaylistFlyout } from "./playlist-flyout";
+import { popPin } from "./pin-pop";
 
 const holdingKey = (tracks: Track[]) =>
   tracks
@@ -3014,7 +3015,10 @@ function App() {
         className={`library-pin icon-button ${accountOrder(state).pinned.includes(playlist.id) ? "pinned" : ""}`}
         title={`${accountOrder(state).pinned.includes(playlist.id) ? "Unpin" : "Pin"} ${playlist.name}`}
         aria-pressed={accountOrder(state).pinned.includes(playlist.id)}
-        onClick={() => togglePin(playlist)}
+        onClick={(event) => {
+          popPin(event.currentTarget);
+          togglePin(playlist);
+        }}
       >
         <Pin size={14} />
       </button>

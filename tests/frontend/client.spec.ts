@@ -14257,6 +14257,45 @@ test("songs without lyrics can show only the song", async ({ page }) => {
   await expect(heading).toBeVisible();
 });
 
+test("a library pin stays in place while pressed and plays its pin animation", async ({
+  page,
+}) => {
+  await startClient(page);
+  await page.evaluate(() =>
+    (window as any).__clientTest.emit({
+      type: "library",
+      playlists: [
+        {
+          id: "4123456789abcdefghijkl",
+          name: "Road trip",
+          images: [],
+          owner: { id: "test-user" },
+          collaborative: false,
+        },
+      ],
+    }),
+  );
+  const row = page.locator(".library-row", { hasText: "Road trip" }).first();
+  await row.hover();
+  const pin = row.getByRole("button", { name: "Pin Road trip" });
+  const before = (await pin.boundingBox())!;
+  await page.mouse.move(
+    before.x + before.width / 2,
+    before.y + before.height / 2,
+  );
+  await page.mouse.down();
+  const pressed = (await pin.boundingBox())!;
+  expect(
+    Math.abs(pressed.y + pressed.height / 2 - (before.y + before.height / 2)),
+  ).toBeLessThan(1);
+  await page.mouse.up();
+  expect(
+    await row
+      .locator(".library-pin svg")
+      .evaluate((icon) => icon.getAnimations().length),
+  ).toBe(1);
+});
+
 test("pinned lyric effects get a toggle on the lyrics toolbar", async ({
   page,
 }) => {

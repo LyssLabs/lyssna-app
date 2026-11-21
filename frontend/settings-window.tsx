@@ -52,6 +52,7 @@ import { LyssnaAccount } from "./lyssna-account";
 import { AnimatorPresetRow } from "./animator-settings";
 import { SOLOIST_PLAYS, SoloistRows } from "./soloist-settings";
 import { SettingsTransferControls } from "./settings-transfer-controls";
+import { popPin } from "./pin-pop";
 
 /** Default source order; LRCLIB and Netease start off. */
 const DEFAULT_SOURCES = [
@@ -367,13 +368,14 @@ export function SettingsWindow({
             title={`${pinned ? "Unpin" : "Pin"} ${label} ${pinned ? "from" : "to"} the lyrics toolbar`}
             aria-label={`Pin ${label} to the lyrics toolbar`}
             aria-pressed={pinned}
-            onClick={() =>
+            onClick={(event) => {
+              popPin(event.currentTarget);
               onSettings({
                 pinned_lyric_effects: pinned
                   ? pins.filter((pin) => pin !== key)
                   : [...pins, key],
-              })
-            }
+              });
+            }}
           >
             <Pin size={14} />
           </button>

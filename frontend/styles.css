@@ -404,7 +404,8 @@ small {
   position: absolute;
   right: 4px;
   top: 50%;
-  transform: translateY(-50%);
+  /* translate, not transform: pressing scales the button through transform. */
+  translate: 0 -50%;
   opacity: 0;
 }
 .library-row:hover .library-pin,
@@ -4352,6 +4353,12 @@ small {
 }
 .setting-pin.active svg {
   fill: currentColor;
+}
+.setting-pin.active:after {
+  content: none;
+}
+.setting-pin:focus-visible {
+  outline-offset: 0;
 }
 /* Space Gravity: the moon circles once. */
 .toolbar-icon-gravity .part-orbit {
