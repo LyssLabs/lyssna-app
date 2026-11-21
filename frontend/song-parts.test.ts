@@ -1,0 +1,18 @@
+import { expect, it } from "vitest";
+import { songPart } from "./song-parts";
+
+it("names Genius sections in any language under the English name", () => {
+  expect(songPart("Verse 2: Someone")).toBe("Verse");
+  expect(songPart("Refrão")).toBe("Chorus");
+  expect(songPart("Estribillo 2")).toBe("Chorus");
+  expect(songPart("Pre-Chorus (Remix)")).toBe("Pre-Chorus");
+  expect(songPart("サビ")).toBe("Chorus");
+  expect(songPart("후렴")).toBe("Chorus");
+  expect(songPart("Puente")).toBe("Bridge");
+});
+
+it("knows no section Genius doesn't use", () => {
+  expect(songPart("")).toBeUndefined();
+  expect(songPart("Produced by someone")).toBeUndefined();
+  expect(songPart("Random words")).toBeUndefined();
+});

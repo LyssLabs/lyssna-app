@@ -1,5 +1,6 @@
 import type { Line, Lyrics, Word } from "./types";
 import { repeatedPieces, symbolPieces } from "./ttml-syllables";
+import { songPart } from "./song-parts";
 
 export interface CreatorUnit {
   text: string;
@@ -165,20 +166,14 @@ export function geniusBackgrounds(text: string): string {
 }
 
 /**
- * The section a "[Chorus]" style line names, as Genius writes them:
- * "[Verse 2: Someone]" names a Verse. Undefined for any other line, and
- * for "[]", so brackets never become lyrics either way.
+ * The Genius section a "[Chorus]" style line names, in any language Genius
+ * writes them: "[Verse 2: Someone]" names a Verse, "[Refrão]" a Chorus.
+ * Undefined for "[]" and names Genius doesn't use; such lines are still
+ * never lyrics.
  */
 export function sectionName(text: string): string | undefined {
   const match = /^\[([^\]]*)\]$/.exec(text.trim());
-  if (!match) return;
-  const name = match[1]
-    .split(":")[0]
-    .replace(/\s+\d+$/, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 40);
-  return name || undefined;
+  return match ? songPart(match[1]) : undefined;
 }
 const isSectionLine = (text: string) => /^\[[^\]]*\]$/.test(text.trim());
 

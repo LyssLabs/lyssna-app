@@ -2536,8 +2536,9 @@ export function TtmlCreator({
             One lyric line per line. Split a word into syllables with{" "}
             <kbd>|</kbd>, like <code>beau|ti|ful</code>. Wrap a background vocal
             in parentheses. Start a line with <code>v2:</code> for the second
-            singer. Optionally, name a section on its own line, like{" "}
-            <code>[Chorus]</code>; it is never sung as a lyric.
+            singer. Optionally, name a section on its own line with a Genius
+            section name, like <code>[Chorus]</code> or <code>[Bridge]</code>;
+            it is never sung as a lyric.
           </p>
           <textarea
             aria-label="Lyrics text"
