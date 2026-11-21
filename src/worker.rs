@@ -546,7 +546,8 @@ impl Worker {
                         {
                             let client = client.clone();
                             thread::spawn(move || {
-                                crate::lyssna_lyrics::record_play(&client, &song)
+                                crate::lyssna_lyrics::record_play(&client, &song);
+                                crate::lyssna_lyrics::record_view(&client, &song);
                             });
                         }
                         (track, result)

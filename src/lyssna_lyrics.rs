@@ -168,6 +168,20 @@ pub fn record_play(client: &Client, song_id: &str) {
     let _ = request.send();
 }
 
+/// Counts a lyrics view for the website's stats; the server keeps one per
+/// install per song each day.
+pub fn record_view(client: &Client, song_id: &str) {
+    if !song_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        return;
+    }
+    let _ = crate::lyssna_account::keyed(client.post(format!(
+        "{}/v1/songs/{song_id}/views",
+        crate::lyssna_account::API
+    )))
+    .json(&serde_json::json!({ "client": "app" }))
+    .send();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
