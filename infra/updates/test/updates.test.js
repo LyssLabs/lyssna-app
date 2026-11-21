@@ -27,7 +27,7 @@ function setup() {
   const request = (path, options) => worker.fetch(new Request(`https://updates.example.com/${path}`, options), env);
   const put = (key, body, token = env.PUBLISH_TOKEN) => request(`publish/${key}`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Length": String(new TextEncoder().encode(body).length) }, body });
   const envelope = (manifest) => { const payload = Buffer.from(JSON.stringify(manifest)); return JSON.stringify({ payload: payload.toString("base64"), signature: sign(null, payload, keys.privateKey).toString("base64") }); };
-  return { objects, request, put, envelope };
+  return { objects, request, put, envelope, env };
 }
 
 test("public service restricts paths and methods", async () => {
@@ -139,4 +139,41 @@ test("a fixed link serves nothing when the channel's signature fails", async () 
   signed.signature = Buffer.alloc(64).toString("base64");
   objects.set("channels/stable/lyssna-windows-x86_64.json", { bytes: new TextEncoder().encode(JSON.stringify(signed)), type: "application/json" });
   assert.equal((await request("latest/lyssna.exe")).status, 404);
+});
+
+test("full downloads are counted by day, platform, kind and version", async () => {
+  const { put, envelope, env } = setup();
+  const counted = [];
+  env.STATS = {
+    prepare: (sql) => ({
+      bind: (...values) => ({ run: async () => counted.push(values.slice(1)) }),
+      sql,
+    }),
+  };
+  const pending = [];
+  const ctx = { waitUntil: (promise) => pending.push(promise) };
+  const get = (path, init) => worker.fetch(new Request(`https://updates.example.com/${path}`, init), env, ctx);
+  const exe = "releases/0.7.0/windows-x86_64/lyssna.exe";
+  await put(exe, "exe");
+  await put("releases/0.7.0/windows-x86_64/source.zip", "src");
+  await put("channels/stable/lyssna-windows-x86_64.json", envelope({ version: "0.7.0", target: "windows-x86_64", artifact: exe, size: 3, sha256: "a".repeat(64), notes: "" }));
+  await get("lyssna_setup.exe");
+  await get(exe);
+  await get(exe, { method: "HEAD" });
+  await get(exe, { headers: { "If-None-Match": '"etag"' } });
+  await get("releases/0.7.0/windows-x86_64/source.zip");
+  await get("channels/stable/lyssna-windows-x86_64.json");
+  await Promise.all(pending);
+  assert.deepEqual(counted, [
+    ["windows", "download", "0.7.0"],
+    ["windows", "update", "0.7.0"],
+  ]);
+});
+
+test("stats answer empty before the counter is set up", async () => {
+  const { request } = setup();
+  const response = await request("stats.json");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+  assert.deepEqual(await response.json(), { since: null, totals: [], versions: [], days: [] });
 });

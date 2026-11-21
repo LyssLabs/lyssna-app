@@ -21,6 +21,47 @@ const latest = new Map([
   ["Lyssna-macOS.zip", macos],
 ]);
 
+// Installed Windows copies fetch the versioned exe to update themselves; every
+// other full download is someone getting Lyssna.
+/** @param {string} key */
+function downloadKind(key) {
+  const [, version, target, file] = key.split("/");
+  if (file === "source.zip") return null;
+  const platform = target === "macos-universal" ? "macos" : "windows";
+  return { version, platform, kind: platform === "windows" ? "update" : "download" };
+}
+
+/** @param {Env & { STATS?: D1Database }} env @param {ExecutionContext | undefined} ctx @param {{ version: string, platform: string, kind: string } | null} entry */
+function count(env, ctx, entry) {
+  if (!entry || !env.STATS || !ctx) return;
+  ctx.waitUntil(
+    env.STATS.prepare(
+      `INSERT INTO downloads (day, platform, kind, version, count) VALUES (?1, ?2, ?3, ?4, 1)
+       ON CONFLICT (day, platform, kind, version) DO UPDATE SET count = count + 1`,
+    )
+      .bind(new Date().toISOString().slice(0, 10), entry.platform, entry.kind, entry.version)
+      .run()
+      .catch(() => {}),
+  );
+}
+
+/** @param {Env & { STATS?: D1Database }} env */
+async function stats(env) {
+  const headers = { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=300" };
+  if (!env.STATS) return Response.json({ since: null, totals: [], versions: [], days: [] }, { headers });
+  const since = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
+  const [first, totals, versions, days] = await env.STATS.batch([
+    env.STATS.prepare("SELECT MIN(day) AS day FROM downloads"),
+    env.STATS.prepare("SELECT platform, kind, SUM(count) AS count FROM downloads GROUP BY platform, kind"),
+    env.STATS.prepare("SELECT version, platform, kind, SUM(count) AS count FROM downloads GROUP BY version, platform, kind"),
+    env.STATS.prepare("SELECT day, platform, kind, SUM(count) AS count FROM downloads WHERE day >= ?1 GROUP BY day, platform, kind ORDER BY day").bind(since),
+  ]);
+  return Response.json(
+    { since: /** @type {{ day?: string } | undefined} */ (first.results[0])?.day ?? null, totals: totals.results, versions: versions.results, days: days.results },
+    { headers },
+  );
+}
+
 /** @param {string} value */
 function decode(value) {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
@@ -74,8 +115,8 @@ async function publish(request, env, key) {
 
 /** The file a stable channel names, checked against its signature again so
  * a bad manifest in the bucket never decides what is served.
- * @param {Request} request @param {Env} env @param {{ channel: string, filename: string, type: string }} link */
-async function latestRelease(request, env, link) {
+ * @param {Request} request @param {Env} env @param {{ channel: string, filename: string, type: string }} link @param {ExecutionContext} [ctx] */
+async function latestRelease(request, env, link, ctx) {
   const missing = () => new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   const expected = channels.get(link.channel);
   const channel = await env.RELEASES.get(link.channel);
@@ -105,18 +146,21 @@ async function latestRelease(request, env, link) {
     "X-Lyssna-Version": artifactKey.split("/")[1],
   });
   if (request.headers.get("If-None-Match") === object.httpEtag) return new Response(null, { status: 304, headers });
+  const entry = downloadKind(artifactKey);
+  if (request.method === "GET" && entry) count(env, ctx, { ...entry, kind: "download" });
   return new Response("body" in object && object.body instanceof ReadableStream ? object.body : null, { headers });
 }
 
 export default {
-  /** @param {Request} request @param {Env} env */
-  async fetch(request, env) {
+  /** @param {Request} request @param {Env} env @param {ExecutionContext} [ctx] */
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/stats.json" && request.method === "GET") return stats(env);
     if (url.pathname === "/health" && request.method === "GET") return Response.json({ service: "spotiflex-updates", status: "ok" });
     const fixed = latest.get(url.pathname.slice(1));
     if (fixed) {
       if (!["GET", "HEAD"].includes(request.method)) return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, HEAD" } });
-      return latestRelease(request, env, fixed);
+      return latestRelease(request, env, fixed, ctx);
     }
     const publishing = url.pathname.startsWith("/publish/");
     const key = url.pathname.slice(publishing ? "/publish/".length : 1);
@@ -134,6 +178,7 @@ export default {
     headers.set("Content-Length", String(object.size));
     headers.set("Cache-Control", channels.has(key) ? "public, max-age=60" : "public, max-age=31536000, immutable");
     if (request.headers.get("If-None-Match") === object.httpEtag) return new Response(null, { status: 304, headers });
+    if (request.method === "GET" && !channels.has(key)) count(env, ctx, downloadKind(key));
     return new Response("body" in object && object.body instanceof ReadableStream ? object.body : null, { headers });
   },
 };
