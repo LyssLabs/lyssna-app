@@ -173,10 +173,12 @@ impl TryFrom<SkipTo> for PlayingTrack {
 
     fn try_from(value: SkipTo) -> Result<Self, Self::Error> {
         // order of checks is important, as the index can be 0, but still has an uid or uri provided,
-        // so we only use the index as last resort
-        if let Some(uri) = value.track_uri {
+        // so we only use the index as last resort. Spotify's clients can send an empty uri or
+        // uid next to a real one, which would otherwise match nothing and start the first song.
+        let present = |value: Option<String>| value.filter(|value| !value.is_empty());
+        if let Some(uri) = present(value.track_uri) {
             Ok(PlayingTrack::Uri(uri))
-        } else if let Some(uid) = value.track_uid {
+        } else if let Some(uid) = present(value.track_uid) {
             Ok(PlayingTrack::Uid(uid))
         } else if let Some(index) = value.track_index {
             Ok(PlayingTrack::Index(index))
@@ -273,5 +275,32 @@ mod local_transport_tests {
         };
         assert!(!status.player_started(1300, 5000, false));
         assert!(matches!(status, SpircPlayStatus::Paused { .. }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skip_to_ignores_empty_identifiers() {
+        let skip = |uri: &str, uid: &str, index| SkipTo {
+            track_uri: Some(uri.into()),
+            track_uid: Some(uid.into()),
+            track_index: index,
+        };
+        assert!(matches!(
+            PlayingTrack::try_from(skip("", "abc123", Some(4))),
+            Ok(PlayingTrack::Uid(uid)) if uid == "abc123"
+        ));
+        assert!(matches!(
+            PlayingTrack::try_from(skip("", "", Some(4))),
+            Ok(PlayingTrack::Index(4))
+        ));
+        assert!(PlayingTrack::try_from(skip("", "", None)).is_err());
+        assert!(matches!(
+            PlayingTrack::try_from(skip("spotify:track:x", "", None)),
+            Ok(PlayingTrack::Uri(uri)) if uri == "spotify:track:x"
+        ));
     }
 }
