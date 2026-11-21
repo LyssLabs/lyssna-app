@@ -24,6 +24,7 @@ import {
   revisionTtml,
   type DiffRow,
   type RejectReason,
+  type ReviewAction,
   type ReviewComment,
   type ReviewLane,
   type ReviewSubmission,
@@ -246,6 +247,7 @@ function ReviewDetail({
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<RejectReason>("low_effort");
   const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<ReviewAction>("approve");
   const id = submission.id;
   // Callers pass fresh callbacks each render; the fetches below run once.
   const parse = useRef(onParse);
@@ -432,86 +434,130 @@ function ReviewDetail({
           </button>
         </div>
       </section>
-      <section className="review-section review-decide">
+      <section className="review-section review-decide" data-outcome={outcome}>
         <h4>Decision</h4>
+        <div
+          className="review-outcomes"
+          role="radiogroup"
+          aria-label="Decision"
+        >
+          {(
+            [
+              ["approve", "Approve", CircleCheck],
+              ["request-changes", "Changes", MessageSquareWarning],
+              ["reject", "Reject", CircleX],
+            ] as const
+          ).map(([value, label, Icon]) => (
+            <button
+              key={value}
+              role="radio"
+              aria-checked={outcome === value}
+              data-outcome={value}
+              onClick={() => setOutcome(value)}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+        {outcome === "approve" && (
+          <>
+            <small className="review-label">Quality</small>
+            <div
+              className="review-choice"
+              role="radiogroup"
+              aria-label="Quality"
+            >
+              {GRADES.map(([value, label]) => (
+                <button
+                  key={value}
+                  role="radio"
+                  aria-checked={grade === value}
+                  className={grade === value ? "active" : ""}
+                  onClick={() => setGrade(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {outcome === "reject" && (
+          <>
+            <small className="review-label">Reason</small>
+            <div
+              className="review-choice"
+              role="radiogroup"
+              aria-label="Reject reason"
+            >
+              {REJECT_REASONS.map(([value, label]) => (
+                <button
+                  key={value}
+                  role="radio"
+                  aria-checked={reason === value}
+                  className={reason === value ? "active" : ""}
+                  onClick={() => setReason(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         <textarea
           value={note}
-          placeholder="Note for the submitter (needed to ask for changes)"
+          placeholder={
+            outcome === "request-changes"
+              ? "What should the submitter change?"
+              : "Note for the submitter (optional)"
+          }
           aria-label="Decision note"
           maxLength={2000}
           onChange={(event) => setNote(event.target.value)}
         />
-        <div className="review-choice" role="radiogroup" aria-label="Quality">
-          {GRADES.map(([value, label]) => (
+        <div className="review-buttons">
+          {outcome === "approve" ? (
+            <>
+              <button
+                className="review-confirm"
+                disabled={busy}
+                onClick={() => void decide("approve")}
+              >
+                <CircleCheck size={14} /> Approve
+              </button>
+              <button
+                disabled={busy || !fixed}
+                title={
+                  fixed
+                    ? "Approve, then submit your corrections as an edit credited to you"
+                    : "Open it in the editor and make corrections first"
+                }
+                onClick={() =>
+                  void decide("approve", () => onSubmitFix(editorTtml()))
+                }
+              >
+                <SquarePen size={14} /> Fix and approve
+              </button>
+            </>
+          ) : outcome === "request-changes" ? (
             <button
-              key={value}
-              role="radio"
-              aria-checked={grade === value}
-              className={grade === value ? "active" : ""}
-              onClick={() => setGrade(value)}
+              className="review-confirm"
+              disabled={busy || !note.trim()}
+              title={
+                note.trim() ? undefined : "Write a note saying what to change"
+              }
+              onClick={() => void decide("request-changes")}
             >
-              {label}
+              <MessageSquareWarning size={14} /> Ask for changes
             </button>
-          ))}
-        </div>
-        <div className="review-buttons">
-          <button
-            className="primary"
-            disabled={busy}
-            onClick={() => void decide("approve")}
-          >
-            <CircleCheck size={14} /> Approve
-          </button>
-          <button
-            disabled={busy || !fixed}
-            title={
-              fixed
-                ? "Approve, then submit your corrections as an edit credited to you"
-                : "Open it in the editor and make corrections first"
-            }
-            onClick={() =>
-              void decide("approve", () => onSubmitFix(editorTtml()))
-            }
-          >
-            <SquarePen size={14} /> Fix and approve
-          </button>
-        </div>
-        <div className="review-buttons">
-          <button
-            disabled={busy || !note.trim()}
-            title={
-              note.trim() ? undefined : "Write a note saying what to change"
-            }
-            onClick={() => void decide("request-changes")}
-          >
-            <MessageSquareWarning size={14} /> Ask for changes
-          </button>
-        </div>
-        <div
-          className="review-choice"
-          role="radiogroup"
-          aria-label="Reject reason"
-        >
-          {REJECT_REASONS.map(([value, label]) => (
+          ) : (
             <button
-              key={value}
-              role="radio"
-              aria-checked={reason === value}
-              className={reason === value ? "active" : ""}
-              onClick={() => setReason(value)}
+              className="review-confirm"
+              disabled={busy}
+              onClick={() => void decide("reject")}
             >
-              {label}
+              <CircleX size={14} /> Reject
             </button>
-          ))}
-        </div>
-        <div className="review-buttons">
-          <button
-            className="danger"
-            disabled={busy}
-            onClick={() => void decide("reject")}
-          >
-            <CircleX size={14} /> Reject
-          </button>
+          )}
         </div>
       </section>
     </div>

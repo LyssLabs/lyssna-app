@@ -17057,9 +17057,13 @@ test("reviewers see waiting submissions and decide them from the TTML Creator", 
   await queue.getByRole("button", { name: /Come & Go/ }).click();
   await expect(page.getByRole("region", { name: "TTML Creator" })).toBeVisible();
   const panel = page.getByRole("complementary", { name: "Review" });
+  await panel.getByRole("radio", { name: "Changes" }).click();
   await expect(
     panel.getByRole("button", { name: "Ask for changes" }),
   ).toBeDisabled();
+  await panel.getByRole("radio", { name: "Reject" }).click();
+  await expect(panel.getByRole("radio", { name: "Spam" })).toBeVisible();
+  await panel.getByRole("radio", { name: "Approve" }).click();
   await expect(
     panel.getByRole("button", { name: "Fix and approve" }),
   ).toBeDisabled();
