@@ -9139,6 +9139,10 @@ test("Load TTML offers Spicy Lyrics' load modes, reset and saved lyrics", async 
     "Session Load",
     "Submit to Lyssna",
   ]);
+  const reviewer = dialog.getByRole("combobox", { name: /TTML Reviewer/ });
+  await expect(reviewer).toHaveValue("off");
+  await reviewer.selectOption("temporary");
+  await expect(reviewer).toHaveValue("temporary");
   // Shown to everyone, but only Uploaders and above can use it.
   const submit = dialog.getByRole("button", { name: /Submit to Lyssna/ });
   await expect(submit).toBeDisabled();

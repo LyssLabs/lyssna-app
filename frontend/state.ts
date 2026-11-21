@@ -208,6 +208,7 @@ export const emptyState: AppState = {
     lyrics_background: "animated",
     lyrics_background_blur: 0,
     lyrics_background_brightness: 100,
+    ttml_reviewer: "off",
     lyrics_pinned_footer: "off",
     fullscreen_always_show: "none",
     fullscreen_volume: "off",

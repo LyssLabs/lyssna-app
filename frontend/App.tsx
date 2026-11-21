@@ -244,6 +244,11 @@ const PUBLISHING_ROLES = ["uploader", "reviewer", "moderator", "admin"];
 import type { BulkLyric } from "./bulk-ttml";
 import { TtmlCreator } from "./ttml-creator";
 import { dismissDraft, draftPreview } from "./ttml-working";
+import {
+  clearTemporaryLoad,
+  markTemporaryLoad,
+  reviewerSettings,
+} from "./ttml-reviewer";
 import { libraryTree, type LibraryEntry } from "./library-tree";
 import {
   entryAdded,
@@ -669,6 +674,16 @@ function App() {
   const draftLyrics = useMemo(
     () => (center === "lyrics" ? draftPreview(playingUri) : null),
     [center, playingUri, draftDismissed],
+  );
+  const lyricsSource = (draftLyrics ?? state.lyrics)?.source;
+  const lyricsSettings = useMemo(
+    () =>
+      reviewerSettings(state.settings, playingUri, lyricsSource, !!draftLyrics),
+    [state.settings, playingUri, lyricsSource, draftLyrics],
+  );
+  const draftSettings = useMemo(
+    () => reviewerSettings(state.settings, playingUri, undefined, true),
+    [state.settings, playingUri],
   );
   // The Lyssna settings window and the tab it opened on.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
@@ -1668,6 +1683,8 @@ function App() {
       },
     );
     if (!sent) return;
+    if (mode === "persistent") clearTemporaryLoad(state.playback.item?.uri);
+    else markTemporaryLoad(state.playback.item?.uri);
     setTtmlOpen(false);
     notify(
       mode === "persistent"
@@ -3956,7 +3973,13 @@ function App() {
               onClose={() => setCenter("lyrics")}
               renderPreview={(lyrics, live) => (
                 <LyricsPage
-                  state={{ ...state, ...live, lyrics, lyric_error: "" }}
+                  state={{
+                    ...state,
+                    ...live,
+                    settings: draftSettings,
+                    lyrics,
+                    lyric_error: "",
+                  }}
                   onCanvasActive={setCanvasInLyrics}
                   immersive={immersive}
                   onPlayer={play}
@@ -3996,8 +4019,15 @@ function App() {
             <LyricsPage
               state={
                 draftLyrics
-                  ? { ...state, lyrics: draftLyrics, lyric_error: "" }
-                  : state
+                  ? {
+                      ...state,
+                      settings: lyricsSettings,
+                      lyrics: draftLyrics,
+                      lyric_error: "",
+                    }
+                  : lyricsSettings === state.settings
+                    ? state
+                    : { ...state, settings: lyricsSettings }
               }
               onCanvasActive={setCanvasInLyrics}
               immersive={immersive}
@@ -6278,6 +6308,8 @@ function App() {
           initialView={ttmlOpen}
           song={state.playback.item?.name ?? "No song playing"}
           onLoad={(file, mode) => importFile(file, mode)}
+          reviewer={state.settings.ttml_reviewer ?? "off"}
+          onReviewer={(ttml_reviewer) => updateSettings({ ttml_reviewer })}
           onSubmit={(file) =>
             state.playback.item
               ? submitToLyssna(file, state.playback.item)
@@ -6295,6 +6327,7 @@ function App() {
                     : null
           }
           onReset={() => {
+            clearTemporaryLoad(state.playback.item?.uri);
             void call("reset_lyrics").then(() =>
               notify("Imported lyrics cleared for this song."),
             );

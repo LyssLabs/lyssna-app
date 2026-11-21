@@ -16,6 +16,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import type { ReviewerMode } from "./ttml-reviewer";
 
 export type LoadMode = "persistent" | "temporary" | "session";
 
@@ -74,7 +75,11 @@ export function LoadTtml({
   onSubmit,
   submitBlocked,
   initialView = "load",
+  reviewer,
+  onReviewer,
 }: {
+  reviewer: ReviewerMode;
+  onReviewer: (mode: ReviewerMode) => void;
   onSubmit: (file: File) => Promise<void>;
   /** Why "Submit to Lyssna" is greyed out, or null when it can be used. */
   submitBlocked: string | null;
@@ -225,6 +230,27 @@ export function LoadTtml({
                 </span>
               </button>
             </div>
+            <label className="load-ttml-reviewer">
+              <span>
+                <strong>TTML Reviewer</strong>
+                <small>
+                  Show loaded lyrics with default timing and effects while you
+                  check them.
+                </small>
+              </span>
+              <select
+                className="settings-select"
+                value={reviewer}
+                disabled={busy}
+                onChange={(event) =>
+                  onReviewer(event.currentTarget.value as ReviewerMode)
+                }
+              >
+                <option value="off">Off</option>
+                <option value="temporary">Temporary loads</option>
+                <option value="always">All loaded TTML</option>
+              </select>
+            </label>
             <input
               ref={submitInput}
               type="file"
