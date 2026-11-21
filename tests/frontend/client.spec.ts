@@ -16421,6 +16421,48 @@ test("Local Files sits in Your Library with its song count", async ({
     .toContain("local");
 });
 
+test("Now playing asks whether you follow its artist and says Following", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await startClient(page);
+  await page.evaluate(
+    ({ track, playback }) => {
+      const host = (window as any).__clientTest;
+      host.emit({
+        type: "playback",
+        playback: { ...playback, item: track, is_playing: true },
+        observed_at: Date.now(),
+        changed: true,
+      });
+      host.emit({
+        type: "playing_details",
+        uri: track.uri,
+        details: { artists: [track.artists[0]], queue: [], queued: 0 },
+      });
+    },
+    { track, playback: emptyState.playback },
+  );
+  const card = page.locator(".now-playing .artist-card");
+  await expect(card.getByRole("button", { name: "Follow" })).toBeVisible();
+  const asked = await page.evaluate(() =>
+    (window as any).__clientTest.commands
+      .filter((entry: any) => entry.command === "saved_status")
+      .flatMap((entry: any) => entry.args.uris),
+  );
+  const uri = track.artists[0].uri ?? `spotify:artist:${track.artists[0].id}`;
+  expect(asked).toContain(uri);
+  await page.evaluate(
+    (uri) =>
+      (window as any).__clientTest.emit({
+        type: "saved_many",
+        items: { [uri]: true },
+      }),
+    uri,
+  );
+  await expect(card.getByRole("button", { name: "Following" })).toBeVisible();
+});
+
 test("a local song has no About the artist card", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await startClient(page);

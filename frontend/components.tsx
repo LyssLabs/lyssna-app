@@ -2853,6 +2853,22 @@ export function NowPlaying({
     track,
     state.settings.animated_covers !== false && !state.settings.reduce_motion,
   );
+  // Follow buttons read the library's answer, which only arrives when asked.
+  const followable = [
+    ...(artist ? [artist] : []),
+    ...(track && !track.is_local
+      ? trackCredits(track).map((credit) => credit.artist)
+      : []),
+  ]
+    .map((each) =>
+      !each ? "" : (each.uri ?? (each.id ? `spotify:artist:${each.id}` : "")),
+    )
+    .filter(Boolean)
+    .join("|");
+  useEffect(() => {
+    if (followable)
+      void rpc("saved_status", { uris: followable.split("|") }).catch(() => {});
+  }, [followable]);
   if (state.narrating)
     return (
       <aside className="now-playing dj-view">
