@@ -16,6 +16,8 @@ export interface CreatorLine {
   romanization?: string;
   /** A space typed after the last word, waiting for the next one. */
   spaceAfter?: boolean;
+  /** The song section starting at this line, like "Chorus". Optional. */
+  part?: string;
 }
 export interface Cursor {
   line: number;
@@ -162,9 +164,80 @@ export function geniusBackgrounds(text: string): string {
     .join("\n");
 }
 
+/**
+ * The section a "[Chorus]" style line names, as Genius writes them:
+ * "[Verse 2: Someone]" names a Verse. Undefined for any other line, and
+ * for "[]", so brackets never become lyrics either way.
+ */
+export function sectionName(text: string): string | undefined {
+  const match = /^\[([^\]]*)\]$/.exec(text.trim());
+  if (!match) return;
+  const name = match[1]
+    .split(":")[0]
+    .replace(/\s+\d+$/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 40);
+  return name || undefined;
+}
+const isSectionLine = (text: string) => /^\[[^\]]*\]$/.test(text.trim());
+
+const plain = (text: string) =>
+  text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const lineWords = (line: CreatorLine) =>
+  plain(line.units.map((unit) => unit.text).join(""));
+const LOOK_AHEAD = 12;
+
+/**
+ * Puts the sections named in `text` ("[Chorus]" lines, as Genius writes
+ * them) on the matching lines of a synced draft. Words and timings stay
+ * as they are; lines are matched by their words, in order. A section
+ * whose first line has no match starts at the next line that does.
+ * Undefined when no section could be placed.
+ */
+export function applySections(
+  lines: CreatorLine[],
+  text: string,
+): CreatorLine[] | undefined {
+  const named = parseText(geniusBackgrounds(text)).filter(
+    (line) => !line.background,
+  );
+  const parts = new Map<number, string>();
+  let from = 0;
+  let pending: string | undefined;
+  for (const line of named) {
+    pending = line.part ?? pending;
+    const want = lineWords(line);
+    if (!want) continue;
+    let at = -1;
+    for (let index = from; index < lines.length; index++) {
+      if (index >= from + LOOK_AHEAD) break;
+      if (!lines[index].background && lineWords(lines[index]) === want) {
+        at = index;
+        break;
+      }
+    }
+    if (at < 0) continue;
+    if (pending) parts.set(at, pending);
+    pending = undefined;
+    from = at + 1;
+  }
+  if (!parts.size) return;
+  return lines.map((line, index) => {
+    const { part: _, ...rest } = line;
+    const part = parts.get(index);
+    return part ? { ...rest, part } : rest;
+  });
+}
+
 export function parseText(text: string): CreatorLine[] {
   const lines: CreatorLine[] = [];
+  let part: string | undefined;
   for (const raw of text.split(/\r?\n/)) {
+    if (isSectionLine(raw)) {
+      part = sectionName(raw);
+      continue;
+    }
     let body = raw.trim();
     let opposite = false;
     if (body.toLowerCase().startsWith(OPPOSITE_PREFIX)) {
@@ -192,7 +265,10 @@ export function parseText(text: string): CreatorLine[] {
           }),
         );
     }
-    if (units.length) lines.push({ units, background, opposite });
+    if (units.length) {
+      lines.push({ units, background, opposite, ...(part && { part }) });
+      part = undefined;
+    }
   }
   return lines;
 }
@@ -232,7 +308,8 @@ export function toText(lines: CreatorLine[]): string {
         )
         .join("");
       const wrapped = line.background ? `(${body})` : body;
-      return line.opposite ? `${OPPOSITE_PREFIX} ${wrapped}` : wrapped;
+      const text = line.opposite ? `${OPPOSITE_PREFIX} ${wrapped}` : wrapped;
+      return line.part ? `[${line.part}]\n${text}` : text;
     })
     .join("\n");
 }
@@ -1326,46 +1403,72 @@ export function toTtml(
   meta: SongMeta,
   entries: MetaEntry[] = defaultMetadata(meta),
 ): string {
-  type Paragraph = { lead?: CreatorLine; backgrounds: CreatorLine[] };
+  type Paragraph = {
+    lead?: CreatorLine;
+    backgrounds: CreatorLine[];
+    part?: string;
+  };
   const paragraphs: Paragraph[] = [];
+  let part: string | undefined;
   for (const line of lines) {
+    if (line.part) part = line.part;
     if (!lineSpan(line, true)) continue;
     const last = paragraphs.at(-1);
-    if (line.background && last) last.backgrounds.push(line);
-    else if (line.background) paragraphs.push({ backgrounds: [line] });
-    else paragraphs.push({ lead: line, backgrounds: [] });
+    if (line.background && last && !part) last.backgrounds.push(line);
+    else if (line.background) paragraphs.push({ backgrounds: [line], part });
+    else paragraphs.push({ lead: line, backgrounds: [], part });
+    part = undefined;
   }
   const opposite = lines.some((line) => line.opposite);
   let end = 0;
   const readings: string[] = [];
-  const body = paragraphs
-    .map((paragraph, index) => {
-      const all = [paragraph.lead, ...paragraph.backgrounds].filter(
-        (line): line is CreatorLine => !!line,
+  const sections: {
+    part?: string;
+    begin: number;
+    end: number;
+    ps: string[];
+  }[] = [];
+  paragraphs.forEach((paragraph, index) => {
+    const all = [paragraph.lead, ...paragraph.backgrounds].filter(
+      (line): line is CreatorLine => !!line,
+    );
+    const spansOf = all.map((line) => lineSpan(line, true)!);
+    const begin = Math.min(...spansOf.map((span) => span.start));
+    const finish = Math.max(...spansOf.map((span) => span.end));
+    end = Math.max(end, finish);
+    const agent = (paragraph.lead ?? paragraph.backgrounds[0]).opposite
+      ? "v2"
+      : "v1";
+    if (paragraph.lead && hasWordRoman(paragraph.lead))
+      readings.push(
+        `<text for="L${index + 1}">${spans(paragraph.lead, true)}</text>`,
       );
-      const spansOf = all.map((line) => lineSpan(line, true)!);
-      const begin = Math.min(...spansOf.map((span) => span.start));
-      const finish = Math.max(...spansOf.map((span) => span.end));
-      end = Math.max(end, finish);
-      const agent = (paragraph.lead ?? paragraph.backgrounds[0]).opposite
-        ? "v2"
-        : "v1";
-      if (paragraph.lead && hasWordRoman(paragraph.lead))
-        readings.push(
-          `<text for="L${index + 1}">${spans(paragraph.lead, true)}</text>`,
-        );
-      const lead = paragraph.lead
-        ? spans(paragraph.lead) + extras(paragraph.lead)
-        : "";
-      const backgrounds = paragraph.backgrounds
-        .map((line) => {
-          const span = lineSpan(line, true)!;
-          return `<span ttm:role="x-bg" begin="${formatTime(span.start)}" end="${formatTime(span.end)}">${spans(line)}</span>`;
-        })
-        .join("");
-      return `<p begin="${formatTime(begin)}" end="${formatTime(finish)}" ttm:agent="${agent}" itunes:key="L${index + 1}">${lead}${backgrounds}</p>`;
-    })
-    .join("");
+    const lead = paragraph.lead
+      ? spans(paragraph.lead) + extras(paragraph.lead)
+      : "";
+    const backgrounds = paragraph.backgrounds
+      .map((line) => {
+        const span = lineSpan(line, true)!;
+        return `<span ttm:role="x-bg" begin="${formatTime(span.start)}" end="${formatTime(span.end)}">${spans(line)}</span>`;
+      })
+      .join("");
+    const p = `<p begin="${formatTime(begin)}" end="${formatTime(finish)}" ttm:agent="${agent}" itunes:key="L${index + 1}">${lead}${backgrounds}</p>`;
+    const section = sections.at(-1);
+    if (!section || paragraph.part)
+      sections.push({ part: paragraph.part, begin, end: finish, ps: [p] });
+    else {
+      section.end = Math.max(section.end, finish);
+      section.ps.push(p);
+    }
+  });
+  const body = sections.length
+    ? sections
+        .map(
+          (section) =>
+            `<div begin="${formatTime(section.begin)}" end="${formatTime(section.end)}"${section.part ? ` itunes:song-part="${escape(section.part)}"` : ""}>${section.ps.join("")}</div>`,
+        )
+        .join("")
+    : `<div begin="${formatTime(0)}" end="${formatTime(0)}"></div>`;
   const songwriters = filled(
     entries
       .filter((entry) => entry.key.trim() === "songwriters")
@@ -1399,7 +1502,7 @@ export function toTtml(
       : "",
   ].join("");
   const duration = Math.max(end, meta.durationMs ?? 0);
-  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}"><div begin="${formatTime(paragraphs.length ? Math.min(...paragraphs.map((p) => lineSpan(p.lead ?? p.backgrounds[0], true)!.start)) : 0)}" end="${formatTime(end)}">${body}</div></body></tt>`;
+  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}">${body}</body></tt>`;
 }
 
 export function fileName(meta: SongMeta): string {

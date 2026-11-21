@@ -45,6 +45,8 @@ import {
   toText,
   toTtml,
   toggleJoin,
+  sectionName,
+  applySections,
 } from "./ttml-creator-model";
 import type { CreatorLine } from "./ttml-creator-model";
 import { romanizeLyrics } from "./romanization";
@@ -97,6 +99,49 @@ describe("TTML Creator model", () => {
     let lines = markEnd(parseText("word"), { line: 0, unit: 0 }, 900).lines;
     lines = markStart(lines, { line: 0, unit: 0 }, 1200);
     expect(lines[0].units[0]).toMatchObject({ start: 1200, end: undefined });
+  });
+
+  it("reads [Section] lines as optional section names, never lyrics", () => {
+    const lines = parseText(
+      "[Verse 2: Someone]\none\n[]\ntwo\n[Chorus]\n(oh)\nthree",
+    );
+    expect(
+      lines.map((line) => line.units.map((unit) => unit.text).join(" ")),
+    ).toEqual(["one", "two", "oh", "three"]);
+    expect(lines.map((line) => line.part)).toEqual([
+      "Verse",
+      undefined,
+      "Chorus",
+      undefined,
+    ]);
+    expect(sectionName("[]")).toBeUndefined();
+    expect(toText(lines)).toBe("[Verse]\none\ntwo\n[Chorus]\n(oh)\nthree");
+  });
+
+  it("exports each section as its own tagged div, untagged songs as one", () => {
+    const tagged = toTtml(timeAll("[Verse]\none\ntwo\n[Chorus]\nthree"), meta);
+    expect(tagged.match(/<div [^>]*>/g)).toHaveLength(2);
+    expect(tagged).toContain('itunes:song-part="Verse"');
+    expect(tagged).toContain('itunes:song-part="Chorus"');
+    expect(tagged).not.toContain("[Chorus]");
+    const plain = toTtml(timeAll("one\ntwo"), meta);
+    expect(plain.match(/<div [^>]*>/g)).toHaveLength(1);
+    expect(plain).not.toContain("song-part");
+  });
+
+  it("takes sections from Genius onto synced lines and keeps timings", () => {
+    const lines = timeAll("Hello there\nGeneral Kenobi\nYou are bold");
+    const tagged = applySections(
+      lines,
+      "[Intro]\nHello there!\n[Verse 1]\nSomething else\nGeneral Kenobi\n[Chorus]\nYou are bold",
+    )!;
+    expect(tagged.map((line) => line.part)).toEqual([
+      "Intro",
+      "Verse",
+      "Chorus",
+    ]);
+    expect(tagged[1].units[0].start).toBe(lines[1].units[0].start);
+    expect(applySections(lines, "[Chorus]\nnothing alike")).toBeUndefined();
   });
 
   it("editing text keeps timings of unchanged lines", () => {

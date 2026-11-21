@@ -96,6 +96,7 @@ import {
   setUnitRoman,
   hasWordRoman,
   parseText,
+  applySections,
   previousCursor,
   problems,
   progress,
@@ -723,15 +724,68 @@ export function TtmlCreator({
       )
       .finally(() => setFetching(false));
   };
-  const geniusButton = (
-    <button
-      onClick={fromGenius}
-      disabled={!track || fetching}
-      title="Plain lyrics from Genius, without timing. Sends the title and artist to Genius."
-    >
-      <Globe size={15} />
-      {fetching ? "Getting lyrics…" : "Lyrics from Genius"}
-    </button>
+  const sectionsFromGenius = () => {
+    if (!track || fetching) return;
+    const asked = track.uri;
+    setFetching(true);
+    rpc<string>("genius_lyrics", { track })
+      .then((found) => {
+        if (geniusFor.current !== asked) return;
+        const tagged = applySections(lines, found);
+        if (!tagged) {
+          notify("Genius has no sections that match these lines.", true);
+          return;
+        }
+        setLines(tagged);
+        const count = tagged.filter((line) => line.part).length;
+        notify(
+          `Added ${count} ${count === 1 ? "section" : "sections"} from Genius.`,
+        );
+      })
+      .catch((error) =>
+        notify(`Couldn't get sections from Genius: ${error}`, true),
+      )
+      .finally(() => setFetching(false));
+  };
+  const [geniusOpen, setGeniusOpen] = useState(false);
+  const geniusMenu = (
+    <span className="ttml-export ttml-genius">
+      <button
+        onClick={() => setGeniusOpen(!geniusOpen)}
+        disabled={!track || fetching}
+        aria-expanded={geniusOpen}
+        aria-busy={fetching}
+        title="Lyrics or sections from Genius. Sends the title and artist to Genius."
+      >
+        <Globe size={15} />
+        {fetching ? "Asking Genius…" : "Genius"}
+      </button>
+      {geniusOpen && (
+        <div className="ttml-meta-menu" role="menu">
+          <button
+            role="menuitem"
+            title="Plain lyrics, without timing, into the text editor"
+            onClick={() => {
+              setGeniusOpen(false);
+              fromGenius();
+            }}
+          >
+            Lyrics from Genius
+          </button>
+          <button
+            role="menuitem"
+            disabled={!lines.length}
+            title="Names sections like Chorus and Bridge on these lines and keeps every timing"
+            onClick={() => {
+              setGeniusOpen(false);
+              sectionsFromGenius();
+            }}
+          >
+            Sections from Genius
+          </button>
+        </div>
+      )}
+    </span>
   );
   const [previewOn, setPreviewOn] = useState(showsPreview);
   useEffect(() => {
@@ -2380,6 +2434,7 @@ export function TtmlCreator({
             <Upload size={15} />
           </button>
           {importInput}
+          {geniusMenu}
           <span className="ttml-export">
             <button
               onClick={() => setExporting(!exporting)}
@@ -2481,7 +2536,8 @@ export function TtmlCreator({
             One lyric line per line. Split a word into syllables with{" "}
             <kbd>|</kbd>, like <code>beau|ti|ful</code>. Wrap a background vocal
             in parentheses. Start a line with <code>v2:</code> for the second
-            singer.
+            singer. Optionally, name a section on its own line, like{" "}
+            <code>[Chorus]</code>; it is never sung as a lyric.
           </p>
           <textarea
             aria-label="Lyrics text"
@@ -2510,7 +2566,6 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
-                {geniusButton}
               </>
             )}
             <button
@@ -2640,7 +2695,6 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
-                {geniusButton}
                 <button onClick={openText}>
                   <Type size={15} />
                   Edit as text
@@ -2758,7 +2812,6 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
-                {geniusButton}
                 <button onClick={openText}>
                   <Type size={15} />
                   Edit as text
@@ -2863,492 +2916,504 @@ export function TtmlCreator({
                 />
               );
               return (
-                <div
-                  key={lineIndex}
-                  data-line={lineIndex}
-                  {...pickProps(lineIndex)}
-                  onContextMenu={(event) => openLineMenu(event, lineIndex)}
-                  className={`ttml-card ttml-line${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
-                  onClick={(event) => {
-                    const target = event.target as Element;
-                    if (
-                      cursor.line !== lineIndex &&
-                      !target.closest("button, input")
-                    ) {
-                      clickedLine.current = true;
-                      setCursor(
-                        clampCursor(lines, { line: lineIndex, unit: 0 }),
-                      );
+                <Fragment key={lineIndex}>
+                  {line.part && <p className="ttml-part">{line.part}</p>}
+                  <div
+                    data-line={lineIndex}
+                    {...pickProps(lineIndex)}
+                    onContextMenu={(event) => openLineMenu(event, lineIndex)}
+                    className={`ttml-card ttml-line${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
+                    onClick={(event) => {
+                      const target = event.target as Element;
+                      if (
+                        cursor.line !== lineIndex &&
+                        !target.closest("button, input")
+                      ) {
+                        clickedLine.current = true;
+                        setCursor(
+                          clampCursor(lines, { line: lineIndex, unit: 0 }),
+                        );
+                      }
+                      if (
+                        target.closest(".ttml-card-number") &&
+                        !event.shiftKey &&
+                        !event.ctrlKey &&
+                        !event.metaKey
+                      ) {
+                        pickedFrom.current = lineIndex;
+                        setPicked(new Set([lineIndex]));
+                      }
+                    }}
+                    onPointerDown={(event) => {
+                      event.currentTarget.draggable = !(
+                        event.target as Element
+                      ).closest("button, input");
+                    }}
+                    onDragStart={(event) =>
+                      event.target === event.currentTarget &&
+                      startDrag(event, { kind: "line", line: lineIndex })
                     }
-                    if (
-                      target.closest(".ttml-card-number") &&
-                      !event.shiftKey &&
-                      !event.ctrlKey &&
-                      !event.metaKey
-                    ) {
-                      pickedFrom.current = lineIndex;
-                      setPicked(new Set([lineIndex]));
-                    }
-                  }}
-                  onPointerDown={(event) => {
-                    event.currentTarget.draggable = !(
-                      event.target as Element
-                    ).closest("button, input");
-                  }}
-                  onDragStart={(event) =>
-                    event.target === event.currentTarget &&
-                    startDrag(event, { kind: "line", line: lineIndex })
-                  }
-                  onDragOver={(event) => {
-                    if (drag?.kind === "line")
-                      over(
-                        event,
-                        `line:${lineIndex}:${firstHalf(event, true) ? "before" : "after"}`,
-                      );
-                    else if (drag?.kind === "word")
-                      over(event, `line:${lineIndex}:end`);
-                  }}
-                  onDrop={(event) => {
-                    if (drag?.kind === "line")
-                      land(
-                        event,
-                        moveLine(
-                          lines,
-                          drag.line,
-                          firstHalf(event, true) ? lineIndex : lineIndex + 1,
-                        ),
-                      );
-                    else if (drag?.kind === "word")
-                      land(
-                        event,
-                        moveDragged(drag, {
-                          line: lineIndex,
-                          unit: line.units.length,
-                        }),
-                      );
-                  }}
-                >
-                  <span className="ttml-card-number">{lineIndex + 1}</span>
-                  {writing ? (
-                    <div className="ttml-card-body">
-                      <div className="ttml-chips">
-                        {line.units.map((unit, unitIndex) => {
-                          const at = { line: lineIndex, unit: unitIndex };
-                          const editing =
-                            inline?.line === lineIndex &&
-                            inline.unit === unitIndex;
-                          const chosen =
-                            (cursor.line === lineIndex &&
-                              cursor.unit === unitIndex &&
-                              !spaces.length) ||
-                            inGroup(at);
-                          return (
-                            <Fragment key={unitIndex}>
-                              {unitIndex > 0 && !unit.joined && (
-                                <button
-                                  className={`ttml-space${isSpace(at) ? " chosen" : ""}${dropClass(`gap:${lineIndex}:${unitIndex}`)}`}
-                                  draggable
-                                  onClick={(event) => pickSpace(event, at)}
-                                  onDragStart={(event) => {
-                                    // A picked space drags the picked words with it.
-                                    const words = pickedWords();
-                                    if (isSpace(at) && words.length)
-                                      startDrag(event, {
-                                        kind: "word",
-                                        at: words[0],
-                                        ...(words.length > 1 && {
-                                          group: words,
-                                        }),
-                                      });
-                                    else
-                                      startDrag(event, { kind: "space", at });
-                                  }}
-                                  onDragOver={(event) =>
-                                    drag?.kind === "word" &&
-                                    over(
-                                      event,
-                                      `gap:${lineIndex}:${unitIndex}:word`,
-                                    )
-                                  }
-                                  onDrop={(event) =>
-                                    drag?.kind === "word" &&
-                                    land(event, moveDragged(drag, at))
-                                  }
-                                >
-                                  Space
-                                </button>
-                              )}
-                              <span
-                                className={
-                                  wordRoman
-                                    ? "ttml-chip-stack"
-                                    : "ttml-chip-plain"
-                                }
-                              >
-                                {editing ? (
-                                  <input
-                                    className="ttml-chip-edit"
-                                    aria-label={`Edit ${unit.text}`}
-                                    autoFocus
-                                    defaultValue={unit.text}
-                                    size={Math.max(2, unit.text.length + 1)}
-                                    spellCheck={false}
-                                    onFocus={(event) =>
-                                      event.currentTarget.select()
-                                    }
-                                    onInput={(event) => {
-                                      const box = event.currentTarget;
-                                      box.size = Math.max(
-                                        2,
-                                        box.value.length + 1,
-                                      );
-                                    }}
-                                    onBlur={(event) => {
-                                      const value =
-                                        event.currentTarget.value.trim();
-                                      setInline(null);
-                                      if (value !== unit.text)
-                                        commitWord(at, value);
-                                    }}
-                                    onKeyDown={(event) => {
-                                      event.stopPropagation();
-                                      if (event.key === "Escape") {
-                                        event.preventDefault();
-                                        event.currentTarget.value = unit.text;
-                                        event.currentTarget.blur();
-                                      } else if (event.key === "Enter") {
-                                        event.preventDefault();
-                                        event.currentTarget.blur();
-                                      }
-                                    }}
-                                  />
-                                ) : (
+                    onDragOver={(event) => {
+                      if (drag?.kind === "line")
+                        over(
+                          event,
+                          `line:${lineIndex}:${firstHalf(event, true) ? "before" : "after"}`,
+                        );
+                      else if (drag?.kind === "word")
+                        over(event, `line:${lineIndex}:end`);
+                    }}
+                    onDrop={(event) => {
+                      if (drag?.kind === "line")
+                        land(
+                          event,
+                          moveLine(
+                            lines,
+                            drag.line,
+                            firstHalf(event, true) ? lineIndex : lineIndex + 1,
+                          ),
+                        );
+                      else if (drag?.kind === "word")
+                        land(
+                          event,
+                          moveDragged(drag, {
+                            line: lineIndex,
+                            unit: line.units.length,
+                          }),
+                        );
+                    }}
+                  >
+                    <span className="ttml-card-number">{lineIndex + 1}</span>
+                    {writing ? (
+                      <div className="ttml-card-body">
+                        <div className="ttml-chips">
+                          {line.units.map((unit, unitIndex) => {
+                            const at = { line: lineIndex, unit: unitIndex };
+                            const editing =
+                              inline?.line === lineIndex &&
+                              inline.unit === unitIndex;
+                            const chosen =
+                              (cursor.line === lineIndex &&
+                                cursor.unit === unitIndex &&
+                                !spaces.length) ||
+                              inGroup(at);
+                            return (
+                              <Fragment key={unitIndex}>
+                                {unitIndex > 0 && !unit.joined && (
                                   <button
-                                    className={`ttml-chip${unit.joined ? " joined" : ""}${chosen ? " chosen" : ""}${drag?.kind === "word" && ((drag.at.line === lineIndex && drag.at.unit === unitIndex) || (drag.group && inGroup(at))) ? " dragging" : ""}${dropClass(`unit:${lineIndex}:${unitIndex}`)}`}
-                                    title={
-                                      unit.joined
-                                        ? "Syllable. Double-click to edit; right-click to make it its own word."
-                                        : "Double-click to edit; drag to move"
-                                    }
+                                    className={`ttml-space${isSpace(at) ? " chosen" : ""}${dropClass(`gap:${lineIndex}:${unitIndex}`)}`}
                                     draggable
-                                    onDragStart={(event) =>
-                                      dragWords(event, at)
-                                    }
-                                    onDragOver={(event) => {
-                                      if (drag?.kind === "word")
-                                        over(
-                                          event,
-                                          `unit:${lineIndex}:${unitIndex}:${firstHalf(event, false) ? "before" : "after"}`,
-                                        );
-                                      else if (
-                                        drag?.kind === "space" &&
-                                        unit.joined &&
-                                        drag.at.line === lineIndex
-                                      )
-                                        over(
-                                          event,
-                                          `unit:${lineIndex}:${unitIndex}:space`,
-                                        );
-                                    }}
-                                    onDrop={(event) => {
-                                      if (drag?.kind === "word") {
-                                        const word = wordBounds(
-                                          line.units,
-                                          unitIndex,
-                                        );
-                                        land(
-                                          event,
-                                          moveDragged(drag, {
-                                            line: lineIndex,
-                                            unit: firstHalf(event, false)
-                                              ? word.start
-                                              : word.end,
+                                    onClick={(event) => pickSpace(event, at)}
+                                    onDragStart={(event) => {
+                                      // A picked space drags the picked words with it.
+                                      const words = pickedWords();
+                                      if (isSpace(at) && words.length)
+                                        startDrag(event, {
+                                          kind: "word",
+                                          at: words[0],
+                                          ...(words.length > 1 && {
+                                            group: words,
                                           }),
-                                        );
-                                      } else if (
-                                        drag?.kind === "space" &&
-                                        unit.joined
+                                        });
+                                      else
+                                        startDrag(event, { kind: "space", at });
+                                    }}
+                                    onDragOver={(event) =>
+                                      drag?.kind === "word" &&
+                                      over(
+                                        event,
+                                        `gap:${lineIndex}:${unitIndex}:word`,
                                       )
-                                        land(
-                                          event,
-                                          moveSpace(lines, drag.at, at),
-                                        );
-                                    }}
-                                    onClick={(event) => {
-                                      if (
-                                        event.shiftKey ||
-                                        event.ctrlKey ||
-                                        event.metaKey
-                                      )
-                                        return pickWord(at, event.shiftKey);
-                                      setGroup([]);
-                                      setSpaces([]);
-                                      setPicked(new Set());
-                                      setCursor(at);
-                                    }}
-                                    onDoubleClick={() => {
-                                      setCursor(at);
-                                      setInline(at);
-                                    }}
-                                    onContextMenu={(event) =>
-                                      openMenu(event, at)
+                                    }
+                                    onDrop={(event) =>
+                                      drag?.kind === "word" &&
+                                      land(event, moveDragged(drag, at))
                                     }
                                   >
-                                    {unit.text}
+                                    Space
                                   </button>
                                 )}
-                                {wordRoman && (
-                                  <input
-                                    className="ttml-roman"
-                                    key={unit.roman ?? ""}
-                                    aria-label={`Romanization of ${unit.text}`}
-                                    defaultValue={unit.roman ?? ""}
-                                    placeholder="–"
-                                    spellCheck={false}
-                                    onBlur={(event) =>
-                                      event.target.value !==
-                                        (unit.roman ?? "") &&
-                                      setLines(
-                                        setUnitRoman(
-                                          lines,
-                                          at,
-                                          event.target.value,
-                                        ),
-                                      )
-                                    }
-                                    onKeyDown={(event) =>
-                                      event.key === "Enter" &&
-                                      event.currentTarget.blur()
-                                    }
-                                  />
-                                )}
-                              </span>
-                            </Fragment>
-                          );
-                        })}
-                        {line.spaceAfter && (
-                          <button
-                            className={`ttml-space${isSpace({ line: lineIndex, unit: line.units.length }) ? " chosen" : ""}`}
-                            onClick={(event) =>
-                              pickSpace(event, {
-                                line: lineIndex,
-                                unit: line.units.length,
-                              })
-                            }
-                          >
-                            Space
-                          </button>
+                                <span
+                                  className={
+                                    wordRoman
+                                      ? "ttml-chip-stack"
+                                      : "ttml-chip-plain"
+                                  }
+                                >
+                                  {editing ? (
+                                    <input
+                                      className="ttml-chip-edit"
+                                      aria-label={`Edit ${unit.text}`}
+                                      autoFocus
+                                      defaultValue={unit.text}
+                                      size={Math.max(2, unit.text.length + 1)}
+                                      spellCheck={false}
+                                      onFocus={(event) =>
+                                        event.currentTarget.select()
+                                      }
+                                      onInput={(event) => {
+                                        const box = event.currentTarget;
+                                        box.size = Math.max(
+                                          2,
+                                          box.value.length + 1,
+                                        );
+                                      }}
+                                      onBlur={(event) => {
+                                        const value =
+                                          event.currentTarget.value.trim();
+                                        setInline(null);
+                                        if (value !== unit.text)
+                                          commitWord(at, value);
+                                      }}
+                                      onKeyDown={(event) => {
+                                        event.stopPropagation();
+                                        if (event.key === "Escape") {
+                                          event.preventDefault();
+                                          event.currentTarget.value = unit.text;
+                                          event.currentTarget.blur();
+                                        } else if (event.key === "Enter") {
+                                          event.preventDefault();
+                                          event.currentTarget.blur();
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <button
+                                      className={`ttml-chip${unit.joined ? " joined" : ""}${chosen ? " chosen" : ""}${drag?.kind === "word" && ((drag.at.line === lineIndex && drag.at.unit === unitIndex) || (drag.group && inGroup(at))) ? " dragging" : ""}${dropClass(`unit:${lineIndex}:${unitIndex}`)}`}
+                                      title={
+                                        unit.joined
+                                          ? "Syllable. Double-click to edit; right-click to make it its own word."
+                                          : "Double-click to edit; drag to move"
+                                      }
+                                      draggable
+                                      onDragStart={(event) =>
+                                        dragWords(event, at)
+                                      }
+                                      onDragOver={(event) => {
+                                        if (drag?.kind === "word")
+                                          over(
+                                            event,
+                                            `unit:${lineIndex}:${unitIndex}:${firstHalf(event, false) ? "before" : "after"}`,
+                                          );
+                                        else if (
+                                          drag?.kind === "space" &&
+                                          unit.joined &&
+                                          drag.at.line === lineIndex
+                                        )
+                                          over(
+                                            event,
+                                            `unit:${lineIndex}:${unitIndex}:space`,
+                                          );
+                                      }}
+                                      onDrop={(event) => {
+                                        if (drag?.kind === "word") {
+                                          const word = wordBounds(
+                                            line.units,
+                                            unitIndex,
+                                          );
+                                          land(
+                                            event,
+                                            moveDragged(drag, {
+                                              line: lineIndex,
+                                              unit: firstHalf(event, false)
+                                                ? word.start
+                                                : word.end,
+                                            }),
+                                          );
+                                        } else if (
+                                          drag?.kind === "space" &&
+                                          unit.joined
+                                        )
+                                          land(
+                                            event,
+                                            moveSpace(lines, drag.at, at),
+                                          );
+                                      }}
+                                      onClick={(event) => {
+                                        if (
+                                          event.shiftKey ||
+                                          event.ctrlKey ||
+                                          event.metaKey
+                                        )
+                                          return pickWord(at, event.shiftKey);
+                                        setGroup([]);
+                                        setSpaces([]);
+                                        setPicked(new Set());
+                                        setCursor(at);
+                                      }}
+                                      onDoubleClick={() => {
+                                        setCursor(at);
+                                        setInline(at);
+                                      }}
+                                      onContextMenu={(event) =>
+                                        openMenu(event, at)
+                                      }
+                                    >
+                                      {unit.text}
+                                    </button>
+                                  )}
+                                  {wordRoman && (
+                                    <input
+                                      className="ttml-roman"
+                                      key={unit.roman ?? ""}
+                                      aria-label={`Romanization of ${unit.text}`}
+                                      defaultValue={unit.roman ?? ""}
+                                      placeholder="–"
+                                      spellCheck={false}
+                                      onBlur={(event) =>
+                                        event.target.value !==
+                                          (unit.roman ?? "") &&
+                                        setLines(
+                                          setUnitRoman(
+                                            lines,
+                                            at,
+                                            event.target.value,
+                                          ),
+                                        )
+                                      }
+                                      onKeyDown={(event) =>
+                                        event.key === "Enter" &&
+                                        event.currentTarget.blur()
+                                      }
+                                    />
+                                  )}
+                                </span>
+                              </Fragment>
+                            );
+                          })}
+                          {line.spaceAfter && (
+                            <button
+                              className={`ttml-space${isSpace({ line: lineIndex, unit: line.units.length }) ? " chosen" : ""}`}
+                              onClick={(event) =>
+                                pickSpace(event, {
+                                  line: lineIndex,
+                                  unit: line.units.length,
+                                })
+                              }
+                            >
+                              Space
+                            </button>
+                          )}
+                          {adder}
+                        </div>
+                        {(["translation", "romanization"] as const).map(
+                          (key) => (
+                            <label key={key} className="ttml-card-extra">
+                              {key === "translation"
+                                ? "Translation:"
+                                : "Romanization:"}
+                              <input
+                                key={line[key] ?? ""}
+                                defaultValue={line[key] ?? ""}
+                                aria-label={`${key === "translation" ? "Translation" : "Romanization"} of line ${lineIndex + 1}`}
+                                placeholder="None"
+                                spellCheck={false}
+                                onBlur={(event) =>
+                                  event.target.value.trim() !==
+                                    (line[key] ?? "") &&
+                                  setLines(
+                                    setLineText(
+                                      lines,
+                                      lineIndex,
+                                      key,
+                                      event.target.value.trim(),
+                                    ),
+                                  )
+                                }
+                                onKeyDown={(event) =>
+                                  event.key === "Enter" &&
+                                  event.currentTarget.blur()
+                                }
+                              />
+                            </label>
+                          ),
                         )}
-                        {adder}
                       </div>
-                      {(["translation", "romanization"] as const).map((key) => (
-                        <label key={key} className="ttml-card-extra">
-                          {key === "translation"
-                            ? "Translation:"
-                            : "Romanization:"}
-                          <input
-                            key={line[key] ?? ""}
-                            defaultValue={line[key] ?? ""}
-                            aria-label={`${key === "translation" ? "Translation" : "Romanization"} of line ${lineIndex + 1}`}
-                            placeholder="None"
-                            spellCheck={false}
-                            onBlur={(event) =>
-                              event.target.value.trim() !== (line[key] ?? "") &&
-                              setLines(
-                                setLineText(
-                                  lines,
-                                  lineIndex,
-                                  key,
-                                  event.target.value.trim(),
-                                ),
-                              )
-                            }
-                            onKeyDown={(event) =>
-                              event.key === "Enter" &&
-                              event.currentTarget.blur()
-                            }
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="ttml-cells">
-                      {line.units.map((unit, unitIndex) => {
-                        const at = { line: lineIndex, unit: unitIndex };
-                        const selected =
-                          cursor.line === lineIndex &&
-                          cursor.unit === unitIndex;
-                        const live =
-                          (liveWord?.line === lineIndex &&
-                            liveWord.unit === unitIndex) ||
-                          // The lit word's own line keeps its steadied pick.
-                          (liveWord?.line !== lineIndex &&
-                            liveWords.live.has(`${lineIndex}:${unitIndex}`));
-                        if (
-                          inline?.line === lineIndex &&
-                          inline.unit === unitIndex
-                        )
+                    ) : (
+                      <div className="ttml-cells">
+                        {line.units.map((unit, unitIndex) => {
+                          const at = { line: lineIndex, unit: unitIndex };
+                          const selected =
+                            cursor.line === lineIndex &&
+                            cursor.unit === unitIndex;
+                          const live =
+                            (liveWord?.line === lineIndex &&
+                              liveWord.unit === unitIndex) ||
+                            // The lit word's own line keeps its steadied pick.
+                            (liveWord?.line !== lineIndex &&
+                              liveWords.live.has(`${lineIndex}:${unitIndex}`));
+                          if (
+                            inline?.line === lineIndex &&
+                            inline.unit === unitIndex
+                          )
+                            return (
+                              <div
+                                key={unitIndex}
+                                className={`ttml-unit selected editing${unit.joined ? " joined" : ""}${timed(unit) ? " timed" : ""}`}
+                              >
+                                <TimePill ms={unit.start} />
+                                <input
+                                  className="ttml-inline-word"
+                                  aria-label={`Edit ${unit.text}`}
+                                  defaultValue={unit.text}
+                                  size={Math.max(2, unit.text.length + 1)}
+                                  spellCheck={false}
+                                  autoFocus
+                                  onFocus={(event) =>
+                                    event.currentTarget.select()
+                                  }
+                                  onInput={(event) => {
+                                    const box = event.currentTarget;
+                                    box.size = Math.max(
+                                      2,
+                                      box.value.length + 1,
+                                    );
+                                  }}
+                                  onBlur={(event) => {
+                                    const value =
+                                      event.currentTarget.value.trim();
+                                    setInline(null);
+                                    if (value !== unit.text)
+                                      commitWord(at, value);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    event.stopPropagation();
+                                    if (event.key === "Escape") {
+                                      event.preventDefault();
+                                      event.currentTarget.value = unit.text;
+                                      event.currentTarget.blur();
+                                    } else if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      event.currentTarget.blur();
+                                    }
+                                  }}
+                                />
+                                <TimePill ms={unit.end} end />
+                              </div>
+                            );
                           return (
-                            <div
+                            <button
                               key={unitIndex}
-                              className={`ttml-unit selected editing${unit.joined ? " joined" : ""}${timed(unit) ? " timed" : ""}`}
+                              className={`ttml-unit${unit.joined ? " joined" : ""}${timed(unit) ? " timed" : unit.start !== undefined ? " started" : ""}${selected ? " selected" : ""}${live ? " live" : ""}${inGroup(at) ? " chosen" : ""}${drag?.kind === "word" && ((drag.at.line === lineIndex && drag.at.unit === unitIndex) || (drag.group && inGroup(at))) ? " dragging" : ""}${dropClass(`unit:${lineIndex}:${unitIndex}`)}`}
+                              aria-label={unit.text}
+                              title={`Double-click to edit, or to replay while playing, right-click for word options, ${IS_MAC ? "Cmd+E" : "F2"} to edit, drag to move`}
+                              draggable
+                              onDragStart={(event) => dragWords(event, at)}
+                              onDragOver={(event) =>
+                                drag?.kind === "word" &&
+                                over(
+                                  event,
+                                  `unit:${lineIndex}:${unitIndex}:${firstHalf(event, false) ? "before" : "after"}`,
+                                )
+                              }
+                              onDrop={(event) => {
+                                if (drag?.kind !== "word") return;
+                                land(
+                                  event,
+                                  moveDragged(drag, {
+                                    line: lineIndex,
+                                    unit: firstHalf(event, false)
+                                      ? unitIndex
+                                      : unitIndex + 1,
+                                  }),
+                                );
+                              }}
+                              onClick={(event) => {
+                                if (lineIndex !== cursor.line)
+                                  clickedLine.current = true;
+                                if (
+                                  event.shiftKey ||
+                                  event.ctrlKey ||
+                                  event.metaKey
+                                )
+                                  return pickWord(at, event.shiftKey);
+                                setGroup([]);
+                                setSpaces([]);
+                                setPicked(new Set());
+                                setCursor(at);
+                              }}
+                              onDoubleClick={() => {
+                                if (!isPlaying) {
+                                  setCursor(at);
+                                  setInline(at);
+                                  return;
+                                }
+                                if (unit.start === undefined) return;
+                                holdLine.current = lineIndex;
+                                seek(unit.start - 1000);
+                              }}
+                              onContextMenu={(event) => openMenu(event, at)}
                             >
                               <TimePill ms={unit.start} />
-                              <input
-                                className="ttml-inline-word"
-                                aria-label={`Edit ${unit.text}`}
-                                defaultValue={unit.text}
-                                size={Math.max(2, unit.text.length + 1)}
-                                spellCheck={false}
-                                autoFocus
-                                onFocus={(event) =>
-                                  event.currentTarget.select()
+                              <span
+                                className="ttml-word"
+                                title={
+                                  syncRoman && unit.roman
+                                    ? unit.text
+                                    : undefined
                                 }
-                                onInput={(event) => {
-                                  const box = event.currentTarget;
-                                  box.size = Math.max(2, box.value.length + 1);
-                                }}
-                                onBlur={(event) => {
-                                  const value =
-                                    event.currentTarget.value.trim();
-                                  setInline(null);
-                                  if (value !== unit.text)
-                                    commitWord(at, value);
-                                }}
-                                onKeyDown={(event) => {
-                                  event.stopPropagation();
-                                  if (event.key === "Escape") {
-                                    event.preventDefault();
-                                    event.currentTarget.value = unit.text;
-                                    event.currentTarget.blur();
-                                  } else if (event.key === "Enter") {
-                                    event.preventDefault();
-                                    event.currentTarget.blur();
-                                  }
-                                }}
-                              />
+                              >
+                                {syncRoman && unit.roman
+                                  ? unit.roman
+                                  : unit.text}
+                              </span>
                               <TimePill ms={unit.end} end />
-                            </div>
+                            </button>
                           );
-                        return (
-                          <button
-                            key={unitIndex}
-                            className={`ttml-unit${unit.joined ? " joined" : ""}${timed(unit) ? " timed" : unit.start !== undefined ? " started" : ""}${selected ? " selected" : ""}${live ? " live" : ""}${inGroup(at) ? " chosen" : ""}${drag?.kind === "word" && ((drag.at.line === lineIndex && drag.at.unit === unitIndex) || (drag.group && inGroup(at))) ? " dragging" : ""}${dropClass(`unit:${lineIndex}:${unitIndex}`)}`}
-                            aria-label={unit.text}
-                            title={`Double-click to edit, or to replay while playing, right-click for word options, ${IS_MAC ? "Cmd+E" : "F2"} to edit, drag to move`}
-                            draggable
-                            onDragStart={(event) => dragWords(event, at)}
-                            onDragOver={(event) =>
-                              drag?.kind === "word" &&
-                              over(
-                                event,
-                                `unit:${lineIndex}:${unitIndex}:${firstHalf(event, false) ? "before" : "after"}`,
-                              )
-                            }
-                            onDrop={(event) => {
-                              if (drag?.kind !== "word") return;
-                              land(
-                                event,
-                                moveDragged(drag, {
-                                  line: lineIndex,
-                                  unit: firstHalf(event, false)
-                                    ? unitIndex
-                                    : unitIndex + 1,
-                                }),
-                              );
-                            }}
-                            onClick={(event) => {
-                              if (lineIndex !== cursor.line)
-                                clickedLine.current = true;
-                              if (
-                                event.shiftKey ||
-                                event.ctrlKey ||
-                                event.metaKey
-                              )
-                                return pickWord(at, event.shiftKey);
-                              setGroup([]);
-                              setSpaces([]);
-                              setPicked(new Set());
-                              setCursor(at);
-                            }}
-                            onDoubleClick={() => {
-                              if (!isPlaying) {
-                                setCursor(at);
-                                setInline(at);
-                                return;
-                              }
-                              if (unit.start === undefined) return;
-                              holdLine.current = lineIndex;
-                              seek(unit.start - 1000);
-                            }}
-                            onContextMenu={(event) => openMenu(event, at)}
-                          >
-                            <TimePill ms={unit.start} />
-                            <span
-                              className="ttml-word"
-                              title={
-                                syncRoman && unit.roman ? unit.text : undefined
-                              }
-                            >
-                              {syncRoman && unit.roman ? unit.roman : unit.text}
-                            </span>
-                            <TimePill ms={unit.end} end />
-                          </button>
-                        );
-                      })}
-                      {adder}
+                        })}
+                        {adder}
+                      </div>
+                    )}
+                    {!writing && (
+                      <div className="ttml-line-side">
+                        <TimePill ms={lineSpan(line)?.start} />
+                        <TimePill
+                          ms={
+                            line.units.some((unit) => unit.end !== undefined)
+                              ? lineSpan(line)?.end
+                              : undefined
+                          }
+                          end
+                        />
+                      </div>
+                    )}
+                    <div className="ttml-line-tools">
+                      <button
+                        className={line.background ? "active" : ""}
+                        aria-pressed={line.background}
+                        title="Background vocal"
+                        onClick={() => flagLine(lineIndex, "background")}
+                      >
+                        BG
+                      </button>
+                      <button
+                        className={line.opposite ? "active" : ""}
+                        aria-pressed={line.opposite}
+                        title="Second singer"
+                        onClick={() => flagLine(lineIndex, "opposite")}
+                      >
+                        v2
+                      </button>
+                      <button
+                        title="Delete line"
+                        aria-label="Delete line"
+                        onClick={() => {
+                          const next = removeLine(lines, lineIndex);
+                          setLines(next);
+                          setCursor((at) => clampCursor(next, at));
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                      <button
+                        title="Add line below"
+                        aria-label="Add line below"
+                        onClick={() => addBlankLine(lineIndex)}
+                      >
+                        <Plus size={14} />
+                      </button>
                     </div>
-                  )}
-                  {!writing && (
-                    <div className="ttml-line-side">
-                      <TimePill ms={lineSpan(line)?.start} />
-                      <TimePill
-                        ms={
-                          line.units.some((unit) => unit.end !== undefined)
-                            ? lineSpan(line)?.end
-                            : undefined
-                        }
-                        end
-                      />
-                    </div>
-                  )}
-                  <div className="ttml-line-tools">
-                    <button
-                      className={line.background ? "active" : ""}
-                      aria-pressed={line.background}
-                      title="Background vocal"
-                      onClick={() => flagLine(lineIndex, "background")}
-                    >
-                      BG
-                    </button>
-                    <button
-                      className={line.opposite ? "active" : ""}
-                      aria-pressed={line.opposite}
-                      title="Second singer"
-                      onClick={() => flagLine(lineIndex, "opposite")}
-                    >
-                      v2
-                    </button>
-                    <button
-                      title="Delete line"
-                      aria-label="Delete line"
-                      onClick={() => {
-                        const next = removeLine(lines, lineIndex);
-                        setLines(next);
-                        setCursor((at) => clampCursor(next, at));
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                    <button
-                      title="Add line below"
-                      aria-label="Add line below"
-                      onClick={() => addBlankLine(lineIndex)}
-                    >
-                      <Plus size={14} />
-                    </button>
                   </div>
-                </div>
+                </Fragment>
               );
             })}
           </div>

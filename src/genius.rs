@@ -178,11 +178,12 @@ fn decode(text: &str) -> String {
     out
 }
 
-/// One lyric per line: section headers like [Chorus] and blank lines go.
+/// One lyric per line, blank lines dropped. Section headers like [Chorus]
+/// stay on their own lines; the TTML Creator reads them as section names.
 fn clean(text: &str) -> String {
     text.lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty() && !(line.starts_with('[') && line.ends_with(']')))
+        .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -193,11 +194,11 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn lyrics_come_from_the_containers_without_headers() {
+    fn lyrics_come_from_the_containers_with_section_headers() {
         let page = r#"<html><div data-lyrics-container="true" class="a"><div data-exclude-from-selection="true"><span>26 Contributors</span><div>Translations</div></div>[Verse 1]<br/>I wish I was <i>more</i> than just<br>Someone you&#x27;d walk by &amp; forget<br></div><p>Not lyrics</p><div data-lyrics-container="true">[Chorus]<br><a href="/x"><span>Drunk text</span></a><br/></div></html>"#;
         assert_eq!(
             clean(&extract(page)),
-            "I wish I was more than just\nSomeone you'd walk by & forget\nDrunk text"
+            "[Verse 1]\nI wish I was more than just\nSomeone you'd walk by & forget\n[Chorus]\nDrunk text"
         );
     }
 

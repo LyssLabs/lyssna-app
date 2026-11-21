@@ -1057,7 +1057,10 @@ async function startClient(
               album: { name: "Come & Go", images: [] },
             };
           if (command === "genius_lyrics")
-            return "From Genius one\nFrom Genius two";
+            return (
+              (window as any).__geniusText ??
+              "From Genius one\nFrom Genius two"
+            );
           if (command === "search_suggestions") {
             if (args.query.startsWith("slow"))
               await new Promise((resolve) => setTimeout(resolve, 500));
@@ -17682,10 +17685,8 @@ test("TTML Creator takes plain lyrics from Genius into the text editor", async (
   await bar.getByTitle("TTML Creator", { exact: true }).click();
   const creator = page.getByRole("region", { name: "TTML Creator" });
   await expect(creator.locator(".ttml-line").first()).toBeVisible();
-  await creator
-    .locator(".ttml-edit-tools")
-    .getByRole("button", { name: "Lyrics from Genius" })
-    .click();
+  await creator.getByRole("button", { name: "Genius", exact: true }).click();
+  await creator.getByRole("menuitem", { name: "Lyrics from Genius" }).click();
   const text = creator.getByLabel("Lyrics text");
   await expect(text).toHaveValue("From Genius one\nFrom Genius two");
   await expect
@@ -17700,6 +17701,51 @@ test("TTML Creator takes plain lyrics from Genius into the text editor", async (
     .toBe(true);
   await creator.getByRole("button", { name: "Done" }).click();
   await expect(creator.locator(".ttml-word").first()).toHaveText("From");
+});
+
+test("TTML Creator names sections from Genius without touching timings", async ({
+  page,
+}) => {
+  await startClient(page);
+  await playLyricTrack(page, false);
+  await openSettings(page, "Lyrics");
+  await page.getByRole("switch", { name: "TTML Creator", exact: true }).check();
+  await page
+    .getByRole("dialog", { name: "Lyssna settings" })
+    .getByRole("button", { name: "Close settings" })
+    .click();
+  await page
+    .locator(".player-extras")
+    .getByTitle("TTML Creator", { exact: true })
+    .click();
+  const creator = page.getByRole("region", { name: "TTML Creator" });
+  await expect(creator.locator(".ttml-line").first()).toBeVisible();
+  const read = () =>
+    creator.locator(".ttml-line").evaluateAll((lines) =>
+      lines.map((line) =>
+        Array.from(line.querySelectorAll(".ttml-word"))
+          .map((word) => word.textContent)
+          .join(" "),
+      ),
+    );
+  const words = await read();
+  expect(words.length).toBeGreaterThan(1);
+  await page.evaluate(
+    (words) =>
+      ((window as any).__geniusText = [
+        "[Verse 1: Someone]",
+        words[0],
+        "[]",
+        "[Chorus]",
+        ...words.slice(1),
+      ].join("\n")),
+    words,
+  );
+  await creator.getByRole("button", { name: "Genius", exact: true }).click();
+  await creator.getByRole("menuitem", { name: "Sections from Genius" }).click();
+  await expect(creator.locator(".ttml-part")).toHaveText(["Verse", "Chorus"]);
+  // Section lines, even an empty "[]", never become lyrics.
+  expect(await read()).toEqual(words);
 });
 
 test("TTML Creator spectrogram zooms, scrolls, reads out and seeks", async ({
