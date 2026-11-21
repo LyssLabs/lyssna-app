@@ -9,6 +9,10 @@ it("names Genius sections in any language under the English name", () => {
   expect(songPart("サビ")).toBe("Chorus");
   expect(songPart("후렴")).toBe("Chorus");
   expect(songPart("Puente")).toBe("Bridge");
+  expect(songPart("Refrain")).toBe("Refrain");
+  expect(songPart("Couplet 1")).toBe("Verse");
+  expect(songPart("Guitar Solo")).toBe("Guitar Solo");
+  expect(songPart("Non-Lyrical Vocals")).toBe("Non-Lyrical Vocals");
 });
 
 it("knows no section Genius doesn't use", () => {
