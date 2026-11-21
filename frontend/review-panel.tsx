@@ -137,7 +137,7 @@ function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
         )}
         <small>
           {submission.kind === "edit" ? "Edit" : "New"} · {who(submission)} ·
-          tier {submission.submitter_tier} · {ago(submission.submitted_at)}
+          Tier {submission.submitter_tier} · {ago(submission.submitted_at)}
           {submission.major_rewrite
             ? " · Major rewrite"
             : submission.light_review
@@ -350,7 +350,7 @@ function ReviewDetail({
       </header>
       <p className="review-meta">
         {submission.kind === "edit" ? "Edit" : "New lyrics"} by{" "}
-        {who(submission)} · tier {submission.submitter_tier} ·{" "}
+        {who(submission)} · Tier {submission.submitter_tier} ·{" "}
         {ago(submission.submitted_at)}
       </p>
       <div className="review-buttons">

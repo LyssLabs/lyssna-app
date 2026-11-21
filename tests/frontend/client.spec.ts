@@ -17053,7 +17053,7 @@ test("reviewers see waiting submissions and decide them from the TTML Creator", 
   const queue = page.getByRole("region", { name: "Review submissions" });
   await expect(queue).toContainText("Come & Go (with Marshmello)");
   await expect(queue).toContainText("Juice WRLD, Marshmello");
-  await expect(queue).toContainText("New · @newcomer · tier 1 · 3h ago");
+  await expect(queue).toContainText("New · @newcomer · Tier 1 · 3h ago");
   await queue.getByRole("button", { name: /Come & Go/ }).click();
   await expect(page.getByRole("region", { name: "TTML Creator" })).toBeVisible();
   const panel = page.getByRole("complementary", { name: "Review" });
