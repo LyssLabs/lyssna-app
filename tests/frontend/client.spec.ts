@@ -17044,6 +17044,12 @@ test("reviewers see waiting submissions and decide them from the TTML Creator", 
   });
   await startClient(page);
   await playLyricTrack(page);
+  await openSettings(page, "Lyrics");
+  await page.getByRole("switch", { name: "TTML Creator", exact: true }).check();
+  await page
+    .getByRole("dialog", { name: "Lyssna settings" })
+    .getByRole("button", { name: "Close settings" })
+    .click();
   const button = page.getByRole("button", {
     name: "Review submissions, 1 waiting",
   });
@@ -17075,6 +17081,25 @@ test("reviewers see waiting submissions and decide them from the TTML Creator", 
   await expect(page.getByRole("region", { name: "TTML Creator" })).toBeVisible();
   await expect(panel.getByRole("radio", { name: "Changes" })).toBeChecked();
   await panel.getByRole("radio", { name: "Approve" }).click();
+  const opens = () =>
+    page.evaluate(
+      () =>
+        (window as any).__clientTest.commands.filter(
+          (entry: any) =>
+            entry.command === "parse_lyric_file" &&
+            entry.args.filename === "review.ttml",
+        ).length,
+    );
+  const opened = await opens();
+  const pen = page
+    .locator(".player-extras")
+    .getByTitle("TTML Creator", { exact: true });
+  await pen.click();
+  await expect(page.getByRole("region", { name: "TTML Creator" })).toHaveCount(0);
+  await pen.click();
+  await expect(panel.getByRole("radio", { name: "Approve" })).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(await opens()).toBe(opened);
   await panel.getByRole("radio", { name: "Minor fixes" }).click();
   await panel.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(panel).toContainText("Nothing waiting here.");

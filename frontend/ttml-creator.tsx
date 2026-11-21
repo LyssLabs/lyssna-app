@@ -37,7 +37,12 @@ import {
   Globe,
   X,
 } from "lucide-react";
-import { ReviewPanel, type ReviewOpen } from "./review-panel";
+import {
+  ReviewPanel,
+  isFreshPick,
+  reviewInProgress,
+  type ReviewOpen,
+} from "./review-panel";
 import type { ReviewSubmission } from "./review-api";
 import { Cover, usePlaybackClock } from "./components";
 import type { AppState } from "./state";
@@ -261,6 +266,12 @@ function TimePill({ ms, end }: { ms?: number; end?: boolean }) {
     </span>
   );
 }
+
+// The submission in the editor and how it opened, kept while the creator is
+// closed so fixes are still told apart from the original afterwards.
+const rememberedEdit: {
+  current?: { id: string; uri: string; baseline?: string };
+} = {};
 
 export function TtmlCreator({
   state,
@@ -1917,6 +1928,9 @@ export function TtmlCreator({
   const [reviewing, setReviewing] = useState(false);
   const [reviewOpening, setReviewOpening] = useState<ReviewSubmission>();
   useEffect(() => {
+    if (reviewer && reviewInProgress()) setReviewing(true);
+  }, [reviewer]);
+  useEffect(() => {
     if (reviewRestore && reviewer) setReviewing(true);
   }, [reviewRestore, reviewer]);
   const reviewOpen = reviewer && reviewing;
@@ -1925,15 +1939,14 @@ export function TtmlCreator({
   }, [reviewOpen, onReviewOpen]);
   useEffect(() => () => onReviewOpen?.(false), [onReviewOpen]);
   useEffect(() => {
-    if (!reviewPick || !reviewer) return;
+    if (!reviewPick || !reviewer || !isFreshPick(reviewPick)) return;
     setReviewOpening(reviewPick);
     setReviewing(true);
   }, [reviewPick, reviewer]);
-  const [reviewEdit, setReviewEdit] = useState<{
-    id: string;
-    uri: string;
-    baseline?: string;
-  }>();
+  const [reviewEdit, setReviewEdit] = useState(() => rememberedEdit.current);
+  useEffect(() => {
+    rememberedEdit.current = reviewEdit;
+  }, [reviewEdit]);
   const pendingReview = useRef<ReviewOpen | undefined>(undefined);
   const [reviewTick, setReviewTick] = useState(0);
   const openReview = (open: ReviewOpen) => {

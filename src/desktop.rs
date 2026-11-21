@@ -3315,21 +3315,28 @@ async fn lyssna_submit(
     .await
     .map_err(|_| "Lyssna account worker unavailable".to_owned())?
     .map_err(error)?;
-    // Drop the song's saved "no lyrics" answer so the upload shows without a
-    // manual refresh, and refetch at once if the song is still playing.
-    crate::lyssna_lyrics::mark_changed(&submitted);
+    lyssna_changed(&state, &submitted);
+    Ok(result)
+}
+/// Drops a song's saved lyrics answers so newly published Lyssna lyrics show
+/// without a manual refresh, refetching at once if the song is playing.
+fn lyssna_changed(state: &State<'_, Desktop>, track: &Track) {
+    crate::lyssna_lyrics::mark_changed(track);
     let _ = state
         .0
         .lyrics
-        .send(LyricCommand::ForgetCached(submitted.clone()));
+        .send(LyricCommand::ForgetCached(track.clone()));
     let playing = lock(&state.0.snapshot)
         .ok()
         .and_then(|snapshot| snapshot.playback.item.clone())
-        .filter(|item| item.uri == submitted.uri);
+        .filter(|item| item.uri == track.uri);
     if let Some(item) = playing {
         let _ = state.0.commands.send(Command::FetchLyrics(item));
     }
-    Ok(result)
+}
+#[tauri::command]
+fn lyssna_published(track: Track, state: State<'_, Desktop>) {
+    lyssna_changed(&state, &track);
 }
 #[tauri::command]
 async fn lyssna_backfill_isrc(
@@ -6656,6 +6663,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             lyssna_sign_out,
             lyssna_submit,
             lyssna_review,
+            lyssna_published,
             lyssna_backfill_isrc,
             creator_volume,
             test_audio_output,

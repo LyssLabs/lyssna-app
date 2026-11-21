@@ -112,6 +112,12 @@ export function reviewSong(submission: ReviewSubmission) {
   return song;
 }
 
+/** Approved lyrics go live, so the app drops its saved answers for the song. */
+export async function reviewPublished(submission: ReviewSubmission) {
+  const track = await reviewSong(submission);
+  if (track) await rpc("lyssna_published", { track }).catch(() => {});
+}
+
 export const REVIEWER_ROLES = ["reviewer", "moderator", "admin"];
 export const canReview = (role?: string | null) =>
   !!role && REVIEWER_ROLES.includes(role);

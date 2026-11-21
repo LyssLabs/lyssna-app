@@ -20,6 +20,7 @@ import {
   decideReview,
   diffLines,
   reviewComments,
+  reviewPublished,
   reviewQueue,
   reviewSong,
   reviewTrackUri,
@@ -31,6 +32,16 @@ import {
   type ReviewLane,
   type ReviewSubmission,
 } from "./review-api";
+
+// The open review outlives the creator, which unmounts whenever it closes,
+// and a submission picked on the Review page loads into the editor only once.
+const remembered: { picked?: ReviewSubmission; minimised: boolean } = {
+  minimised: false,
+};
+const consumed = new WeakSet<ReviewSubmission>();
+export const reviewInProgress = () => !!remembered.picked;
+export const isFreshPick = (submission: ReviewSubmission) =>
+  !consumed.has(submission);
 
 export interface ReviewOpen {
   submission: ReviewSubmission;
@@ -184,11 +195,25 @@ export function ReviewPanel({
   notify: (message: string, error?: boolean) => void;
   onClose: () => void;
 }) {
-  const [picked, setPicked] = useState(initial);
+  const autoFor = useRef(
+    initial && !consumed.has(initial) ? initial : undefined,
+  );
+  const [picked, setPicked] = useState(autoFor.current ?? remembered.picked);
   const [refresh, setRefresh] = useState(0);
-  const [minimised, setMinimised] = useState(false);
+  const [minimised, setMinimised] = useState(
+    () => !!picked && remembered.minimised,
+  );
   useEffect(() => setMinimised(false), [restore]);
-  useEffect(() => setPicked(initial), [initial]);
+  useEffect(() => {
+    if (!initial || consumed.has(initial)) return;
+    consumed.add(initial);
+    autoFor.current = initial;
+    setPicked(initial);
+  }, [initial]);
+  useEffect(() => {
+    remembered.picked = picked;
+    remembered.minimised = minimised;
+  }, [picked, minimised]);
   useEffect(() => {
     if (!picked) setMinimised(false);
   }, [picked]);
@@ -215,7 +240,7 @@ export function ReviewPanel({
           onMinimise={() => setMinimised(true)}
           key={picked.id}
           submission={picked}
-          autoOpen={picked === initial}
+          autoOpen={picked === autoFor.current}
           playing={playing}
           editing={editing?.id === picked.id ? editing : undefined}
           editorTtml={editorTtml}
@@ -346,6 +371,7 @@ function ReviewDetail({
         note: note.trim() || undefined,
       });
       await then?.();
+      if (action === "approve" && !then) void reviewPublished(submission);
       notify(
         action === "approve"
           ? `Approved ${submission.song_title}.`
