@@ -551,13 +551,17 @@ impl Spotify {
         Ok(())
     }
 
-    pub fn add_to_playlist(&mut self, playlist_id: &str, tracks: &[Track]) -> Result<usize> {
+    pub fn add_to_playlist(
+        &mut self,
+        playlist_id: &str,
+        tracks: &[Track],
+        again: bool,
+    ) -> Result<usize> {
         ensure!(valid_id(playlist_id), "Invalid playlist ID");
         let mut existing = HashSet::new();
         let mut visited = HashSet::new();
-        let mut next = Some(format!(
-            "https://api.spotify.com/v1/playlists/{playlist_id}/items?limit=50"
-        ));
+        let mut next = (!again)
+            .then(|| format!("https://api.spotify.com/v1/playlists/{playlist_id}/items?limit=50"));
         while let Some(path) = next {
             ensure!(
                 visited.insert(path.clone()),

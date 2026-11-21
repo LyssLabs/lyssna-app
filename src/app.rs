@@ -3321,6 +3321,7 @@ impl Lyssna {
                     self.send(Command::Add {
                         playlist,
                         tracks: tracks.clone(),
+                        again: false,
                     });
                     self.picker = None;
                 }

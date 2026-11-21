@@ -60,6 +60,8 @@ pub enum Command {
     Add {
         playlist: Playlist,
         tracks: Vec<Track>,
+        /// Add songs the playlist already holds a second time.
+        again: bool,
     },
     /// Create a private playlist holding these songs.
     CreatePlaylist {
@@ -1401,13 +1403,18 @@ impl Backend {
                 }
                 let _ = self.poll();
             }
-            Command::Add { playlist, tracks } => {
+            Command::Add {
+                playlist,
+                tracks,
+                again,
+            } => {
                 anyhow::ensure!(
                     playlist.editable_by(&self.profile.id),
                     "This playlist cannot be edited by your account"
                 );
                 let native = if self.native_ready() {
-                    self.native_controls.add_to_playlist(&playlist.id, &tracks)
+                    self.native_controls
+                        .add_to_playlist(&playlist.id, &tracks, again)
                 } else {
                     Err(anyhow::anyhow!("Native audio is connecting"))
                 };
@@ -1415,13 +1422,22 @@ impl Backend {
                     Ok(crate::native_browse::Added::Count(count)) => count,
                     // Nothing was written natively, so the Web API can retry.
                     Ok(crate::native_browse::Added::NotWritten(_)) | Err(_) => {
-                        self.api()?.add_to_playlist(&playlist.id, &tracks)?
+                        self.api()?.add_to_playlist(&playlist.id, &tracks, again)?
                     }
                 };
-                self.emit(Event::Notice(format!(
-                    "Added {count} tracks to {}. Existing tracks skipped.",
-                    playlist.name
-                )));
+                self.emit(Event::Notice(if again || count == tracks.len() {
+                    format!(
+                        "Added {count} {} to {}.",
+                        if count == 1 { "song" } else { "songs" },
+                        playlist.name
+                    )
+                } else {
+                    format!(
+                        "Added {count} {} to {}. Songs already there were skipped.",
+                        if count == 1 { "song" } else { "songs" },
+                        playlist.name
+                    )
+                }));
                 if count > 0 {
                     self.emit(Event::PageChanged(format!("playlist:{}", playlist.id)));
                 }
@@ -1548,7 +1564,7 @@ impl Backend {
                     "Wait for native audio to connect, then create the playlist."
                 );
                 let id = self.native_controls.create_playlist(&name)?;
-                let added = match self.native_controls.add_to_playlist(&id, &tracks) {
+                let added = match self.native_controls.add_to_playlist(&id, &tracks, false) {
                     Ok(crate::native_browse::Added::Count(count)) => count,
                     Ok(crate::native_browse::Added::NotWritten(error)) | Err(error) => {
                         self.refresh_library()?;

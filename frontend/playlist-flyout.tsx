@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Users } from "lucide-react";
+import { Check, Plus, Search, Users } from "lucide-react";
 import { Cover } from "./components";
 import type { Playlist } from "./types";
 
@@ -10,10 +10,13 @@ export function PlaylistFlyout({
   playlists,
   x,
   y,
+  holding,
   onPick,
   onCreate,
 }: {
   playlists: Playlist[];
+  /** Playlists that already hold the songs, once known; they come first. */
+  holding?: Set<string>;
   x: number;
   y: number;
   onPick: (playlist: Playlist) => void;
@@ -21,11 +24,17 @@ export function PlaylistFlyout({
 }) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
-  const shown = needle
+  const matching = needle
     ? playlists.filter((playlist) =>
         playlist.name.toLowerCase().includes(needle),
       )
     : playlists;
+  const shown = holding
+    ? [
+        ...matching.filter((playlist) => holding.has(playlist.id)),
+        ...matching.filter((playlist) => !holding.has(playlist.id)),
+      ]
+    : matching;
   return (
     <div
       className="playlist-flyout popover"
@@ -66,6 +75,13 @@ export function PlaylistFlyout({
             <span>{playlist.name}</span>
             {playlist.collaborative && (
               <Users size={17} aria-label="Collaborative playlist" />
+            )}
+            {holding?.has(playlist.id) && (
+              <Check
+                className="playlist-flyout-added"
+                size={18}
+                aria-label="Already added"
+              />
             )}
           </button>
         ))}

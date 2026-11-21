@@ -235,8 +235,8 @@ impl Spotify {
     pub fn player_action(&mut self, action: PlayerAction, device: Option<&str>) -> Result<()> {
         dispatch!(self, native => native.remote_action(action, device), player_action(action, device))
     }
-    pub fn add_to_playlist(&mut self, id: &str, tracks: &[Track]) -> Result<usize> {
-        dispatch!(self, native => match native.add_to_playlist(id, tracks)? { crate::native_browse::Added::Count(count) => Ok(count), crate::native_browse::Added::NotWritten(error) => Err(error) }, add_to_playlist(id, tracks))
+    pub fn add_to_playlist(&mut self, id: &str, tracks: &[Track], again: bool) -> Result<usize> {
+        dispatch!(self, native => match native.add_to_playlist(id, tracks, again)? { crate::native_browse::Added::Count(count) => Ok(count), crate::native_browse::Added::NotWritten(error) => Err(error) }, add_to_playlist(id, tracks, again))
     }
 }
 

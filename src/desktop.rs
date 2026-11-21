@@ -4679,12 +4679,40 @@ fn delete_saved_lyrics(key: String, state: State<'_, Desktop>) -> std::result::R
 fn add_tracks(
     playlist: Playlist,
     tracks: Vec<Track>,
+    again: Option<bool>,
     state: State<'_, Desktop>,
 ) -> std::result::Result<(), String> {
     state
         .0
         .commands
-        .send(Command::Add { playlist, tracks })
+        .send(Command::Add {
+            playlist,
+            tracks,
+            again: again.unwrap_or(false),
+        })
+        .map_err(error)
+}
+#[tauri::command]
+async fn playlists_holding(
+    state: State<'_, Desktop>,
+    playlists: Vec<String>,
+    uris: Vec<String>,
+) -> std::result::Result<Vec<String>, String> {
+    if playlists.len() > 1000 || uris.len() > 500 {
+        return Err("Too many songs or playlists".into());
+    }
+    let account = lock(&state.0.snapshot)
+        .map_err(error)?
+        .profile
+        .as_ref()
+        .context("Sign in first")
+        .map_err(error)?
+        .id
+        .clone();
+    let controls = state.0.controls.scoped(&account).map_err(error)?;
+    tauri::async_runtime::spawn_blocking(move || controls.playlists_holding(&playlists, &uris))
+        .await
+        .map_err(error)?
         .map_err(error)
 }
 #[tauri::command]
@@ -6709,6 +6737,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             nightly_log,
             delete_saved_lyrics,
             add_tracks,
+            playlists_holding,
             create_playlist,
             remove_playlist,
             remove_from_playlist,

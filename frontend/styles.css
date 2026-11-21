@@ -5303,6 +5303,9 @@ input[type="range"]:hover {
   flex: none;
   color: light-dark(#4c4c4c, #b3b3b3);
 }
+.playlist-flyout-list > button .playlist-flyout-added {
+  color: var(--accent, #1ed760);
+}
 .playlist-flyout-list > p {
   padding: 12px 14px;
   color: light-dark(#585858, #a7a7a7);

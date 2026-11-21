@@ -5660,6 +5660,72 @@ test("profiles follow Spotify's layout and open people, artists and playlists", 
   await expect(page.locator(".profile-hero")).toHaveCount(0);
 });
 
+test("Add to playlist lists playlists holding the song first and asks before adding it again", async ({
+  page,
+}) => {
+  await startClient(page);
+  await page.evaluate(() => {
+    const test = (window as any).__clientTest;
+    test.answers = {
+      ...test.answers,
+      playlists_holding: ["4123456789abcdefghijkm"],
+    };
+    test.emit({
+      type: "library",
+      playlists: [
+        {
+          id: "4123456789abcdefghijkl",
+          name: "Road trip",
+          images: [],
+          owner: { id: "test-user" },
+          collaborative: false,
+        },
+        {
+          id: "4123456789abcdefghijkm",
+          name: "Gym",
+          images: [],
+          owner: { id: "test-user" },
+          collaborative: false,
+        },
+      ],
+    });
+  });
+  await page
+    .locator(".track-row .track-name")
+    .first()
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add to playlist" }).hover();
+  const flyout = page.getByRole("menu", { name: "Add to playlist" });
+  const items = flyout.locator(".playlist-flyout-list > button");
+  await expect(items.first()).toContainText("Gym");
+  await expect(items.first().getByLabel("Already added")).toBeVisible();
+  await expect(items.nth(1).getByLabel("Already added")).toHaveCount(0);
+
+  await items.first().click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("is already in Gym");
+  await dialog.getByRole("button", { name: "Add anyway" }).click();
+  await expect(dialog).toHaveCount(0);
+  const added = await page.evaluate(() =>
+    (window as any).__clientTest.commands.filter(
+      ({ command }: { command: string }) => command === "add_tracks",
+    ),
+  );
+  expect(added).toHaveLength(1);
+  expect(added[0].args.again).toBe(true);
+  expect(added[0].args.playlist.name).toBe("Gym");
+
+  await page
+    .locator(".track-row .track-name")
+    .first()
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add to playlist" }).hover();
+  await flyout
+    .locator(".playlist-flyout-list > button", { hasText: "Road trip" })
+    .click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+});
+
 test("a playlist page's more options button opens its menu", async ({
   page,
 }) => {

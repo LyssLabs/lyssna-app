@@ -519,8 +519,83 @@ pub enum Added {
     NotWritten(anyhow::Error),
 }
 
-/// Add songs not already in the playlist, 100 per change, at the end.
-pub async fn add_to_playlist(session: &Session, id: &str, tracks: &[Track]) -> Result<Added> {
+/// Songs in each playlist, read for the Add to playlist menu.
+static HOLDING: OnceLock<std::sync::Mutex<HashMap<String, (Instant, HashSet<String>)>>> =
+    OnceLock::new();
+const HOLDING_FOR: Duration = Duration::from_secs(120);
+
+fn holding() -> &'static std::sync::Mutex<HashMap<String, (Instant, HashSet<String>)>> {
+    HOLDING.get_or_init(Default::default)
+}
+
+fn forget_holding(id: &str) {
+    if let Ok(mut known) = holding().lock() {
+        known.remove(id);
+    }
+}
+
+/// The playlists among `ids` that already hold any of `uris`, in `ids`
+/// order. Playlists that can't be read are left out.
+pub async fn playlists_holding(session: &Session, ids: &[String], uris: &[String]) -> Vec<String> {
+    let mut songs: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut unread = Vec::new();
+    if let Ok(known) = holding().lock() {
+        for id in ids {
+            match known.get(id) {
+                Some((read, held)) if read.elapsed() < HOLDING_FOR => {
+                    songs.insert(id.clone(), held.clone());
+                }
+                _ => unread.push(id.clone()),
+            }
+        }
+    }
+    let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+    let mut reads = tokio::task::JoinSet::new();
+    for id in unread
+        .into_iter()
+        .filter(|id| id.len() == 22 && id.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+    {
+        let (session, gate) = (session.clone(), gate.clone());
+        reads.spawn(async move {
+            let _turn = gate.acquire_owned().await.ok()?;
+            let uri = SpotifyUri::from_uri(&format!("spotify:playlist:{id}")).ok()?;
+            let playlist =
+                tokio::time::timeout(Duration::from_secs(10), Playlist::get(&session, &uri))
+                    .await
+                    .ok()?
+                    .ok()?;
+            (playlist.contents.position == 0 && !playlist.contents.is_truncated).then(|| {
+                let held: HashSet<String> = playlist.tracks().map(SpotifyUri::to_uri).collect();
+                (id, held)
+            })
+        });
+    }
+    while let Some(read) = reads.join_next().await {
+        if let Ok(Some((id, held))) = read {
+            if let Ok(mut known) = holding().lock() {
+                known.insert(id.clone(), (Instant::now(), held.clone()));
+            }
+            songs.insert(id, held);
+        }
+    }
+    ids.iter()
+        .filter(|id| {
+            songs
+                .get(*id)
+                .is_some_and(|held| uris.iter().any(|uri| held.contains(uri)))
+        })
+        .cloned()
+        .collect()
+}
+
+/// Add songs at the end, 100 per change. Songs already in the playlist are
+/// skipped unless `again` asks for them to be added twice.
+pub async fn add_to_playlist(
+    session: &Session,
+    id: &str,
+    tracks: &[Track],
+    again: bool,
+) -> Result<Added> {
     ensure!(
         id.len() == 22 && id.bytes().all(|byte| byte.is_ascii_alphanumeric()),
         "Invalid playlist ID"
@@ -540,7 +615,12 @@ pub async fn add_to_playlist(session: &Session, id: &str, tracks: &[Track]) -> R
         Ok(playlist) => playlist,
         Err(error) => return Ok(Added::NotWritten(error)),
     };
-    let existing: HashSet<String> = playlist.tracks().map(SpotifyUri::to_uri).collect();
+    forget_holding(id);
+    let existing: HashSet<String> = if again {
+        HashSet::new()
+    } else {
+        playlist.tracks().map(SpotifyUri::to_uri).collect()
+    };
     let additions = crate::model::unique_additions(&existing, tracks);
     let mut added = 0;
     for batch in additions.chunks(100) {
@@ -638,6 +718,7 @@ pub async fn remove_from_playlist(
         id.len() == 22 && id.bytes().all(|byte| byte.is_ascii_alphanumeric()),
         "Invalid playlist ID"
     );
+    forget_holding(id);
     let playlist_uri = SpotifyUri::from_uri(&format!("spotify:playlist:{id}"))?;
     // Each row carries its own ID, so one copy of a repeated song can go.
     let read = async || -> Result<Vec<(String, String)>> {
@@ -2310,8 +2391,8 @@ mod live_playlist_tests {
                         picks.push(track);
                     }
                 }
-                let first = add_to_playlist(session, &id, &picks).await?;
-                let again = add_to_playlist(session, &id, &picks).await?;
+                let first = add_to_playlist(session, &id, &picks, false).await?;
+                let again = add_to_playlist(session, &id, &picks, false).await?;
                 edit_details(session, &id, "Lyssna edit test", "Temporary test").await?;
                 edit_details(session, &id, "Lyssna edit test", "").await?;
                 let mut jpeg = Vec::new();

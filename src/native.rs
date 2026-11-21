@@ -533,9 +533,15 @@ impl NativeControls {
         &self,
         playlist_id: &str,
         tracks: &[crate::model::Track],
+        again: bool,
     ) -> Result<crate::native_browse::Added> {
         self.run(async |session| {
-            crate::native_browse::add_to_playlist(session, playlist_id, tracks).await
+            crate::native_browse::add_to_playlist(session, playlist_id, tracks, again).await
+        })
+    }
+    pub fn playlists_holding(&self, ids: &[String], uris: &[String]) -> Result<Vec<String>> {
+        self.run(async |session| {
+            Ok(crate::native_browse::playlists_holding(session, ids, uris).await)
         })
     }
     pub fn create_playlist(&self, name: &str) -> Result<String> {

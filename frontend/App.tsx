@@ -237,6 +237,12 @@ import {
 } from "./album-type";
 import { DEFAULT_ZOOM, useAppZoom } from "./app-zoom";
 import { PlaylistFlyout } from "./playlist-flyout";
+
+const holdingKey = (tracks: Track[]) =>
+  tracks
+    .map((track) => track.uri)
+    .filter((uri) => uri.startsWith("spotify:track:"))
+    .join();
 import { LoadTtml, type LoadMode, type SavedLyrics } from "./load-ttml";
 
 // Lyssna roles whose uploads skip review; only these get "Submit to Lyssna" in Load TTML.
@@ -600,6 +606,11 @@ function App() {
     name: string;
   } | null>(null);
   const [deleteFolder, setDeleteFolder] = useState<FolderRef | null>(null);
+  const [duplicate, setDuplicate] = useState<{
+    playlist: Playlist;
+    tracks: Track[];
+  } | null>(null);
+  const [holding, setHolding] = useState<{ key: string; ids: Set<string> }>();
   const [editDialog, setEditDialog] = useState<{
     playlist: Playlist;
     name: string;
@@ -642,6 +653,32 @@ function App() {
     x: number;
     y: number;
   } | null>(null);
+  const editableRef = useRef<string[]>([]);
+  editableRef.current = state.playlists
+    .filter(
+      (playlist) =>
+        playlist.owner.id === state.profile?.id || playlist.collaborative,
+    )
+    .map((playlist) => playlist.id);
+  useEffect(() => {
+    if (!songMenu) return;
+    const uris = (songMenu.tracks ?? [songMenu.track])
+      .map((track) => track.uri)
+      .filter((uri) => uri.startsWith("spotify:track:"));
+    if (!uris.length || !editableRef.current.length) return;
+    let live = true;
+    rpc<string[]>("playlists_holding", {
+      playlists: editableRef.current,
+      uris,
+    })
+      .then((ids) => {
+        if (live) setHolding({ key: uris.join(), ids: new Set(ids) });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [songMenu]);
   const [immersive, setImmersive] = useState(false);
   const fullscreenBusy = useRef(false);
   const [albumFilter, setAlbumFilter] = useState("all");
@@ -6139,8 +6176,18 @@ function App() {
               ),
               plus.playlist_folders,
             )}
+            holding={
+              holding?.key === holdingKey(picker.tracks)
+                ? holding.ids
+                : undefined
+            }
             onPick={(playlist) => {
-              void call("add_tracks", { playlist, tracks: picker.tracks });
+              if (
+                holding?.key === holdingKey(picker.tracks) &&
+                holding.ids.has(playlist.id)
+              )
+                setDuplicate({ playlist, tracks: picker.tracks });
+              else void call("add_tracks", { playlist, tracks: picker.tracks });
               setPicker(null);
               setSongMenu(null);
             }}
@@ -6205,6 +6252,67 @@ function App() {
             </button>
           </div>
         </>
+      )}
+      {duplicate && (
+        <div className="modal-backdrop" onClick={() => setDuplicate(null)}>
+          <section
+            className="dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="duplicate-title"
+            aria-describedby="duplicate-description"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="duplicate-title">
+              {duplicate.tracks.length === 1
+                ? "Already in this playlist"
+                : "Some are already there"}
+            </h2>
+            <p id="duplicate-description">
+              {duplicate.tracks.length === 1
+                ? `"${duplicate.tracks[0].name}" is already in ${duplicate.playlist.name}.`
+                : `Some of these songs are already in ${duplicate.playlist.name}.`}
+            </p>
+            <div className="inline-actions">
+              {duplicate.tracks.length === 1 ? (
+                <button
+                  className="pill"
+                  autoFocus
+                  onClick={() => setDuplicate(null)}
+                >
+                  Don&apos;t add
+                </button>
+              ) : (
+                <button
+                  className="pill"
+                  autoFocus
+                  onClick={() => {
+                    void call("add_tracks", {
+                      playlist: duplicate.playlist,
+                      tracks: duplicate.tracks,
+                    });
+                    setDuplicate(null);
+                  }}
+                >
+                  Add new ones
+                </button>
+              )}
+              <button
+                className="pill primary"
+                onClick={() => {
+                  void call("add_tracks", {
+                    playlist: duplicate.playlist,
+                    tracks: duplicate.tracks,
+                    again: true,
+                  });
+                  setDuplicate(null);
+                }}
+              >
+                {duplicate.tracks.length === 1 ? "Add anyway" : "Add all"}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       {state.profile && deleteFolder && (
         <div className="modal-backdrop" onClick={() => setDeleteFolder(null)}>
