@@ -225,6 +225,16 @@ export function applySections(
   });
 }
 
+/** "[...]" lines that name no Genius section, so add no tag. */
+export function unknownSections(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(
+      (line) => isSectionLine(line) && line !== "[]" && !sectionName(line),
+    );
+}
+
 export function parseText(text: string): CreatorLine[] {
   const lines: CreatorLine[] = [];
   let part: string | undefined;

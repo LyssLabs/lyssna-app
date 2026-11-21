@@ -97,6 +97,7 @@ import {
   hasWordRoman,
   parseText,
   applySections,
+  unknownSections,
   previousCursor,
   problems,
   progress,
@@ -930,6 +931,12 @@ export function TtmlCreator({
     return () => window.removeEventListener("pointerdown", away, true);
   }, []);
   const applyText = () => {
+    const unknown = unknownSections(text);
+    if (unknown.length)
+      notify(
+        `Not a Genius section, so left out: ${[...new Set(unknown)].slice(0, 3).join(", ")}`,
+        true,
+      );
     const parsed = keepTimings(lines, parseText(text));
     setLines(parsed);
     // Timing picks up at the first word still waiting for a tap.

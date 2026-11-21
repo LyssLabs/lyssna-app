@@ -445,6 +445,9 @@ const PARTS: Record<string, string[]> = {
     "solus",
     "assolo",
   ],
+  "Guitar Solo": [],
+  "Drum Solo": [],
+  "Saxophone Solo": [],
   Snippet: ["katkelma", "maistiainen", "snipetti"],
   Build: [
     "преддроп",
@@ -518,8 +521,7 @@ for (const [name, aliases] of Object.entries(PARTS))
     if (!NAMES.has(alias)) NAMES.set(alias, name);
 
 /** The Genius section a header names, like "Verse" for "Verso 2: Ana",
- *  or undefined for anything else. Solos keep their instrument, as Genius
- *  writes them: "Guitar Solo". */
+ *  or undefined for anything else. */
 export function songPart(header: string): string | undefined {
   const text = header
     .split(":")[0]
@@ -527,11 +529,7 @@ export function songPart(header: string): string | undefined {
     .replace(/\s+\d+$/, "")
     .replace(/\s+/g, " ")
     .trim();
-  const key = text.toLowerCase();
-  const known = NAMES.get(key);
-  if (known) return known;
-  const solo = /^([\p{L}-]{2,20}) solo$/u.exec(key);
-  if (solo) return `${solo[1][0].toUpperCase()}${solo[1].slice(1)} Solo`;
+  return NAMES.get(text.toLowerCase());
 }
 
 export const SONG_PARTS = Object.keys(PARTS);

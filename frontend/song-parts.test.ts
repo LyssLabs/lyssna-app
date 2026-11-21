@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { songPart } from "./song-parts";
+import { unknownSections } from "./ttml-creator-model";
 
 it("names Genius sections in any language under the English name", () => {
   expect(songPart("Verse 2: Someone")).toBe("Verse");
@@ -19,4 +20,11 @@ it("knows no section Genius doesn't use", () => {
   expect(songPart("")).toBeUndefined();
   expect(songPart("Produced by someone")).toBeUndefined();
   expect(songPart("Random words")).toBeUndefined();
+  expect(songPart("Banana Solo")).toBeUndefined();
+});
+
+it("lists the bracketed lines that name no Genius section", () => {
+  expect(
+    unknownSections("[Chorus]\nla la\n[Banana Solo]\n[]\n[Refrão]\n[Dance]"),
+  ).toEqual(["[Banana Solo]", "[Dance]"]);
 });
