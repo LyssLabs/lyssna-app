@@ -352,6 +352,8 @@ pub struct Settings {
     pub settings_allow_hiding: bool,
     pub settings_hide_buttons: bool,
     pub hidden_settings: Vec<String>,
+    /// Effects with a toggle on the lyrics toolbar, in the order pinned.
+    pub pinned_lyric_effects: Vec<String>,
     pub ui_font: String,
     pub ui_zoom_percent: u16,
     pub lyric_font: String,
@@ -500,6 +502,7 @@ impl Default for Settings {
             settings_allow_hiding: false,
             settings_hide_buttons: true,
             hidden_settings: Vec::new(),
+            pinned_lyric_effects: Vec::new(),
             ui_font: String::new(),
             ui_zoom_percent: 110,
             lyric_font: String::new(),
@@ -600,6 +603,11 @@ impl Settings {
                 && seen.insert(id.clone())
         });
         self.hidden_settings.truncate(200);
+        let mut pinned = std::collections::HashSet::new();
+        self.pinned_lyric_effects.retain(|id| {
+            matches!(id.as_str(), "space_gravity" | "lyrics_highlighter")
+                && pinned.insert(id.clone())
+        });
         self.lyric_song_offsets.retain(|uri, offset| {
             *offset = (*offset).clamp(-10_000, 10_000);
             *offset != 0 && !uri.is_empty() && uri.len() <= 512
@@ -887,6 +895,15 @@ mod tests {
         assert_eq!(background.lyrics_background_brightness, 150);
         let older: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(older.lyrics_background_brightness, 100);
+        let mut pins: Settings = serde_json::from_str(
+            r#"{"pinned_lyric_effects":["lyrics_highlighter","nope","lyrics_highlighter","space_gravity"]}"#,
+        )
+        .unwrap();
+        pins.clean_lyrics_options();
+        assert_eq!(
+            pins.pinned_lyric_effects,
+            ["lyrics_highlighter", "space_gravity"]
+        );
         let mut fps: Settings = serde_json::from_str(r#"{"animation_fps_cap":5}"#).unwrap();
         fps.clean_lyrics_options();
         assert_eq!(fps.animation_fps_cap, 15);

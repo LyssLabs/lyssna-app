@@ -14079,6 +14079,38 @@ test("songs without lyrics can show only the song", async ({ page }) => {
   await expect(heading).toBeVisible();
 });
 
+test("pinned lyric effects get a toggle on the lyrics toolbar", async ({
+  page,
+}) => {
+  await startClient(page);
+  await showLyrics(page);
+  const toolbar = page.locator(".lyrics-toolbar");
+  await expect(toolbar.locator('[data-icon="space_gravity"]')).toHaveCount(0);
+  await openSettings(page, "Effects");
+  await page
+    .getByRole("button", { name: "Pin Space Gravity to the lyrics toolbar" })
+    .click();
+  await page
+    .getByRole("button", { name: "Pin Highlighter to the lyrics toolbar" })
+    .click();
+  await page.getByRole("button", { name: "Close settings" }).click();
+  const gravity = toolbar.locator('[data-icon="space_gravity"]');
+  await expect(gravity).toHaveAttribute("aria-pressed", "false");
+  await expect(toolbar.locator('[data-icon="lyrics_highlighter"]')).toHaveCount(
+    1,
+  );
+  await gravity.click();
+  await expect(gravity).toHaveAttribute("aria-pressed", "true");
+  await openSettings(page, "Effects");
+  await expect(
+    page.getByRole("switch", { name: "Space Gravity" }),
+  ).toBeChecked();
+  await page
+    .getByRole("button", { name: "Pin Space Gravity to the lyrics toolbar" })
+    .click();
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await expect(gravity).toHaveCount(0);
+});
 test("background brightness lightens or darkens the artwork shade", async ({
   page,
 }) => {

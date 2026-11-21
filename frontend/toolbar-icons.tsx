@@ -50,6 +50,34 @@ export const WordSyncIcon = () => (
   </Icon>
 );
 
+/** A moon on its orbit; the orbit turns on hover. */
+export const GravityIcon = () => (
+  <Icon name="gravity">
+    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+    <g className="part-orbit">
+      <ellipse cx="12" cy="12" rx="10" ry="4.5" transform="rotate(-36 12 12)" />
+      <circle cx="19.7" cy="6.4" r="2.1" fill="currentColor" stroke="none" />
+    </g>
+  </Icon>
+);
+
+/** A marker pen over the line it draws. */
+export const HighlighterIcon = () => (
+  <Icon name="highlighter">
+    <g className="part-pen">
+      <path d="m8 13 8.7-8.7a1.8 1.8 0 0 1 2.6 0l.4.4a1.8 1.8 0 0 1 0 2.6L11 16l-3-3Z" />
+      <path d="m8 13-2 2 3 3 2-2m-5-1-2 3 2 1 3-1" />
+    </g>
+    <path className="part-stroke" d="M4 21h15" pathLength={1} />
+  </Icon>
+);
+
+/** Effects that can be pinned to the lyrics toolbar from Settings. */
+export const PINNABLE_EFFECTS = {
+  space_gravity: { label: "Space Gravity", Icon: GravityIcon },
+  lyrics_highlighter: { label: "Highlighter", Icon: HighlighterIcon },
+} as const;
+
 /** Rows that squeeze together. */
 export const CompactIcon = () => (
   <Icon name="compact">

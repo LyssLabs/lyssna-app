@@ -80,6 +80,7 @@ import {
   CompactIcon,
   FullScreenIcon,
   HideArtworkIcon,
+  PINNABLE_EFFECTS,
   RetryIcon,
   SwapSidesIcon,
   TranslateIcon,
@@ -4068,6 +4069,23 @@ function App() {
                       }
                     >
                       <Icon />
+                    </button>
+                  );
+                })}
+                {(state.settings.pinned_lyric_effects ?? []).map((key) => {
+                  const effect = PINNABLE_EFFECTS[key];
+                  if (!effect) return null;
+                  const on = !!state.settings[key];
+                  return (
+                    <button
+                      key={key}
+                      className={`icon-button ${on ? "active" : ""}`}
+                      data-icon={key}
+                      title={effect.label}
+                      aria-pressed={on}
+                      onClick={() => updateSettings({ [key]: !on })}
+                    >
+                      <effect.Icon />
                     </button>
                   );
                 })}

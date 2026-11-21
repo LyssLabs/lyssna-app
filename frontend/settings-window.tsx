@@ -1,4 +1,5 @@
 import { MAX_BACKGROUND_BRIGHTNESS } from "./ambience";
+import { PINNABLE_EFFECTS } from "./toolbar-icons";
 import {
   useEffect,
   useLayoutEffect,
@@ -17,6 +18,7 @@ import {
   ExternalLink,
   LibraryBig,
   LogOut,
+  Pin,
   Search,
   Settings2,
   Palette,
@@ -347,6 +349,42 @@ export function SettingsWindow({
     setQuery("");
     scroll.current?.scrollTo({ top: 0 });
     writePlace(next, 0);
+  };
+  const pinnable = (
+    key: keyof typeof PINNABLE_EFFECTS,
+    help: string,
+    keywords: string,
+  ) => {
+    const { label } = PINNABLE_EFFECTS[key];
+    const pins = settings.pinned_lyric_effects ?? [];
+    const pinned = pins.includes(key);
+    return (
+      <SettingRow key={key} label={label} help={help} keywords={keywords}>
+        <span className="setting-pin-group">
+          <button
+            className={`icon-button setting-pin ${pinned ? "active" : ""}`}
+            type="button"
+            title={`${pinned ? "Unpin" : "Pin"} ${label} ${pinned ? "from" : "to"} the lyrics toolbar`}
+            aria-label={`Pin ${label} to the lyrics toolbar`}
+            aria-pressed={pinned}
+            onClick={() =>
+              onSettings({
+                pinned_lyric_effects: pinned
+                  ? pins.filter((pin) => pin !== key)
+                  : [...pins, key],
+              })
+            }
+          >
+            <Pin size={14} />
+          </button>
+          <Toggle
+            label={label}
+            checked={!!settings[key]}
+            onChange={(checked) => onSettings({ [key]: checked })}
+          />
+        </span>
+      </SettingRow>
+    );
   };
   const flag = (
     key: Flag,
@@ -1350,15 +1388,13 @@ export function SettingsWindow({
       "Effects",
       "Lyric effects",
       [
-        flag(
+        pinnable(
           "space_gravity",
-          "Space Gravity",
           "Words float in zero gravity, drift as they're sung and react when you move the window.",
           "gravity float",
         ),
-        flag(
+        pinnable(
           "lyrics_highlighter",
-          "Highlighter",
           "A marker pen sweeps behind each line as it's sung, row by row, and over each floating word in Space Gravity.",
           "highlighter marker highlight pen lyrics player style",
         ),

@@ -4260,6 +4260,51 @@ small {
     scale: 1 0.55;
   }
 }
+.setting-pin-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.setting-pin {
+  width: 28px;
+  height: 28px;
+  opacity: 0.55;
+}
+.setting-pin:hover,
+.setting-pin.active {
+  opacity: 1;
+}
+.setting-pin.active svg {
+  fill: currentColor;
+}
+/* Space Gravity: the moon circles once. */
+.toolbar-icon-gravity .part-orbit {
+  transform-origin: 12px 12px;
+}
+[data-icon="space_gravity"]:hover .part-orbit {
+  animation: icon-orbit 1.6s linear infinite;
+}
+@keyframes icon-orbit {
+  to {
+    rotate: 360deg;
+  }
+}
+/* Highlighter: the pen lifts and draws its line again. */
+.toolbar-icon-highlighter .part-pen {
+  transition: translate 0.25s;
+}
+[data-icon="lyrics_highlighter"]:hover .part-pen {
+  translate: 1px -1px;
+}
+[data-icon="lyrics_highlighter"]:hover .part-stroke {
+  stroke-dasharray: 1;
+  animation: icon-draw 0.9s ease-in-out infinite;
+}
+@keyframes icon-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
 /* Compact: the rows squeeze together. */
 .toolbar-icon-compact rect,
 .toolbar-icon-compact path {

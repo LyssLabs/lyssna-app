@@ -228,6 +228,7 @@ export interface Settings {
   settings_allow_hiding?: boolean;
   settings_hide_buttons?: boolean;
   hidden_settings?: string[];
+  pinned_lyric_effects?: ("space_gravity" | "lyrics_highlighter")[];
   ui_font?: string;
   ui_zoom_percent?: number;
   lyric_font?: string;
