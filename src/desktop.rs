@@ -3271,6 +3271,19 @@ async fn lyssna_sign_out() -> std::result::Result<(), String> {
     .map_err(error)
 }
 #[tauri::command]
+async fn lyssna_review(
+    method: crate::lyssna_account::ReviewMethod,
+    path: String,
+    body: Option<serde_json::Value>,
+) -> std::result::Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::lyssna_account::review(&crate::auth::http_client()?, method, &path, body)
+    })
+    .await
+    .map_err(|_| "Lyssna account worker unavailable".to_owned())?
+    .map_err(error)
+}
+#[tauri::command]
 async fn lyssna_submit(
     ttml: String,
     track: Track,
@@ -6619,6 +6632,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             lyssna_cancel_sign_in,
             lyssna_sign_out,
             lyssna_submit,
+            lyssna_review,
             lyssna_backfill_isrc,
             creator_volume,
             test_audio_output,

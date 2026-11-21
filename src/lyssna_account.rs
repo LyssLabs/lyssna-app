@@ -647,6 +647,96 @@ pub fn backfill_isrc(
     Ok(report)
 }
 
+/// A request the TTML Creator's Review tab makes for a reviewer.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewMethod {
+    Get,
+    Post,
+}
+
+const REVIEW_LANES: [&str; 2] = ["priority", "backlog"];
+const REVIEW_ACTIONS: [&str; 3] = ["approve", "reject", "request-changes"];
+
+fn is_id(text: &str) -> bool {
+    text.len() == 36
+        && text.bytes().enumerate().all(|(at, byte)| match at {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+}
+
+/// Checks a review request against the few the Review tab needs, so the
+/// command can't be steered at the rest of the account's API.
+fn review_request(method: ReviewMethod, path: &str) -> Result<Url> {
+    let url = Url::parse(&format!("{API}{path}")).context("Invalid review request")?;
+    ensure!(
+        url.origin() == Url::parse(API)?.origin() && url.fragment().is_none(),
+        "Invalid review request"
+    );
+    let parts: Vec<&str> = url.path().trim_start_matches('/').split('/').collect();
+    let query: Vec<(String, String)> = url.query_pairs().into_owned().collect();
+    let plain = query.is_empty();
+    let allowed = match (method, parts.as_slice()) {
+        (ReviewMethod::Get, ["v1", "queue"]) => {
+            query.iter().all(|(key, value)| match key.as_str() {
+                "lane" => REVIEW_LANES.contains(&value.as_str()),
+                "limit" => value
+                    .parse::<u16>()
+                    .is_ok_and(|limit| (1..=200).contains(&limit)),
+                _ => false,
+            })
+        }
+        (ReviewMethod::Get, ["v1", "submissions" | "songs" | "revisions", id]) => {
+            plain && is_id(id)
+        }
+        (ReviewMethod::Get, ["v1", "submissions", id, "comments"]) => plain && is_id(id),
+        (ReviewMethod::Get, ["v1", "revisions", id, "ttml"]) => plain && is_id(id),
+        (ReviewMethod::Post, ["v1", "submissions", id, "comments"]) => plain && is_id(id),
+        (ReviewMethod::Post, ["v1", "submissions", id, action]) => {
+            plain && is_id(id) && REVIEW_ACTIONS.contains(action)
+        }
+        _ => false,
+    };
+    ensure!(allowed, "Invalid review request");
+    Ok(url)
+}
+
+/// A reviewer's request to the API: JSON back, or a revision's TTML as a string.
+pub fn review(
+    client: &Client,
+    method: ReviewMethod,
+    path: &str,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value> {
+    let url = review_request(method, path)?;
+    let Some(token) = access_token(client)? else {
+        bail!("Sign in to Lyssna in Settings to review lyrics");
+    };
+    let ttml = url.path().ends_with("/ttml");
+    let request = match method {
+        ReviewMethod::Get => client.get(url),
+        ReviewMethod::Post => client
+            .post(url)
+            .json(&body.unwrap_or_else(|| serde_json::json!({}))),
+    };
+    let response = keyed(request)
+        .bearer_auth(token)
+        .send()
+        .context("Cannot reach Lyssna")?;
+    if !response.status().is_success() {
+        let rejected = rejection(response);
+        if rejected.code.as_deref() == Some("forbidden") {
+            bail!("Your Lyssna account can't review lyrics");
+        }
+        return Err(rejected.into_error());
+    }
+    if ttml {
+        return Ok(serde_json::Value::String(response.text()?));
+    }
+    Ok(response.json()?)
+}
+
 pub fn signed_in() -> bool {
     matches!(load(), Ok(Some(_)))
 }
@@ -666,6 +756,39 @@ pub fn sign_out(client: &Client) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn review_requests_stay_on_the_review_routes() {
+        let id = "0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44";
+        let ok = |method, path: &str| review_request(method, path).is_ok();
+        assert!(ok(ReviewMethod::Get, "/v1/queue?lane=priority&limit=50"));
+        assert!(ok(ReviewMethod::Get, &format!("/v1/submissions/{id}")));
+        assert!(ok(ReviewMethod::Get, &format!("/v1/revisions/{id}/ttml")));
+        assert!(ok(
+            ReviewMethod::Post,
+            &format!("/v1/submissions/{id}/approve")
+        ));
+        assert!(ok(
+            ReviewMethod::Post,
+            &format!("/v1/submissions/{id}/request-changes")
+        ));
+        assert!(ok(
+            ReviewMethod::Post,
+            &format!("/v1/submissions/{id}/comments")
+        ));
+        assert!(!ok(ReviewMethod::Get, "/v1/queue?lane=links"));
+        assert!(!ok(ReviewMethod::Get, "/v1/queue?limit=5000"));
+        assert!(!ok(ReviewMethod::Get, "/v1/me"));
+        assert!(!ok(
+            ReviewMethod::Post,
+            &format!("/v1/submissions/{id}/withdraw")
+        ));
+        assert!(!ok(ReviewMethod::Post, &format!("/v1/songs/{id}/revert")));
+        assert!(!ok(ReviewMethod::Get, "/v1/submissions/../me"));
+        assert!(!ok(ReviewMethod::Get, &format!("/v1/submissions/{id}?x=1")));
+        assert!(!ok(ReviewMethod::Get, "//evil.example/v1/queue"));
+        assert!(!ok(ReviewMethod::Get, "@evil.example/v1/queue"));
+    }
 
     #[test]
     fn sign_in_url_carries_the_desktop_request() {
