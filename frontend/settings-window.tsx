@@ -1188,8 +1188,8 @@ export function SettingsWindow({
         />,
         flag(
           "lyrics_seek_compensation",
-          "Seek fade-in compensation",
-          "Clicking a lyric starts 300 ms before it, so a speaker that fades in after a seek is at full volume when the line begins.",
+          "Space Gravity seek fade-in compensation",
+          "Clicking a floating word seeks 300 ms early, so a speaker that fades in after a seek is at full volume when the word begins.",
           "seek fade in compensation click lyric early volume",
         ),
         flag(

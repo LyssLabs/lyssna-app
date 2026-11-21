@@ -604,8 +604,8 @@ export function useLyricPosition(
   );
 }
 
-/** Seek Fade-in Compensation from Spicy Lyrics: a clicked lyric starts
- *  this far early, so a device's fade-in after a seek ends as it begins. */
+/** A clicked Space Gravity word starts this far early, so a device's
+ *  fade-in after a seek ends as it begins. */
 const SEEK_FADE_LEAD_MS = 300;
 const lyricSeekTarget = (ms: number) => Math.max(0, ms - SEEK_FADE_LEAD_MS);
 /** Spicy Lyrics resumes following this long after the last scroll. */
@@ -650,10 +650,9 @@ export function LyricsDisplay({
   };
   const lines = useRef<(HTMLButtonElement | null)[]>([]);
   const seek = useRef(onSeek);
-  const seekLead = settings.lyrics_seek_compensation !== false;
   useLayoutEffect(() => {
-    seek.current = (ms) => onSeek(seekLead ? lyricSeekTarget(ms) : ms);
-  }, [onSeek, seekLead]);
+    seek.current = onSeek;
+  }, [onSeek]);
   // Clock frames must not replace each button's native click listener or ref.
   const lineActions = useMemo(
     () =>
@@ -663,7 +662,7 @@ export function LyricsDisplay({
         },
         click: () => {
           if (lyrics.synced) {
-            seek.current(line.words[0]?.start_ms ?? line.start_ms);
+            seek.current(line.start_ms);
             setFollowing(true);
           }
         },
