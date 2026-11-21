@@ -3330,7 +3330,7 @@ test("playlist toolbar stays above the track table", async ({ page }) => {
   expect(toolbar!.y + toolbar!.height).toBeLessThanOrEqual(rows!.y);
 });
 
-test("Lyssna lyrics credit their makers and open the song's page", async ({
+test("Lyssna lyrics list their contributors with stacked avatars", async ({
   page,
 }) => {
   await startClient(page);
@@ -3380,34 +3380,36 @@ test("Lyssna lyrics credit their makers and open the song's page", async ({
   }, track.uri);
   const credits = page.locator(".lyrics-page .lyric-source.expanded");
   await expect(credits).toContainText("Lyrics provided by: Lyssna");
-  await expect(credits).toContainText("Made by @Arashii");
-  await expect(credits).toContainText("Improved by Deleted user");
+  const contributors = credits.locator(".lyssna-contributors");
+  await expect(contributors).toContainText("Contributors:");
+  // Both avatars show, largest share first; only the top contributor is
+  // named, as the second has under 30%.
+  await expect(contributors.locator(".contributor-avatar")).toHaveCount(2);
+  await expect(contributors.locator(".contributor-names")).toHaveText(
+    "Arashii",
+  );
   await expect(
-    credits.getByRole("button", { name: "@Arashii" }),
+    contributors.getByRole("button", { name: "Arashii" }).first(),
   ).toHaveAttribute(
     "title",
-    "75% of these lyrics: 100% of the words, 50% of the timing",
+    "Arashii: 75% of these lyrics (100% of the words, 50% of the timing)",
   );
-  await credits.getByRole("button", { name: "@Arashii" }).click();
+  await expect(
+    contributors.getByRole("img", { name: "Deleted user" }),
+  ).toBeVisible();
+  await contributors.locator(".contributor-name").click();
   await expect
     .poll(() =>
       page.evaluate(() =>
         (window as any).__clientTest.commands
-          .filter((entry: any) => entry.command === "open_song_page")
-          .map((entry: any) => entry.args.songId),
+          .filter((entry: any) => entry.command === "open_link")
+          .map((entry: any) => entry.args.url),
       ),
     )
-    .toContain("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44");
-  await expect(credits.getByText("Deleted user")).not.toHaveRole("button");
-  // Squeezed, "Made by" drops to the next line with its name instead of
-  // leaving the name to wrap alone.
-  await credits.evaluate((element) => {
-    (element as HTMLElement).style.width = "15em";
-  });
-  const madeBy = credits.locator(".community-label-name").first();
-  expect(
-    await madeBy.evaluate((element) => element.getClientRects().length),
-  ).toBe(1);
+    .toContain("https://lyssna.org/u/Arashii");
+  const lead = (await credits.locator(".community-lead").boundingBox())!;
+  const row = (await contributors.boundingBox())!;
+  expect(row.y).toBeGreaterThanOrEqual(lead.y + lead.height - 1);
 });
 
 test("community credits show the Discord username looked up by ID", async ({

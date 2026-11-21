@@ -37,6 +37,7 @@ import {
   UnfoldVertical,
   FoldVertical,
   Copy,
+  UserRound,
 } from "lucide-react";
 import { Toggle } from "./setting-row";
 import { VolumeControl } from "./volume-control";
@@ -1214,45 +1215,94 @@ export function LyricsDisplay({
   );
 }
 
-function LyssnaPerson({
+const lyssnaProfile = (username: string) =>
+  `https://lyssna.org/u/${encodeURIComponent(username)}`;
+const openLyssnaProfile = (username: string) =>
+  void rpc("open_link", { url: lyssnaProfile(username) }).catch(() => {});
+
+function ContributorAvatar({
   person,
-  song,
+  layer,
 }: {
   person: LyssnaCredit;
-  song?: string;
+  layer: number;
 }) {
   const [avatar, setAvatar] = useState(
-    person.avatar_url?.startsWith("https://") ? person.avatar_url : undefined,
+    person.username && person.avatar_url?.startsWith("https://")
+      ? person.avatar_url
+      : undefined,
   );
-  const share = `${Math.round(person.share)}% of these lyrics: ${Math.round(person.text_share)}% of the words, ${Math.round(person.timing_share)}% of the timing`;
-  if (!person.username)
-    return (
-      <span className="community-profile" title={share}>
-        Deleted user
-      </span>
-    );
-  const name = person.username;
-  return (
-    <button
-      className="community-profile"
-      title={share}
-      onClick={() =>
-        void (
-          song
-            ? rpc("open_song_page", { songId: song })
-            : rpc("open_link", {
-                url: `https://lyssna.org/u/${encodeURIComponent(name)}`,
-              })
-        ).catch(() => {})
-      }
-    >
+  const name = person.username || "Deleted user";
+  const share = `${name}: ${Math.round(person.share)}% of these lyrics (${Math.round(person.text_share)}% of the words, ${Math.round(person.timing_share)}% of the timing)`;
+  const face = (
+    <>
+      <UserRound aria-hidden="true" />
       {avatar && (
         <img src={avatar} alt="" onError={() => setAvatar(undefined)} />
       )}
-      <Marquee text={`@${name}`} className="community-name">
-        @{name}
-      </Marquee>
+    </>
+  );
+  const style = { "--avatar-layer": layer } as CSSProperties;
+  return person.username ? (
+    <button
+      className="contributor-avatar"
+      style={style}
+      title={share}
+      aria-label={name}
+      onClick={() => openLyssnaProfile(name)}
+    >
+      {face}
     </button>
+  ) : (
+    <span
+      className="contributor-avatar"
+      style={style}
+      role="img"
+      title={share}
+      aria-label={name}
+    >
+      {face}
+    </span>
+  );
+}
+
+/** "Contributors:" with up to five stacked avatars, largest share first, and
+ *  the top contributor named; a second is named too with 30% or more. */
+function LyssnaContributors({ credits }: { credits: LyssnaCredit[] }) {
+  const shown = [...credits].sort((a, b) => b.share - a.share).slice(0, 5);
+  const named = shown.slice(0, (shown[1]?.share ?? 0) >= 30 ? 2 : 1);
+  return (
+    <span className="lyssna-contributors">
+      <span>Contributors:</span>
+      <span className="contributor-avatars">
+        {shown.map((person, index) => (
+          <ContributorAvatar
+            key={person.user_id ?? `deleted-${index}`}
+            person={person}
+            layer={shown.length - index}
+          />
+        ))}
+      </span>
+      <span className="contributor-names">
+        {named.map((person, index) => (
+          <span key={person.user_id ?? `deleted-${index}`}>
+            {person.username ? (
+              <button
+                className="contributor-name"
+                onClick={() => openLyssnaProfile(person.username!)}
+              >
+                <Marquee text={person.username} className="community-name">
+                  {person.username}
+                </Marquee>
+              </button>
+            ) : (
+              "Deleted user"
+            )}
+            {index < named.length - 1 && ","}
+          </span>
+        ))}
+      </span>
+    </span>
   );
 }
 
@@ -1327,35 +1377,12 @@ const LyricCredits = memo(function LyricCredits({
     }
   };
   if (lyrics.source === "lyssna" && lyrics.credits?.length) {
-    const groups = [
-      ["Made by", lyrics.credits.filter((person) => person.original)],
-      ["Improved by", lyrics.credits.filter((person) => !person.original)],
-    ] as const;
     return (
       <div
-        className={`lyric-source community-credits ${expanded ? "expanded" : ""}`}
+        className={`lyric-source community-credits lyssna-credits ${expanded ? "expanded" : ""}`}
       >
         <span className="community-lead">Lyrics provided by: Lyssna</span>
-        {groups.map(([label, people]) => {
-          if (!people.length) return null;
-          const shown = people.slice(0, 3);
-          return (
-            <span key={label} className="community-person">
-              <span className="community-dot"> · </span>
-              <span className="community-label-name">
-                {label} <LyssnaPerson person={shown[0]} song={lyrics.song_id} />
-              </span>
-              {shown.slice(1).map((person, index) => (
-                <span key={person.user_id ?? `deleted-${index}`}>
-                  {", "}
-                  <LyssnaPerson person={person} song={lyrics.song_id} />
-                </span>
-              ))}
-              {people.length > shown.length &&
-                ` +${people.length - shown.length} more`}
-            </span>
-          );
-        })}
+        <LyssnaContributors credits={lyrics.credits} />
       </div>
     );
   }
