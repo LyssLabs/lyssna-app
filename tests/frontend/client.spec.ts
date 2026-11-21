@@ -1873,6 +1873,23 @@ async function emitCanvas(page: Page) {
   }, track.uri);
 }
 
+test("over a Canvas the shorter of the title and artists line sits on top", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await startClient(page);
+  await showLyrics(page);
+  const details = page.locator(".lyrics-page .lyrics-details");
+  await expect(details).not.toHaveAttribute("data-shortest-first");
+  await emitCanvas(page);
+  await expect(page.locator(".lyrics-page")).toHaveClass(/canvas-lyrics/);
+  // "Timing test" is wider than "Test artist", so the artists go on top.
+  await expect(details).toHaveAttribute("data-shortest-first", "");
+  const title = (await details.locator(".lyrics-title").boundingBox())!;
+  const artists = (await details.locator(".lyrics-artists").boundingBox())!;
+  expect(artists.y + artists.height).toBeLessThanOrEqual(title.y + 1);
+});
+
 test("offline mode shows a banner and greys out songs that are not downloaded", async ({
   page,
 }) => {

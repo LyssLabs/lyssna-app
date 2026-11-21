@@ -1927,6 +1927,61 @@ function useUpNext(state: AppState) {
     : filled;
 }
 
+/** Over a Canvas, the shorter of the title and the year-and-artists line sits
+ *  on top. Both lines keep their own bottom offsets, which differ between
+ *  layouts, so they trade places by shifting past each other. */
+function useShortestFirst(
+  details: React.RefObject<HTMLDivElement | null>,
+  active: boolean,
+  key: string,
+) {
+  useLayoutEffect(() => {
+    const element = details.current;
+    if (!element) return;
+    const title = element.querySelector<HTMLElement>(":scope > .lyrics-title");
+    const artists = element.querySelector<HTMLElement>(
+      ":scope > .lyrics-artists",
+    );
+    const reset = () => {
+      delete element.dataset.shortestFirst;
+      element.style.removeProperty("--title-shift");
+      element.style.removeProperty("--artists-shift");
+    };
+    if (!active || !title || !artists) return reset;
+    const update = () => {
+      const titleWidth =
+        title.querySelector<HTMLElement>(".marquee-content")?.scrollWidth ??
+        title.scrollWidth;
+      const artistsWidth = [...artists.children].reduce((total, part) => {
+        const content = part.querySelector<HTMLElement>(".marquee-content");
+        return total + (content ?? (part as HTMLElement)).scrollWidth;
+      }, 0);
+      if (!artistsWidth || titleWidth <= artistsWidth) return reset();
+      // Measured without transforms, so the swap never feeds back into itself.
+      const titleBottom = title.offsetTop + title.offsetHeight;
+      const artistsBottom = artists.offsetTop + artists.offsetHeight;
+      element.dataset.shortestFirst = "";
+      element.style.setProperty(
+        "--artists-shift",
+        `${title.offsetTop - artists.offsetTop}px`,
+      );
+      element.style.setProperty(
+        "--title-shift",
+        `${artistsBottom - titleBottom}px`,
+      );
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(element.parentElement ?? element);
+    observer.observe(title);
+    observer.observe(artists);
+    update();
+    return () => {
+      observer.disconnect();
+      reset();
+    };
+  }, [details, active, key]);
+}
+
 function SongLyricsPage({
   state,
   onPlayer,
@@ -2067,6 +2122,12 @@ function SongLyricsPage({
   );
   const visibleCanvas =
     canvas && canvasShown && !state.settings.lyrics_hide_artwork;
+  const details = useRef<HTMLDivElement>(null);
+  useShortestFirst(
+    details,
+    canvas && !narrow,
+    `${track?.uri}:${track?.name}:${state.settings.lyrics_year_position}`,
+  );
   useEffect(() => {
     onCanvasActive?.(visibleCanvas);
     return () => onCanvasActive?.(false);
@@ -2351,6 +2412,7 @@ function SongLyricsPage({
             )}
             <div
               className="lyrics-details"
+              ref={details}
               data-context-route={track.id ? `track:${track.id}` : undefined}
             >
               <TrackTitle

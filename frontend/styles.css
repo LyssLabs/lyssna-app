@@ -6337,6 +6337,15 @@ input[type="range"]:hover {
   text-align: left;
   z-index: 3;
 }
+/* The shorter line on top: see useShortestFirst. */
+.canvas-lyrics:not(.narrow) .lyrics-details[data-shortest-first] > .lyrics-title {
+  transform: translateY(var(--title-shift, 0));
+}
+.canvas-lyrics:not(.narrow)
+  .lyrics-details[data-shortest-first]
+  > .lyrics-artists {
+  transform: translateY(var(--artists-shift, 0));
+}
 .canvas-lyrics:not(.narrow) .lyrics-title .marquee-content {
   padding-inline: 0.4rem;
 }
