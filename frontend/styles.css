@@ -1907,6 +1907,12 @@ small {
 }
 .load-ttml-reviewer .settings-select {
   min-width: 170px;
+  text-align: left;
+}
+.reviewer-picker .sort-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  min-width: 100%;
 }
 .load-ttml-reviewer-info {
   padding: 0 14px;

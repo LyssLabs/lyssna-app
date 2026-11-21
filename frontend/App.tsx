@@ -1459,6 +1459,12 @@ function App() {
         event.stopPropagation();
         if (!event.repeat) toggle();
       }
+      // An open popover inside a dialog closes itself first.
+      if (
+        event.key === "Escape" &&
+        document.querySelector("[data-owns-escape]")
+      )
+        return;
       if (event.key === "Escape") {
         setSongMenu(null);
         setDeviceMenu(false);

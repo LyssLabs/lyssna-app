@@ -9139,10 +9139,21 @@ test("Load TTML offers Spicy Lyrics' load modes, reset and saved lyrics", async 
     "Session Load",
     "Submit to Lyssna",
   ]);
-  const reviewer = dialog.getByRole("combobox", { name: /TTML Reviewer/ });
-  await expect(reviewer).toHaveValue("off");
-  await reviewer.selectOption("temporary");
-  await expect(reviewer).toHaveValue("temporary");
+  const reviewer = dialog.getByRole("button", { name: "TTML Reviewer" });
+  await expect(reviewer).toHaveText("Off");
+  await reviewer.click();
+  await page.getByRole("option", { name: "Temporary loads" }).click();
+  await expect(reviewer).toHaveText("Temporary loads");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await reviewer.press("ArrowDown");
+  await expect(reviewer).toHaveText("All loaded TTML");
+  await reviewer.click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await reviewer.press("ArrowUp");
+  await reviewer.press("ArrowUp");
+  await expect(reviewer).toHaveText("Off");
   const changes = dialog.getByRole("button", { name: "What does it change?" });
   await changes.click();
   await expect(changes).toHaveAttribute("aria-expanded", "true");

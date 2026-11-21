@@ -251,19 +251,11 @@ export function LoadTtml({
                 >
                   What does it change?
                 </button>
-                <select
-                  className="settings-select"
-                  aria-label="TTML Reviewer"
+                <ReviewerPicker
                   value={reviewer}
                   disabled={busy}
-                  onChange={(event) =>
-                    onReviewer(event.currentTarget.value as ReviewerMode)
-                  }
-                >
-                  <option value="off">Off</option>
-                  <option value="temporary">Temporary loads</option>
-                  <option value="always">All loaded TTML</option>
-                </select>
+                  onChange={onReviewer}
+                />
               </div>
               {reviewerInfo && (
                 <ul id="ttml-reviewer-changes">
@@ -433,6 +425,88 @@ export function LoadTtml({
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+const REVIEWER_MODES: [ReviewerMode, string][] = [
+  ["off", "Off"],
+  ["temporary", "Temporary loads"],
+  ["always", "All loaded TTML"],
+];
+
+function ReviewerPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: ReviewerMode;
+  disabled: boolean;
+  onChange: (mode: ReviewerMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+  const index = REVIEWER_MODES.findIndex(([mode]) => mode === value);
+  const pick = (mode: ReviewerMode) => {
+    onChange(mode);
+    setOpen(false);
+  };
+  return (
+    <div
+      className="sort-menu-root reviewer-picker"
+      ref={root}
+      data-owns-escape={open || undefined}
+    >
+      <button
+        className="settings-select"
+        aria-label="TTML Reviewer"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((shown) => !shown)}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          const next =
+            REVIEWER_MODES[
+              (index + step + REVIEWER_MODES.length) % REVIEWER_MODES.length
+            ];
+          onChange(next[0]);
+        }}
+      >
+        {REVIEWER_MODES[index]?.[1] ?? "Off"}
+      </button>
+      {open && (
+        <div className="sort-menu" role="listbox" aria-label="TTML Reviewer">
+          {REVIEWER_MODES.map(([mode, label]) => (
+            <button
+              key={mode}
+              role="option"
+              aria-selected={mode === value}
+              className={mode === value ? "active" : ""}
+              onClick={() => pick(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
