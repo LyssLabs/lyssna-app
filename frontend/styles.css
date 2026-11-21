@@ -3087,16 +3087,19 @@ small {
 }
 .next-track .marquee {
   font-size: 17px;
-  line-height: 1.4;
+  line-height: 1.3;
 }
+/* A fixed line height: with "normal", fallback fonts for names in other
+   scripts made the line taller and pushed the artists away from the title. */
 .next-track > div > span {
   display: block;
   color: light-dark(#1e1e1eb0, #e1e1e1b0);
   font-size: 13px;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-top: 5px;
+  margin-top: 2px;
 }
 /* Queue panel: rows share the Now playing card's next-track layout. */
 .queue-section {
