@@ -1,4 +1,5 @@
 import { rpc } from "./bridge";
+import type { Track } from "./types";
 
 export type ReviewLane = "priority" | "backlog";
 export type ReviewAction = "approve" | "reject" | "request-changes";
@@ -96,6 +97,19 @@ export async function reviewTrackUri(submission: ReviewSubmission) {
   );
   const linked = spotify(song?.links);
   return linked ? `spotify:track:${linked}` : undefined;
+}
+
+const songs = new Map<string, Promise<Track | undefined>>();
+/** The Spotify song a submission is for, with its artists and cover. */
+export function reviewSong(submission: ReviewSubmission) {
+  let song = songs.get(submission.id);
+  if (!song) {
+    song = reviewTrackUri(submission)
+      .then((uri) => (uri ? rpc<Track>("resolve_track", { uri }) : undefined))
+      .catch(() => undefined);
+    songs.set(submission.id, song);
+  }
+  return song;
 }
 
 export const REVIEWER_ROLES = ["reviewer", "moderator", "admin"];

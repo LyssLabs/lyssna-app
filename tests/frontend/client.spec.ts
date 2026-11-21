@@ -1047,6 +1047,15 @@ async function startClient(
             return { id: "s1", song_title: args.track.name, kind: "new", status: "pending" };
           if (command === "lyssna_account") return (window as any).__lyssnaAccount ?? null;
           if (command === "lyssna_review") return (window as any).__lyssnaReview?.(args);
+          if (command === "resolve_track")
+            return {
+              id: args.uri.slice(14),
+              uri: args.uri,
+              name: "Come & Go (with Marshmello)",
+              duration_ms: 205000,
+              artists: [{ name: "Juice WRLD" }, { name: "Marshmello" }],
+              album: { name: "Come & Go", images: [] },
+            };
           if (command === "genius_lyrics")
             return "From Genius one\nFrom Genius two";
           if (command === "search_suggestions") {
@@ -17040,10 +17049,14 @@ test("reviewers see waiting submissions and decide them from the TTML Creator", 
   });
   await expect(button).toContainText("1");
   await button.click();
+  await expect(page.getByRole("region", { name: "TTML Creator" })).toHaveCount(0);
+  const queue = page.getByRole("region", { name: "Review submissions" });
+  await expect(queue).toContainText("Come & Go (with Marshmello)");
+  await expect(queue).toContainText("Juice WRLD, Marshmello");
+  await expect(queue).toContainText("New · @newcomer · tier 1 · 3h ago");
+  await queue.getByRole("button", { name: /Come & Go/ }).click();
+  await expect(page.getByRole("region", { name: "TTML Creator" })).toBeVisible();
   const panel = page.getByRole("complementary", { name: "Review" });
-  await expect(panel).toContainText("Come & Go");
-  await expect(panel).toContainText("New · @newcomer · tier 1 · 3h ago");
-  await panel.getByRole("button", { name: /Come & Go/ }).click();
   await expect(
     panel.getByRole("button", { name: "Ask for changes" }),
   ).toBeDisabled();

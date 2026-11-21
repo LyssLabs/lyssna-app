@@ -5887,6 +5887,29 @@ async fn browse_page(
     .map_err(|_| "This category is unavailable right now. Try again shortly.".to_owned())
 }
 #[tauri::command]
+async fn resolve_track(
+    state: State<'_, Desktop>,
+    uri: String,
+) -> std::result::Result<crate::model::Track, String> {
+    let id = uri.strip_prefix("spotify:track:").unwrap_or_default();
+    if id.len() != 22 || !id.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return Err("Invalid song".into());
+    }
+    let account = lock(&state.0.snapshot)
+        .map_err(error)?
+        .profile
+        .as_ref()
+        .context("Sign in first")
+        .map_err(error)?
+        .id
+        .clone();
+    let controls = state.0.controls.scoped(&account).map_err(error)?;
+    tauri::async_runtime::spawn_blocking(move || controls.track(&uri))
+        .await
+        .map_err(error)?
+        .map_err(|_| "Song details unavailable. Try again shortly.".to_owned())
+}
+#[tauri::command]
 async fn resolve_album(
     state: State<'_, Desktop>,
     uri: String,
@@ -6692,6 +6715,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             open_creator_profile,
             open_song_page,
             resolve_album,
+            resolve_track,
             user_profile,
             follow_user,
             playlist_privacy,

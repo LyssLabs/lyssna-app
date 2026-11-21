@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   CircleCheck,
@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import type { Lyrics, Track } from "./types";
+import { Cover } from "./components";
 import {
   GRADES,
   REJECT_REASONS,
@@ -18,6 +19,7 @@ import {
   diffLines,
   reviewComments,
   reviewQueue,
+  reviewSong,
   reviewTrackUri,
   revisionTtml,
   type DiffRow,
@@ -42,36 +44,19 @@ const ago = (iso: string) => {
 const who = (submission: ReviewSubmission) =>
   submission.submitter_name ? `@${submission.submitter_name}` : "Deleted user";
 
-/** The TTML Creator's review queue for reviewers: pick a submission, play
- *  its song, read what changed, talk to the submitter and decide. */
-export function ReviewPanel({
-  playing,
-  editing,
-  editorTtml,
-  onPlay,
-  onOpen,
-  onParse,
-  onSubmitFix,
-  onDecided,
-  notify,
+/** Waiting submissions by lane; picking one hands it to `onPick`. */
+export function ReviewQueue({
+  onPick,
   onClose,
+  refresh = 0,
 }: {
-  playing?: Track;
-  /** The submission loaded in the editor and the TTML it opened with. */
-  editing?: { id: string; baseline: string };
-  editorTtml: () => string;
-  onPlay: (uri: string) => void;
-  onOpen: (open: ReviewOpen) => void;
-  onParse: (ttml: string) => Promise<Lyrics>;
-  onSubmitFix: (ttml: string) => Promise<void>;
-  onDecided: () => void;
-  notify: (message: string, error?: boolean) => void;
-  onClose: () => void;
+  onPick: (submission: ReviewSubmission) => void;
+  onClose?: () => void;
+  refresh?: number;
 }) {
   const [lane, setLane] = useState<ReviewLane>("priority");
   const [items, setItems] = useState<ReviewSubmission[] | null>(null);
   const [failed, setFailed] = useState<string>();
-  const [picked, setPicked] = useState<ReviewSubmission>();
   const load = useCallback(() => {
     setFailed(undefined);
     setItems(null);
@@ -80,40 +65,19 @@ export function ReviewPanel({
       setFailed(String(error));
     });
   }, [lane]);
-  useEffect(load, [load]);
-
-  if (picked)
-    return (
-      <aside className="review-panel" aria-label="Review">
-        <ReviewDetail
-          submission={picked}
-          playing={playing}
-          editing={editing?.id === picked.id ? editing : undefined}
-          editorTtml={editorTtml}
-          onPlay={onPlay}
-          onOpen={onOpen}
-          onParse={onParse}
-          onSubmitFix={onSubmitFix}
-          notify={notify}
-          onBack={() => setPicked(undefined)}
-          onDecided={() => {
-            setPicked(undefined);
-            onDecided();
-            load();
-          }}
-        />
-      </aside>
-    );
+  useEffect(load, [load, refresh]);
   return (
-    <aside className="review-panel" aria-label="Review">
+    <>
       <header className="review-head">
         <h3>Review</h3>
         <button onClick={load} title="Refresh" aria-label="Refresh queue">
           <RefreshCw size={15} />
         </button>
-        <button onClick={onClose} aria-label="Close review">
-          <X size={16} />
-        </button>
+        {onClose && (
+          <button onClick={onClose} aria-label="Close review">
+            <X size={16} />
+          </button>
+        )}
       </header>
       <div className="review-lanes" role="tablist">
         {(
@@ -143,21 +107,104 @@ export function ReviewPanel({
         <ul className="review-list">
           {items.map((item) => (
             <li key={item.id}>
-              <button onClick={() => setPicked(item)}>
-                <strong>{item.song_title}</strong>
-                <span>
-                  {item.kind === "edit" ? "Edit" : "New"} · {who(item)} · tier{" "}
-                  {item.submitter_tier} · {ago(item.submitted_at)}
-                </span>
-                {(item.major_rewrite || item.light_review) && (
-                  <small>
-                    {item.major_rewrite ? "Major rewrite" : "Light review"}
-                  </small>
-                )}
+              <button onClick={() => onPick(item)}>
+                <ReviewSongRow submission={item} />
               </button>
             </li>
           ))}
         </ul>
+      )}
+    </>
+  );
+}
+
+function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
+  const [song, setSong] = useState<Track | null>();
+  useEffect(() => {
+    let live = true;
+    void reviewSong(submission).then((found) => live && setSong(found ?? null));
+    return () => {
+      live = false;
+    };
+  }, [submission]);
+  return (
+    <>
+      <Cover images={song?.album.images ?? []} className="review-cover" />
+      <span className="review-song">
+        <strong>{song?.name ?? submission.song_title}</strong>
+        {song && (
+          <span>{song.artists.map((artist) => artist.name).join(", ")}</span>
+        )}
+        <small>
+          {submission.kind === "edit" ? "Edit" : "New"} · {who(submission)} ·
+          tier {submission.submitter_tier} · {ago(submission.submitted_at)}
+          {submission.major_rewrite
+            ? " · Major rewrite"
+            : submission.light_review
+              ? " · Light review"
+              : ""}
+        </small>
+      </span>
+    </>
+  );
+}
+
+/** The TTML Creator's review side panel: a submission's changes, comments
+ *  and decision, or the queue to pick another. */
+export function ReviewPanel({
+  initial,
+  playing,
+  editing,
+  editorTtml,
+  onPlay,
+  onOpen,
+  onParse,
+  onSubmitFix,
+  onDecided,
+  notify,
+  onClose,
+}: {
+  /** Picked on the Review page, so it opens in the editor at once. */
+  initial?: ReviewSubmission;
+  playing?: Track;
+  /** The submission loaded in the editor and the TTML it opened with. */
+  editing?: { id: string; baseline: string };
+  editorTtml: () => string;
+  onPlay: (uri: string) => void;
+  onOpen: (open: ReviewOpen) => void;
+  onParse: (ttml: string) => Promise<Lyrics>;
+  onSubmitFix: (ttml: string) => Promise<void>;
+  onDecided: () => void;
+  notify: (message: string, error?: boolean) => void;
+  onClose: () => void;
+}) {
+  const [picked, setPicked] = useState(initial);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => setPicked(initial), [initial]);
+  return (
+    <aside className="review-panel" aria-label="Review">
+      {picked ? (
+        <ReviewDetail
+          key={picked.id}
+          submission={picked}
+          autoOpen={picked === initial}
+          playing={playing}
+          editing={editing?.id === picked.id ? editing : undefined}
+          editorTtml={editorTtml}
+          onPlay={onPlay}
+          onOpen={onOpen}
+          onParse={onParse}
+          onSubmitFix={onSubmitFix}
+          notify={notify}
+          onBack={() => setPicked(undefined)}
+          onDecided={() => {
+            setPicked(undefined);
+            setRefresh((count) => count + 1);
+            onDecided();
+          }}
+        />
+      ) : (
+        <ReviewQueue onPick={setPicked} onClose={onClose} refresh={refresh} />
       )}
     </aside>
   );
@@ -165,6 +212,7 @@ export function ReviewPanel({
 
 function ReviewDetail({
   submission,
+  autoOpen,
   playing,
   editing,
   editorTtml,
@@ -177,6 +225,7 @@ function ReviewDetail({
   onDecided,
 }: {
   submission: ReviewSubmission;
+  autoOpen: boolean;
   playing?: Track;
   editing?: { id: string; baseline: string };
   editorTtml: () => string;
@@ -198,6 +247,11 @@ function ReviewDetail({
   const [reason, setReason] = useState<RejectReason>("low_effort");
   const [busy, setBusy] = useState(false);
   const id = submission.id;
+  // Callers pass fresh callbacks each render; the fetches below run once.
+  const parse = useRef(onParse);
+  parse.current = onParse;
+  const tell = useRef(notify);
+  tell.current = notify;
   useEffect(() => {
     let live = true;
     void reviewTrackUri(submission).then(
@@ -206,7 +260,7 @@ function ReviewDetail({
     if (submission.head_revision_id)
       revisionTtml(submission.head_revision_id).then(
         (text) => live && setTtml(text),
-        (error) => live && notify(String(error), true),
+        (error) => live && tell.current(String(error), true),
       );
     reviewComments(id).then(
       (list) => live && setComments(list),
@@ -215,7 +269,7 @@ function ReviewDetail({
     return () => {
       live = false;
     };
-  }, [submission, id, notify]);
+  }, [submission, id]);
   useEffect(() => {
     if (!ttml || submission.kind !== "edit" || !submission.base_revision_id)
       return setDiff(null);
@@ -225,7 +279,7 @@ function ReviewDetail({
         .filter((line) => !line.background)
         .map((line) => ({ text: line.text, startMs: line.start_ms }));
     revisionTtml(submission.base_revision_id)
-      .then((base) => Promise.all([onParse(base), onParse(ttml)]))
+      .then((base) => Promise.all([parse.current(base), parse.current(ttml)]))
       .then(
         ([before, after]) =>
           live && setDiff(diffLines(lines(before), lines(after))),
@@ -234,7 +288,15 @@ function ReviewDetail({
     return () => {
       live = false;
     };
-  }, [ttml, submission, onParse]);
+  }, [ttml, submission]);
+  const open = useRef(onOpen);
+  open.current = onOpen;
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!autoOpen || opened.current || !uri || !ttml) return;
+    opened.current = true;
+    open.current({ submission, uri, ttml });
+  }, [autoOpen, uri, ttml, submission]);
 
   const playingIt = !!uri && playing?.uri === uri;
   const fixed = !!editing && editorTtml() !== editing.baseline;

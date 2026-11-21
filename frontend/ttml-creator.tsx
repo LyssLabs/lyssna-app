@@ -37,6 +37,7 @@ import {
   X,
 } from "lucide-react";
 import { ReviewPanel, type ReviewOpen } from "./review-panel";
+import type { ReviewSubmission } from "./review-api";
 import { Cover, usePlaybackClock } from "./components";
 import type { AppState } from "./state";
 import type { Lyrics, PlayerRequest, Track } from "./types";
@@ -272,7 +273,7 @@ export function TtmlCreator({
   onShowPlayer,
   onClose,
   reviewer = false,
-  reviewRequest = 0,
+  reviewPick,
   onReviewed,
 }: {
   state: AppState;
@@ -293,8 +294,8 @@ export function TtmlCreator({
   onClose?: () => void;
   /** The signed-in Lyssna account may review submissions. */
   reviewer?: boolean;
-  /** Bumped to open the Review panel from outside. */
-  reviewRequest?: number;
+  /** Picked on the Review page, to open for review here. */
+  reviewPick?: ReviewSubmission;
   /** A review decision was made, so waiting counts can refresh. */
   onReviewed?: () => void;
 }) {
@@ -1895,9 +1896,12 @@ export function TtmlCreator({
   const ttml = () => (track ? toTtml(lines, meta(track), entries) : "");
 
   const [reviewing, setReviewing] = useState(false);
+  const [reviewOpening, setReviewOpening] = useState<ReviewSubmission>();
   useEffect(() => {
-    if (reviewRequest && reviewer) setReviewing(true);
-  }, [reviewRequest, reviewer]);
+    if (!reviewPick || !reviewer) return;
+    setReviewOpening(reviewPick);
+    setReviewing(true);
+  }, [reviewPick, reviewer]);
   const [reviewEdit, setReviewEdit] = useState<{
     id: string;
     uri: string;
@@ -1920,8 +1924,8 @@ export function TtmlCreator({
       return;
     }
     pendingReview.current = undefined;
-    void onParse("review.ttml", open.ttml, track.duration_ms).then(
-      (lyrics) => {
+    void onParse("review.ttml", open.ttml, track.duration_ms)
+      .then((lyrics) => {
         const loaded = fromLyrics(lyrics);
         setLines(loaded);
         setText(toText(loaded));
@@ -1930,9 +1934,10 @@ export function TtmlCreator({
         notify(
           `Opened ${open.submission.song_title} for review. Ctrl+Z goes back to your draft.`,
         );
-      },
-      (error) => notify(`Couldn't open the submission: ${String(error)}`, true),
-    );
+      })
+      .catch((error) =>
+        notify(`Couldn't open the submission: ${String(error)}`, true),
+      );
   }, [reviewTick, playing, track]);
   // What the editor makes of the submission untouched, to tell real fixes apart.
   useEffect(() => {
@@ -1960,6 +1965,7 @@ export function TtmlCreator({
   );
   const reviewPanel = reviewer && reviewing && (
     <ReviewPanel
+      initial={reviewOpening}
       playing={playing}
       editing={
         reviewEdit?.baseline !== undefined && track?.uri === reviewEdit.uri
@@ -1979,7 +1985,10 @@ export function TtmlCreator({
       onSubmitFix={submitFix}
       onDecided={() => onReviewed?.()}
       notify={notify}
-      onClose={() => setReviewing(false)}
+      onClose={() => {
+        setReviewing(false);
+        setReviewOpening(undefined);
+      }}
     />
   );
   const [editingMeta, setEditingMeta] = useState(false);

@@ -250,7 +250,8 @@ import {
   markTemporaryLoad,
   reviewerSettings,
 } from "./ttml-reviewer";
-import { canReview, reviewQueue } from "./review-api";
+import { canReview, reviewQueue, type ReviewSubmission } from "./review-api";
+import { ReviewQueue } from "./review-panel";
 import { libraryTree, type LibraryEntry } from "./library-tree";
 import {
   entryAdded,
@@ -290,7 +291,7 @@ const isTextInput = (target: EventTarget | null) =>
   (!!target.closest('textarea,select,[contenteditable="true"]') ||
     (target instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(target.type)));
 
-type Center = "browse" | "lyrics" | "profile" | "ttml";
+type Center = "browse" | "lyrics" | "profile" | "ttml" | "review";
 const LAYOUT_BEFORE_TTML = "lyssna.layout-before-ttml";
 // A history entry opened from the lyrics view; Back returns to the lyrics.
 const FROM_LYRICS = "lyrics>";
@@ -660,7 +661,7 @@ function App() {
   const [lyssnaRole, setLyssnaRole] = useState<string | null | undefined>();
   const reviewer = canReview(lyssnaRole);
   const [reviewWaiting, setReviewWaiting] = useState(0);
-  const [reviewRequest, setReviewRequest] = useState(0);
+  const [reviewPick, setReviewPick] = useState<ReviewSubmission>();
   const [reviewCheck, setReviewCheck] = useState(0);
   // Lyssna sends reviewers no notice of new submissions, so the app counts
   // the queue itself every few minutes.
@@ -3713,10 +3714,7 @@ function App() {
                   ? `Review submissions, ${reviewWaiting} waiting`
                   : "Review submissions"
               }
-              onClick={() => {
-                setCenter("ttml");
-                setReviewRequest((count) => count + 1);
-              }}
+              onClick={() => setCenter("review")}
             >
               <ClipboardCheck size={20} />
               {reviewWaiting > 0 && (
@@ -4040,7 +4038,7 @@ function App() {
               onShowPlayer={() => setTtmlPlayerBar(true)}
               onClose={() => setCenter("lyrics")}
               reviewer={reviewer}
-              reviewRequest={reviewRequest}
+              reviewPick={reviewPick}
               onReviewed={() => setReviewCheck((count) => count + 1)}
               renderPreview={(lyrics, live) => (
                 <LyricsPage
@@ -4241,6 +4239,16 @@ function App() {
                 </button>
               </div>
             </LyricsPage>
+          ) : center === "review" ? (
+            <section className="review-page" aria-label="Review submissions">
+              <ReviewQueue
+                refresh={reviewCheck}
+                onPick={(submission) => {
+                  setReviewPick({ ...submission });
+                  setCenter("ttml");
+                }}
+              />
+            </section>
           ) : center === "profile" ? (
             profileView && (
               <ProfilePage
