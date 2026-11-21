@@ -172,6 +172,9 @@ import {
   saveAccountOrder,
   togglePlaylistPin,
   forgetPlaylist,
+  LOCAL_FILES,
+  recordPlayed,
+  toggleLocalPin,
 } from "./library-order";
 import { useAppFonts } from "./custom-fonts";
 import { UpdatePrompt } from "./update-prompt";
@@ -1163,6 +1166,20 @@ function App() {
     },
     [notify, updateSettings],
   );
+  const toggleLocalFilesPin = useCallback(() => {
+    try {
+      const current = stateRef.current;
+      if (!current.profile) return;
+      updateSettings(
+        saveAccountOrder(current, toggleLocalPin(accountOrder(current))),
+      );
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Could not pin Local Files",
+        true,
+      );
+    }
+  }, [notify, updateSettings]);
   const songMenuElement = useRef<HTMLDivElement>(null);
   const entityMenuElement = useRef<HTMLDivElement>(null);
   const [privacy, setPrivacy] = useState<Record<string, PlaylistPrivacy>>(
@@ -1358,6 +1375,17 @@ function App() {
           saveAccountOrder(
             current,
             recordManualPlay(accountOrder(current), item),
+          ),
+        );
+      if (
+        current.profile &&
+        current.route === "local" &&
+        request.command === "play_uris"
+      )
+        updateSettings(
+          saveAccountOrder(
+            current,
+            recordPlayed(accountOrder(current), LOCAL_FILES, Date.now()),
           ),
         );
       if (
@@ -2604,7 +2632,29 @@ function App() {
   // What is playing now counts as most recent, as in Spotify, before its
   // play reaches Spotify's history.
   const playingSince = useMemo(() => Date.now(), [state.playback.context]);
+  const playingContext = state.playback.is_playing
+    ? state.playback.context
+    : undefined;
+  const notedContext = useRef<string>(undefined);
+  useEffect(() => {
+    const current = stateRef.current;
+    if (
+      !playingContext ||
+      !current.profile ||
+      notedContext.current === playingContext
+    )
+      return;
+    notedContext.current = playingContext;
+    updateSettings(
+      saveAccountOrder(
+        current,
+        recordPlayed(accountOrder(current), playingContext, Date.now()),
+      ),
+    );
+  }, [playingContext, updateSettings]);
   const recency: Recency = { ...savedCollection?.recency };
+  for (const [context, at] of Object.entries(accountOrder(state).played ?? {}))
+    recency[context] = Math.max(recency[context] ?? 0, at);
   if (state.playback.context)
     recency[state.playback.context] = Math.max(
       recency[state.playback.context] ?? 0,
@@ -3104,8 +3154,18 @@ function App() {
   // Spotify's Recents with pinned playlists on top.
   const pinnedIds = accountOrder(state).pinned;
   type LibraryRow =
-    | { entry: LibraryEntry; row?: undefined }
-    | { entry?: undefined; row: (typeof collectionRows)[number] };
+    | { entry: LibraryEntry; row?: undefined; local?: undefined }
+    | {
+        entry?: undefined;
+        row: (typeof collectionRows)[number];
+        local?: undefined;
+      }
+    | { entry?: undefined; row?: undefined; local: true };
+  const showingLocal =
+    state.settings.show_local_files &&
+    libraryFilter !== "downloaded" &&
+    showingPlaylists &&
+    "local files".includes(libraryQuery.trim().toLowerCase());
   const entryFacts = (entry: LibraryEntry): LibraryFacts =>
     entry.kind === "playlist"
       ? {
@@ -3123,10 +3183,15 @@ function App() {
   const libraryRows = sortLibrary<LibraryRow>(
     [
       ...libraryEntries.map((entry) => ({ entry })),
+      ...(showingLocal ? [{ local: true as const }] : []),
       ...collectionRows.map((row) => ({ row })),
     ],
     librarySort,
     (item) => {
+      if (item.local) {
+        const time = recency[LOCAL_FILES] ?? 0;
+        return { recent: time, added: time, name: "Local Files", creator: "" };
+      }
       if (item.entry) return entryFacts(item.entry);
       const { kind, item: saved } = item.row;
       const time = recency[saved.uri ?? ""] ?? 0;
@@ -3142,8 +3207,44 @@ function App() {
             : saved.name,
       };
     },
-    ({ entry }) =>
-      entry?.kind === "playlist" && pinnedIds.includes(entry.playlist.id),
+    ({ entry, local }) =>
+      local
+        ? pinnedIds.includes(LOCAL_FILES)
+        : entry?.kind === "playlist" && pinnedIds.includes(entry.playlist.id),
+  );
+  const localFilesRow = (
+    <div className="library-row library-local" key="local-files">
+      <button
+        className={`library-item ${localRoute ? "current" : ""}`}
+        data-context-route="local"
+        data-context-name="Local Files"
+        onClick={() => navigate("local")}
+      >
+        <div className="liked-cover local-cover">
+          <Folder size={22} fill="currentColor" />
+        </div>
+        <div>
+          <strong>Local Files</strong>
+          <small>
+            {pinnedIds.includes(LOCAL_FILES) && (
+              <Pin size={12} className="pinned-mark" />
+            )}
+            Playlist · {localCount} {localCount === 1 ? "track" : "tracks"}
+          </small>
+        </div>
+      </button>
+      <button
+        className={`library-pin icon-button ${pinnedIds.includes(LOCAL_FILES) ? "pinned" : ""}`}
+        title={`${pinnedIds.includes(LOCAL_FILES) ? "Unpin" : "Pin"} Local Files`}
+        aria-pressed={pinnedIds.includes(LOCAL_FILES)}
+        onClick={(event) => {
+          popPin(event.currentTarget);
+          toggleLocalFilesPin();
+        }}
+      >
+        <Pin size={14} />
+      </button>
+    </div>
   );
   // Like Spotify, a folder opens as its own list of playlists.
   const libraryEntry = (entry: LibraryEntry): ReactNode =>
@@ -3967,30 +4068,6 @@ function App() {
               {playingMark("liked")}
               {coverPlay("Liked Songs", playLiked, "liked")}
             </div>
-            {state.settings.show_local_files && (
-              <div
-                className="library-local"
-                hidden={!!openFolder || !showingPlaylists}
-              >
-                <button
-                  className={`library-item ${localRoute ? "current" : ""}`}
-                  data-context-route="local"
-                  data-context-name="Local Files"
-                  onClick={() => navigate("local")}
-                >
-                  <div className="liked-cover local-cover">
-                    <Folder size={22} fill="currentColor" />
-                  </div>
-                  <div>
-                    <strong>Local Files</strong>
-                    <small>
-                      Playlist · {localCount}{" "}
-                      {localCount === 1 ? "track" : "tracks"}
-                    </small>
-                  </div>
-                </button>
-              </div>
-            )}
             {openFolder ? (
               <>
                 {sortLibrary(openFolder.entries, folderSort, entryFacts).map(
@@ -4002,9 +4079,11 @@ function App() {
               </>
             ) : (
               libraryRows.map((item) =>
-                item.entry
-                  ? libraryEntry(item.entry)
-                  : collectionEntry(item.row),
+                item.local
+                  ? localFilesRow
+                  : item.entry
+                    ? libraryEntry(item.entry)
+                    : collectionEntry(item.row),
               )
             )}
             {!openFolder &&

@@ -13162,6 +13162,83 @@ test("the bell opens What's New with new and earlier releases", async ({
     )
     .toBe(true);
 });
+test("Local Files sorts by Recents like a playlist and stays on top only when pinned", async ({
+  page,
+}) => {
+  await startClient(page);
+  const road = {
+    id: "4123456789abcdefghijkl",
+    name: "Road trip",
+    images: [],
+    owner: { id: "test-user" },
+    collaborative: false,
+  };
+  const order = (played: Record<string, number>, pinned: string[] = []) =>
+    page.evaluate(
+      ({ settings, played, pinned }) =>
+        (window as any).__clientTest.emit({
+          type: "settings",
+          settings: {
+            ...settings,
+            show_local_files: true,
+            library_order: {
+              "test-user": { pinned, recent: [], items: [], played },
+            },
+          },
+        }),
+      { settings: emptyState.settings, played, pinned },
+    );
+  await page.evaluate(
+    (road) =>
+      (window as any).__clientTest.emit({ type: "library", playlists: [road] }),
+    road,
+  );
+  const names = () =>
+    page
+      .locator(".library-list .library-item:not(.spotify-folder) strong")
+      .allTextContents();
+  // Played earlier than Road trip, from an earlier run: below it.
+  await order({ "spotify:playlist:4123456789abcdefghijkl": 2000, local: 1000 });
+  await expect
+    .poll(async () => {
+      const list = await names();
+      return list.indexOf("Local Files") > list.indexOf("Road trip");
+    })
+    .toBe(true);
+  await order({ "spotify:playlist:4123456789abcdefghijkl": 1000, local: 2000 });
+  await expect
+    .poll(async () => {
+      const list = await names();
+      return list.indexOf("Local Files") < list.indexOf("Road trip");
+    })
+    .toBe(true);
+  // Pinned, it joins the pins above every unpinned row.
+  await order(
+    { "spotify:playlist:4123456789abcdefghijkl": 2000, local: 1000 },
+    ["local"],
+  );
+  const local = page.locator(".library-local");
+  await expect(local.locator(".pinned-mark")).toHaveCount(1);
+  await expect
+    .poll(async () => {
+      const list = await names();
+      return list.indexOf("Local Files") < list.indexOf("Road trip");
+    })
+    .toBe(true);
+  await local.hover();
+  await local.getByRole("button", { name: "Unpin Local Files" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).__clientTest.commands
+            .filter((entry: any) => entry.command === "save_settings")
+            .at(-1)?.args.settings.library_order["test-user"].pinned,
+      ),
+    )
+    .toEqual([]);
+});
+
 test("Your Library lists saved albums and followed artists", async ({
   page,
 }) => {

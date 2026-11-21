@@ -12,12 +12,36 @@ export interface LibraryOrder {
   pinned: string[];
   recent: string[];
   items: Playlist[];
+  /** When each context was last played here, in Unix milliseconds. */
+  played?: Record<string, number>;
 }
+/** Local Files' entry in `pinned` and `played`. */
+export const LOCAL_FILES = "local";
 export const emptyOrder = (): LibraryOrder => ({
   pinned: [],
   recent: [],
   items: [],
 });
+const PLAYED_LIMIT = 64;
+/** Remembers that `context` started playing at `at`, newest 64 kept. */
+export function recordPlayed(
+  order: LibraryOrder,
+  context: string,
+  at: number,
+): LibraryOrder {
+  const played = Object.entries({ ...order.played, [context]: at })
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, PLAYED_LIMIT);
+  return { ...order, played: Object.fromEntries(played) };
+}
+export function toggleLocalPin(order: LibraryOrder): LibraryOrder {
+  const pinned = order.pinned.includes(LOCAL_FILES)
+    ? order.pinned.filter((id) => id !== LOCAL_FILES)
+    : [...order.pinned, LOCAL_FILES];
+  if (pinned.length > 3)
+    throw new Error("Four pins maximum, including Liked Songs.");
+  return { ...order, pinned };
+}
 export function accountOrder(state: AppState): LibraryOrder {
   return (
     state.settings.library_order?.[state.profile?.id ?? ""] ?? emptyOrder()
@@ -35,7 +59,7 @@ export function libraryItems(state: AppState): Playlist[] {
   // Library never gains playlists the user did not add.
   const saved = new Set(state.playlists.map((item) => item.id));
   const ids = [
-      ...order.pinned,
+      ...order.pinned.filter((id) => id !== LOCAL_FILES),
       ...order.recent.filter((id) => id === DJ_ID || saved.has(id)),
       DJ_ID,
       ...state.playlists.map((item) => item.id),
@@ -71,6 +95,7 @@ export function recordManualPlay(
 /** Drop a removed playlist from pins, recents and remembered items. */
 export function forgetPlaylist(order: LibraryOrder, id: string): LibraryOrder {
   return {
+    ...order,
     pinned: order.pinned.filter((item) => item !== id),
     recent: order.recent.filter((item) => item !== id),
     items: order.items.filter((item) => item.id !== id),

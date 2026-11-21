@@ -566,6 +566,25 @@ pub struct LibraryOrder {
     pub pinned: Vec<String>,
     pub recent: Vec<String>,
     pub items: Vec<crate::model::Playlist>,
+    /// When each context was last played here, in Unix milliseconds, so
+    /// Recents keeps its order across restarts.
+    pub played: std::collections::BTreeMap<String, i64>,
+}
+
+/// Local Files' entry in `LibraryOrder::pinned` and `played`.
+pub const LOCAL_FILES: &str = "local";
+
+fn library_id(id: &str) -> bool {
+    id.len() == 22 && id.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+fn played_key(key: &str) -> bool {
+    key == LOCAL_FILES
+        || (key.len() <= 128
+            && key.starts_with("spotify:")
+            && key
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b':'))
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -725,10 +744,25 @@ impl Settings {
         anyhow::ensure!(self.library_order.len() <= 16, "Too many library accounts");
         for order in self.library_order.values() {
             anyhow::ensure!(
-                order.pinned.len() <= 3 && order.recent.len() <= 40 && order.items.len() <= 43,
+                order.pinned.len() <= 3
+                    && order.recent.len() <= 40
+                    && order.items.len() <= 43
+                    && order.played.len() <= 64,
                 "Library order exceeds limits"
             );
-            anyhow::ensure!(order.pinned.iter().chain(order.recent.iter()).chain(order.items.iter().map(|item|&item.id)).all(|id|id.len()==22&&id.bytes().all(|byte|byte.is_ascii_alphanumeric())),"Invalid playlist ID in library order");
+            anyhow::ensure!(
+                order
+                    .pinned
+                    .iter()
+                    .all(|id| id == LOCAL_FILES || library_id(id))
+                    && order
+                        .recent
+                        .iter()
+                        .chain(order.items.iter().map(|item| &item.id))
+                        .all(|id| library_id(id))
+                    && order.played.keys().all(|key| played_key(key)),
+                "Invalid playlist ID in library order"
+            );
         }
         let directory = data_dir()?;
         fs::create_dir_all(&directory)?;
@@ -749,6 +783,18 @@ mod tests {
         FullscreenAlwaysShow, FullscreenVolume, LyricsAnimator, PinnedLyricsFooter, Settings,
         YearPosition,
     };
+    #[test]
+    fn library_play_times_take_only_spotify_contexts_and_local_files() {
+        assert!(super::played_key("spotify:playlist:4123456789abcdefghijkl"));
+        assert!(super::played_key("spotify:user:someone:collection"));
+        assert!(super::played_key(super::LOCAL_FILES));
+        assert!(!super::played_key("https://example.com"));
+        assert!(!super::played_key("spotify:playlist:../x"));
+        assert!(!super::played_key(&format!("spotify:{}", "a".repeat(130))));
+        let order: super::LibraryOrder =
+            serde_json::from_str(r#"{"pinned":["local"],"recent":[],"items":[]}"#).unwrap();
+        assert!(order.played.is_empty());
+    }
 
     #[test]
     fn older_settings_take_the_new_source_layout_once() {

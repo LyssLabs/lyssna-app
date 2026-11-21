@@ -8,6 +8,9 @@ import {
   recordManualPlay,
   togglePlaylistPin,
   playlistForManualPlay,
+  LOCAL_FILES,
+  recordPlayed,
+  toggleLocalPin,
 } from "./library-order";
 const playlists = Array.from({ length: 5 }, (_, index) => ({
   id: String(index).padStart(22, "0"),
@@ -111,4 +114,28 @@ it("never adds a played playlist that is not saved to Your Library", () => {
   expect(
     libraryItems({ ...state, playlists: [...playlists, unsaved] })[0].id,
   ).toBe(unsaved.id);
+});
+it("remembers when contexts were played, newest 64 kept", () => {
+  let order = emptyOrder();
+  for (let index = 0; index < 70; index++)
+    order = recordPlayed(order, `spotify:playlist:${index}`, index);
+  order = recordPlayed(order, LOCAL_FILES, 100);
+  expect(Object.keys(order.played!)).toHaveLength(64);
+  expect(order.played![LOCAL_FILES]).toBe(100);
+  expect(order.played!["spotify:playlist:0"]).toBeUndefined();
+});
+it("pins Local Files within the pin limit without listing it as a playlist", () => {
+  let order = toggleLocalPin(emptyOrder());
+  expect(order.pinned).toEqual([LOCAL_FILES]);
+  const state = { ...emptyState, profile: { id: "user" } as any, playlists };
+  const listed = libraryItems({
+    ...state,
+    settings: { ...state.settings, library_order: { user: order } },
+  } as any);
+  expect(listed.some((item) => item.id === LOCAL_FILES)).toBe(false);
+  order = togglePlaylistPin(order, playlists[0]);
+  order = togglePlaylistPin(order, playlists[1]);
+  expect(() => toggleLocalPin(toggleLocalPin(order))).not.toThrow();
+  expect(() => togglePlaylistPin(order, playlists[2])).toThrow();
+  expect(toggleLocalPin(order).pinned).not.toContain(LOCAL_FILES);
 });
