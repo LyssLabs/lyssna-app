@@ -17071,7 +17071,8 @@ test("reviewers see waiting submissions and decide them from the TTML Creator", 
   await panel.getByRole("button", { name: "Minimise review" }).click();
   await expect(panel.getByRole("radio", { name: "Changes" })).toBeHidden();
   await expect(panel).toContainText("Reviewing Come & Go");
-  await panel.getByRole("button", { name: "Show review" }).click();
+  await page.locator(".review-button").click();
+  await expect(page.getByRole("region", { name: "TTML Creator" })).toBeVisible();
   await expect(panel.getByRole("radio", { name: "Changes" })).toBeChecked();
   await panel.getByRole("radio", { name: "Approve" }).click();
   await panel.getByRole("radio", { name: "Minor fixes" }).click();

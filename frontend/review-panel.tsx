@@ -156,6 +156,7 @@ function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
  *  and decision, or the queue to pick another. */
 export function ReviewPanel({
   initial,
+  restore = 0,
   playing,
   editing,
   editorTtml,
@@ -169,6 +170,8 @@ export function ReviewPanel({
 }: {
   /** Picked on the Review page, so it opens in the editor at once. */
   initial?: ReviewSubmission;
+  /** Bumped to show the panel again when minimised. */
+  restore?: number;
   playing?: Track;
   /** The submission loaded in the editor and the TTML it opened with. */
   editing?: { id: string; baseline: string };
@@ -184,6 +187,7 @@ export function ReviewPanel({
   const [picked, setPicked] = useState(initial);
   const [refresh, setRefresh] = useState(0);
   const [minimised, setMinimised] = useState(false);
+  useEffect(() => setMinimised(false), [restore]);
   useEffect(() => setPicked(initial), [initial]);
   useEffect(() => {
     if (!picked) setMinimised(false);

@@ -277,6 +277,8 @@ export function TtmlCreator({
   onClose,
   reviewer = false,
   reviewPick,
+  reviewRestore = 0,
+  onReviewOpen,
   onReviewed,
 }: {
   state: AppState;
@@ -303,6 +305,10 @@ export function TtmlCreator({
   reviewer?: boolean;
   /** Picked on the Review page, to open for review here. */
   reviewPick?: ReviewSubmission;
+  /** Bumped to bring back the review panel, minimised or not. */
+  reviewRestore?: number;
+  /** The review panel opened or closed. */
+  onReviewOpen?: (open: boolean) => void;
   /** A review decision was made, so waiting counts can refresh. */
   onReviewed?: () => void;
 }) {
@@ -1911,6 +1917,14 @@ export function TtmlCreator({
   const [reviewing, setReviewing] = useState(false);
   const [reviewOpening, setReviewOpening] = useState<ReviewSubmission>();
   useEffect(() => {
+    if (reviewRestore && reviewer) setReviewing(true);
+  }, [reviewRestore, reviewer]);
+  const reviewOpen = reviewer && reviewing;
+  useEffect(() => {
+    onReviewOpen?.(reviewOpen);
+  }, [reviewOpen, onReviewOpen]);
+  useEffect(() => () => onReviewOpen?.(false), [onReviewOpen]);
+  useEffect(() => {
     if (!reviewPick || !reviewer) return;
     setReviewOpening(reviewPick);
     setReviewing(true);
@@ -1979,6 +1993,7 @@ export function TtmlCreator({
   const reviewPanel = reviewer && reviewing && (
     <ReviewPanel
       initial={reviewOpening}
+      restore={reviewRestore}
       playing={playing}
       editing={
         reviewEdit?.baseline !== undefined && track?.uri === reviewEdit.uri

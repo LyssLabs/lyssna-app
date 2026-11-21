@@ -667,6 +667,8 @@ function App() {
   const reviewer = canReview(lyssnaRole);
   const [reviewWaiting, setReviewWaiting] = useState(0);
   const [reviewPick, setReviewPick] = useState<ReviewSubmission>();
+  const [reviewInCreator, setReviewInCreator] = useState(false);
+  const [reviewRestore, setReviewRestore] = useState(0);
   const [reviewCheck, setReviewCheck] = useState(0);
   // Lyssna sends reviewers no notice of new submissions, so the app counts
   // the queue itself every few minutes.
@@ -3719,7 +3721,11 @@ function App() {
                   ? `Review submissions, ${reviewWaiting} waiting`
                   : "Review submissions"
               }
-              onClick={() => setCenter("review")}
+              onClick={() => {
+                if (center === "ttml" && reviewInCreator)
+                  setReviewRestore((count) => count + 1);
+                else setCenter("review");
+              }}
             >
               <ClipboardCheck size={20} />
               {reviewWaiting > 0 && (
@@ -4054,6 +4060,8 @@ function App() {
               onClose={() => setCenter("lyrics")}
               reviewer={reviewer}
               reviewPick={reviewPick}
+              reviewRestore={reviewRestore}
+              onReviewOpen={setReviewInCreator}
               onReviewed={() => setReviewCheck((count) => count + 1)}
               renderPreview={(lyrics, live) => (
                 <LyricsPage
