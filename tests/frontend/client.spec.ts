@@ -3419,11 +3419,11 @@ test("Lyssna lyrics list their contributors with stacked avatars", async ({
     .poll(() =>
       page.evaluate(() =>
         (window as any).__clientTest.commands
-          .filter((entry: any) => entry.command === "open_link")
-          .map((entry: any) => entry.args.url),
+          .filter((entry: any) => entry.command === "open_song_page")
+          .map((entry: any) => entry.args.songId),
       ),
     )
-    .toContain("https://lyssna.org/u/Arashii");
+    .toContain("0b9f6c1e-8a51-4e8f-9a52-3a1f0d6e2c44");
   const lead = (await credits.locator(".community-lead").boundingBox())!;
   const row = (await contributors.boundingBox())!;
   expect(row.y).toBeGreaterThanOrEqual(lead.y + lead.height - 1);

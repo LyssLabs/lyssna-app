@@ -1215,17 +1215,25 @@ export function LyricsDisplay({
   );
 }
 
-const lyssnaProfile = (username: string) =>
-  `https://lyssna.org/u/${encodeURIComponent(username)}`;
-const openLyssnaProfile = (username: string) =>
-  void rpc("open_link", { url: lyssnaProfile(username) }).catch(() => {});
+/** The song's lyrics page in the in-app sheet; without a song, the person's
+ *  profile in the browser. */
+const openLyssnaCredit = (username: string, song?: string) =>
+  void (
+    song
+      ? rpc("open_song_page", { songId: song })
+      : rpc("open_link", {
+          url: `https://lyssna.org/u/${encodeURIComponent(username)}`,
+        })
+  ).catch(() => {});
 
 function ContributorAvatar({
   person,
   layer,
+  song,
 }: {
   person: LyssnaCredit;
   layer: number;
+  song?: string;
 }) {
   const [avatar, setAvatar] = useState(
     person.username && person.avatar_url?.startsWith("https://")
@@ -1249,7 +1257,7 @@ function ContributorAvatar({
       style={style}
       title={share}
       aria-label={name}
-      onClick={() => openLyssnaProfile(name)}
+      onClick={() => openLyssnaCredit(name, song)}
     >
       {face}
     </button>
@@ -1268,7 +1276,13 @@ function ContributorAvatar({
 
 /** "Contributors:" with up to five stacked avatars, largest share first, and
  *  up to two of them named: only those with more than 30% of the lyrics. */
-function LyssnaContributors({ credits }: { credits: LyssnaCredit[] }) {
+function LyssnaContributors({
+  credits,
+  song,
+}: {
+  credits: LyssnaCredit[];
+  song?: string;
+}) {
   const shown = [...credits].sort((a, b) => b.share - a.share).slice(0, 5);
   const named = shown.filter((person) => person.share > 30).slice(0, 2);
   return (
@@ -1280,6 +1294,7 @@ function LyssnaContributors({ credits }: { credits: LyssnaCredit[] }) {
             key={person.user_id ?? `deleted-${index}`}
             person={person}
             layer={shown.length - index}
+            song={song}
           />
         ))}
       </span>
@@ -1290,7 +1305,7 @@ function LyssnaContributors({ credits }: { credits: LyssnaCredit[] }) {
               {person.username ? (
                 <button
                   className="contributor-name"
-                  onClick={() => openLyssnaProfile(person.username!)}
+                  onClick={() => openLyssnaCredit(person.username!, song)}
                 >
                   <Marquee text={person.username} className="community-name">
                     {person.username}
@@ -1384,7 +1399,7 @@ const LyricCredits = memo(function LyricCredits({
         className={`lyric-source community-credits lyssna-credits ${expanded ? "expanded" : ""}`}
       >
         <span className="community-lead">Lyrics provided by: Lyssna</span>
-        <LyssnaContributors credits={lyrics.credits} />
+        <LyssnaContributors credits={lyrics.credits} song={lyrics.song_id} />
       </div>
     );
   }
