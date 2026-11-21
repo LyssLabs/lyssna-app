@@ -225,10 +225,13 @@ fn rank(lyrics: &Lyrics) -> u8 {
 }
 
 /// With Apple Music prioritized, its answer replaces any pick it ranks
-/// alongside.
+/// alongside, except Lyssna's: those were synced by hand for this app, so
+/// they're never swapped for a store's version.
 fn choose(pick: Lyrics, apple: Option<&Lyrics>, prefer_apple: bool) -> Lyrics {
     match apple {
-        Some(apple) if prefer_apple && rank(apple) >= rank(&pick) => apple.clone(),
+        Some(apple) if prefer_apple && pick.source != "lyssna" && rank(apple) >= rank(&pick) => {
+            apple.clone()
+        }
         _ => pick,
     }
 }
@@ -268,7 +271,7 @@ fn early_pick(
             best = Some(lyrics);
         }
         if score == 2
-            && (!apple_listed || apple_tried)
+            && (!apple_listed || apple_tried || best.is_some_and(|pick| pick.source == "lyssna"))
             && let Some(pick) = best
         {
             return Some(choose(pick.clone(), apple, prefer_apple));
@@ -1188,6 +1191,25 @@ mod tests {
         let mut lines = gapped("apple", 400);
         lines.lines.iter_mut().for_each(|line| line.words.clear());
         assert_eq!(pick(true, lines), "apple");
+    }
+
+    #[test]
+    fn prioritized_apple_never_replaces_lyssna_lyrics() {
+        let order: Vec<String> = ["lyssna", "apple"].map(String::from).to_vec();
+        let started = std::time::Instant::now();
+        let pick = fetch_best(
+            &order,
+            true,
+            Arc::new(|source: &str| {
+                if source == "apple" {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                }
+                Ok(gapped(source, 0))
+            }),
+        )
+        .unwrap();
+        assert_eq!(pick.source, "lyssna");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]
