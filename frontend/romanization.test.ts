@@ -4,6 +4,7 @@ import {
   romanizeKorean,
   romanizeLyrics,
   songScripts,
+  withReadings,
 } from "./romanization";
 import { displayLyrics } from "./word-sync";
 import type { Lyrics } from "./types";
@@ -161,5 +162,19 @@ it("keeps an unconvertible run visible instead of dropping the lyric", async () 
   const source = sample("𒀀");
   expect((await romanizeLyrics(source)).lines[0].text).toBe(
     source.lines[0].text,
+  );
+});
+
+it("adds no reading that only repeats a Latin line", () => {
+  const lyrics = sample("No matter the pain, he set his soul on fire");
+  const same = sample("no matter the pain he set his soul on fire ");
+  expect(withReadings(lyrics, same).lines[0].reading).toBeUndefined();
+  const accented = sample("Café");
+  expect(
+    withReadings(accented, sample("Cafe")).lines[0].reading,
+  ).toBeUndefined();
+  const korean = sample("사랑해");
+  expect(withReadings(korean, sample("saranghae")).lines[0].reading?.text).toBe(
+    "saranghae",
   );
 });

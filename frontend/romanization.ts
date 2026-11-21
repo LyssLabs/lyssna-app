@@ -441,6 +441,15 @@ export function romanizeFor(
     : false;
 }
 
+const letters = (text: string) =>
+  text
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+/** A reading that only repeats the line, as Latin lyrics come back, adds
+ * nothing under it. */
+const sameReading = (line: string, reading: string) =>
+  letters(line) === letters(reading);
 const readings = new WeakMap<Lyrics, Lyrics>();
 /** The lyrics as written, each line carrying its romanized reading. */
 export function withReadings(lyrics: Lyrics, romanized: Lyrics): Lyrics {
@@ -451,7 +460,7 @@ export function withReadings(lyrics: Lyrics, romanized: Lyrics): Lyrics {
       ...lyrics,
       lines: lyrics.lines.map((line, index) => {
         const reading = romanized.lines[index];
-        return reading && reading.text !== line.text
+        return reading && !sameReading(line.text, reading.text)
           ? { ...line, reading }
           : line;
       }),
