@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Maximize2,
+  Minimize2,
   CircleCheck,
   CircleX,
   MessageSquareWarning,
@@ -181,11 +183,32 @@ export function ReviewPanel({
 }) {
   const [picked, setPicked] = useState(initial);
   const [refresh, setRefresh] = useState(0);
+  const [minimised, setMinimised] = useState(false);
   useEffect(() => setPicked(initial), [initial]);
+  useEffect(() => {
+    if (!picked) setMinimised(false);
+  }, [picked]);
   return (
-    <aside className="review-panel" aria-label="Review">
+    <aside
+      className={`review-panel${minimised ? " minimised" : ""}`}
+      aria-label="Review"
+    >
+      {minimised && picked && (
+        <button
+          className="review-restore"
+          onClick={() => setMinimised(false)}
+          aria-label="Show review"
+        >
+          <span>
+            Reviewing <strong>{picked.song_title}</strong>
+          </span>
+          <Maximize2 size={14} />
+        </button>
+      )}
       {picked ? (
         <ReviewDetail
+          hidden={minimised}
+          onMinimise={() => setMinimised(true)}
           key={picked.id}
           submission={picked}
           autoOpen={picked === initial}
@@ -223,6 +246,8 @@ function ReviewDetail({
   onSubmitFix,
   notify,
   onBack,
+  hidden,
+  onMinimise,
   onDecided,
 }: {
   submission: ReviewSubmission;
@@ -236,6 +261,8 @@ function ReviewDetail({
   onSubmitFix: (ttml: string) => Promise<void>;
   notify: (message: string, error?: boolean) => void;
   onBack: () => void;
+  hidden: boolean;
+  onMinimise: () => void;
   onDecided: () => void;
 }) {
   const [uri, setUri] = useState<string | null>();
@@ -343,12 +370,19 @@ function ReviewDetail({
   const changed = diff?.filter((row) => row.kind !== "same" || row.retimed);
 
   return (
-    <div className="review-detail">
+    <div className="review-detail" hidden={hidden}>
       <header className="review-head">
         <button onClick={onBack} aria-label="Back to the queue">
           <ArrowLeft size={16} />
         </button>
         <h3 title={submission.song_title}>{submission.song_title}</h3>
+        <button
+          onClick={onMinimise}
+          title="Minimise, to work on the lyrics"
+          aria-label="Minimise review"
+        >
+          <Minimize2 size={15} />
+        </button>
       </header>
       <p className="review-meta">
         {submission.kind === "edit" ? "Edit" : "New lyrics"} by{" "}

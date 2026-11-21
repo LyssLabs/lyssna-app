@@ -2343,3 +2343,23 @@
   background: var(--outcome);
   filter: brightness(1.1);
 }
+.review-panel.minimised {
+  top: auto;
+  width: auto;
+  max-width: min(320px, calc(100% - 24px));
+  padding: 4px;
+  overflow: visible;
+}
+.ttml-creator .review-panel button.review-restore {
+  max-width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+}
+.review-restore span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-detail[hidden] {
+  display: none;
+}
