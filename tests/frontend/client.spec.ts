@@ -4691,7 +4691,9 @@ test("DJ lyrics show the animated DJ rings and explain missing lyrics", async ({
   await expect(page.locator(".now-playing.dj-view .dj-art img")).toBeVisible();
 });
 
-test("DJ lyrics ring swells with the DJ's voice", async ({ page }) => {
+test("DJ lyrics ring bends at its upper right with the DJ's voice", async ({
+  page,
+}) => {
   await startClient(page);
   await page.evaluate(() => {
     const test = (window as any).__clientTest;
@@ -4715,17 +4717,26 @@ test("DJ lyrics ring swells with the DJ's voice", async ({ page }) => {
   const lyrics = page.locator(".lyrics-page.dj-view");
   await expect(lyrics.getByRole("heading")).toHaveText("DJ is speaking…");
   const ring = lyrics.locator(".dj-voice-ring .ring");
-  const size = () =>
-    ring.evaluate((path) => (path as SVGPathElement).getBBox().width);
-  await expect.poll(size).toBeGreaterThan(0);
+  const box = () =>
+    ring.evaluate((path) => {
+      const { x, y, width, height } = (path as SVGPathElement).getBBox();
+      return { left: x, bottom: y + height, right: x + width, top: y };
+    });
+  await expect.poll(async () => (await box()).right).toBeGreaterThan(0);
   await page.waitForTimeout(400);
-  const quiet = await size();
+  const quiet = await box();
   await page.evaluate(() => {
     const test = (window as any).__clientTest;
     test.answers = { ...test.answers, audio_levels: [160, 255, 200] };
   });
-  await expect.poll(size).toBeGreaterThan(quiet * 1.05);
-  await expect(lyrics.locator(".dj-voice-ring .echo")).toHaveCount(1);
+  await expect
+    .poll(async () => (await box()).right - quiet.right)
+    .toBeGreaterThan(1);
+  // Only the upper right moves; the left and bottom stay a still circle.
+  const loud = await box();
+  expect(Math.abs(loud.left - quiet.left)).toBeLessThan(0.1);
+  expect(Math.abs(loud.bottom - quiet.bottom)).toBeLessThan(0.1);
+  await expect(lyrics.locator(".dj-voice-ring .echo")).toHaveCount(2);
 });
 
 test("Now playing's header names the playlist the song plays from", async ({

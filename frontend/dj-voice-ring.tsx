@@ -1,46 +1,64 @@
 import { useEffect, useRef } from "react";
 import { listenToLevels } from "./level-bars";
 
-const POINTS = 96;
+const POINTS = 120;
 const RADIUS = 26;
-// Where the DJ cover draws its two rings.
-const RING = { x: 49, y: 51 };
-const ECHO = { x: 54, y: 48 };
-// Frames the echo's shape trails the green ring's.
-const ECHO_LAG = 8;
-const WAVES = [
-  { k: 2, speed: 0.55, weight: 1 },
-  { k: 3, speed: -0.8, weight: 0.7 },
-  { k: 5, speed: 1.3, weight: 0.35 },
-];
+const CENTRE = { x: 50, y: 50 };
+// Spotify's DJ only moves the ring's upper right, at about 1:30 on a clock
+// face (SVG angles run clockwise from 3 o'clock).
+const FOCUS = -Math.PI / 4;
+// Frames each blue copy trails the green ring by, nearest first.
+const ECHO_LAGS = [5, 10];
 
-function outline(
-  centre: { x: number; y: number },
-  radius: number,
-  offsets: number[],
-) {
+/** How much of the voice reaches each part of the ring: all of it at the
+ *  upper right, fading to none by the left and bottom. */
+function reach(angle: number) {
+  const facing = Math.cos(angle - FOCUS);
+  return facing > 0 ? facing ** 2.5 : 0;
+}
+
+function outline(radius: (angle: number) => number) {
   let path = "";
   for (let index = 0; index <= POINTS; index++) {
     const angle = (index / POINTS) * Math.PI * 2;
-    const r = radius * (1 + offsets[index % POINTS]);
-    const x = centre.x + r * Math.cos(angle);
-    const y = centre.y + r * Math.sin(angle);
+    const r = radius(angle);
+    const x = CENTRE.x + r * Math.cos(angle);
+    const y = CENTRE.y + r * Math.sin(angle);
     path += `${index ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`;
   }
   return `${path}Z`;
 }
 
-/** The DJ cover's rings, bending and swelling with the DJ's voice. */
+/** The ring's radius at each angle for a voice level and moment: the upper
+ *  right swells into a soft corner with a pinch that drifts along it. */
+function shape(level: number, time: number, spread = 0) {
+  const pinchAt = FOCUS - 0.3 + Math.sin(time * 0.9) * 0.2;
+  const swell = 0.2 + Math.sin(time * 1.7) * 0.04;
+  return (angle: number) => {
+    const fromPinch = Math.atan2(
+      Math.sin(angle - pinchAt),
+      Math.cos(angle - pinchAt),
+    );
+    const pinch = Math.exp(-((fromPinch / 0.28) ** 2));
+    return (
+      RADIUS *
+      (1 +
+        level * reach(angle) * (swell + spread - pinch * (swell * 0.7 + 0.04)))
+    );
+  };
+}
+
+const ROUND = outline(() => RADIUS);
+
+/** The DJ ring: a still green circle whose upper right bends with the DJ's
+ *  voice, two blue copies trailing behind the bend. */
 export function DJVoiceRing({ live }: { live: boolean }) {
-  const echo = useRef<SVGPathElement>(null);
   const ring = useRef<SVGPathElement>(null);
+  const echoes = useRef<(SVGPathElement | null)[]>([]);
   useEffect(() => {
-    const round = new Array(POINTS).fill(0);
-    if (!live) {
-      echo.current?.setAttribute("d", outline(ECHO, RADIUS, round));
-      ring.current?.setAttribute("d", outline(RING, RADIUS, round));
-      return;
-    }
+    const paths = [ring.current, ...echoes.current];
+    for (const path of paths) path?.setAttribute("d", ROUND);
+    if (!live) return;
     let target = 0;
     let peak = 0.4;
     const stop = listenToLevels(([low, mid, high]) => {
@@ -52,37 +70,26 @@ export function DJVoiceRing({ live }: { live: boolean }) {
     let level = 0;
     let time = 0;
     let last = performance.now();
-    const history: { offsets: number[]; radius: number }[] = [];
+    const history: { level: number; time: number }[] = [];
     let frame = requestAnimationFrame(function draw(now) {
       const step = Math.min(0.05, (now - last) / 1000);
       last = now;
-      level += (target - level) * (target > level ? 0.45 : 0.12);
-      time += step * (0.6 + level * 1.8);
-      const bend = 0.025 + level * 0.11;
-      const offsets = Array.from({ length: POINTS }, (_, index) => {
-        const angle = (index / POINTS) * Math.PI * 2;
-        return (
-          (bend *
-            WAVES.reduce(
-              (sum, wave) =>
-                sum +
-                wave.weight * Math.sin(wave.k * angle + time * wave.speed * 3),
-              0,
-            )) /
-          2
+      level += (target - level) * (target > level ? 0.35 : 0.1);
+      time += step * (0.8 + level * 1.6);
+      history.unshift({ level, time });
+      history.length = Math.min(history.length, ECHO_LAGS.at(-1)! + 1);
+      const current = shape(level, time);
+      ring.current?.setAttribute("d", outline(current));
+      // A copy never dips inside the green ring, or it would show through
+      // the ring's hole while the voice rises.
+      ECHO_LAGS.forEach((lag, index) => {
+        const past = history[Math.min(lag, history.length - 1)];
+        const then = shape(past.level, past.time, 0.1 * (index + 1));
+        echoes.current[index]?.setAttribute(
+          "d",
+          outline((angle) => Math.max(then(angle), current(angle))),
         );
       });
-      history.unshift({ offsets, radius: RADIUS * (1 + level * 0.1) });
-      history.length = Math.min(history.length, ECHO_LAG + 1);
-      const behind = history[history.length - 1];
-      ring.current?.setAttribute(
-        "d",
-        outline(RING, history[0].radius, offsets),
-      );
-      echo.current?.setAttribute(
-        "d",
-        outline(ECHO, behind.radius, behind.offsets),
-      );
       frame = requestAnimationFrame(draw);
     });
     return () => {
@@ -91,8 +98,16 @@ export function DJVoiceRing({ live }: { live: boolean }) {
     };
   }, [live]);
   return (
-    <svg className="dj-voice-ring" viewBox="12 12 80 80" aria-hidden="true">
-      <path ref={echo} className="echo" />
+    <svg className="dj-voice-ring" viewBox="10 10 80 80" aria-hidden="true">
+      {ECHO_LAGS.map((lag, index) => (
+        <path
+          key={lag}
+          ref={(path) => {
+            echoes.current[index] = path;
+          }}
+          className={`echo echo-${index + 1}`}
+        />
+      )).reverse()}
       <path ref={ring} className="ring" />
     </svg>
   );

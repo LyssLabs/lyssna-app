@@ -542,9 +542,13 @@ small {
   stroke-width: 8;
 }
 .dj-voice-ring .echo {
-  stroke: #38c8ff;
-  stroke-opacity: 0.45;
-  stroke-width: 9;
+  stroke-width: 8;
+}
+.dj-voice-ring .echo-1 {
+  stroke: #4aa8ff;
+}
+.dj-voice-ring .echo-2 {
+  stroke: #2f7fe6;
 }
 .dj-lyrics-message p {
   max-width: 520px;
