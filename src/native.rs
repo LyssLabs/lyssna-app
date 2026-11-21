@@ -705,6 +705,16 @@ impl NativeControls {
             Ok(())
         })
     }
+    /// Whether a song is loaded on this computer's player. Spotify clears it
+    /// when it makes this computer inactive, so after a transfer here it
+    /// shows the takeover before Spotify's device list catches up.
+    pub fn loaded_here(&self) -> bool {
+        self.0.lock().ok().is_some_and(|connection| {
+            connection
+                .as_ref()
+                .is_some_and(|connection| connection.loaded.load(Ordering::Acquire))
+        })
+    }
     /// The song another of this account's devices holds the session on.
     pub fn playing_elsewhere(&self) -> Option<String> {
         let own = self.session().ok()?.device_id().to_owned();

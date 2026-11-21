@@ -959,8 +959,12 @@ impl Backend {
                 Err(_) => self.native_controls.devices(),
             };
             // Phones accept Spotify's Connect transfer yet can ignore it,
-            // while the Web API's transfer reaches them.
+            // while the Web API's transfer reaches them. A transfer here is
+            // known from this player at once; retrying it reloaded the song at
+            // Spotify's older position, undoing seeks made since.
+            let here = id == &own && self.native_controls.loaded_here();
             if transferred.is_ok()
+                && !here
                 && devices
                     .as_ref()
                     .is_ok_and(|devices| !crate::native::transfer_settled(id, devices))
