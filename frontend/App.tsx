@@ -7220,14 +7220,6 @@ function PlayerBar({
           <span className="creator-extras-slot" ref={creatorSlots.extras} />
         )}
         <button
-          className="icon-button"
-          title="Lyrics popout"
-          aria-label="Lyrics popout"
-          onClick={() => void rpc("open_lyrics_popout").catch(() => {})}
-        >
-          <PopoutIcon />
-        </button>
-        <button
           className={`icon-button ${lyricsActive ? "active" : ""}`}
           title="Lyrics"
           onClick={onLyrics}
@@ -7308,6 +7300,14 @@ function PlayerBar({
             <CinemaIcon />
           </button>
         )}
+        <button
+          className="icon-button"
+          title="Lyrics popout"
+          aria-label="Lyrics popout"
+          onClick={() => void rpc("open_lyrics_popout").catch(() => {})}
+        >
+          <PopoutIcon />
+        </button>
         {onTtml && (
           <button
             className={`icon-button ttml-button ${ttmlActive ? "active" : ""}`}

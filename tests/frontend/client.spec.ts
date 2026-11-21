@@ -18433,8 +18433,11 @@ test("TTML Creator puts a waveform and speed in the player bar", async ({
   const titles = await extras.evaluateAll((buttons) =>
     buttons.map((button) => button.getAttribute("title")),
   );
-  expect(titles.slice(-2)).toEqual(["TTML Creator", "Full screen lyrics"]);
-  expect(titles.indexOf("Lyrics popout")).toBe(titles.indexOf("Lyrics") - 1);
+  expect(titles.slice(-3)).toEqual([
+    "Lyrics popout",
+    "TTML Creator",
+    "Full screen lyrics",
+  ]);
   await page
     .locator(".player-extras")
     .getByTitle("TTML Creator", { exact: true })
